@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #FAF8F5;
+  --text-primary: #2D2A26;
+  --text-secondary: #6B6560;
+  --pollen-pink: #F2B5D4;
+  --pollen-lavender: #C8B6FF;
+  --pollen-blue: #A8D8EA;
+  --pollen-gold: #F5D89A;
+  --pollen-sage: #B5D5C5;
+  --accent: #7C6FA0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-inter), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Scroll-triggered fade-in via Intersection Observer */
+.fade-in-section {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+}
+
+.fade-in-section.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
