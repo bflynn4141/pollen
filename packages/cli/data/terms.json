@@ -1,0 +1,68 @@
+{
+  "error_terms": [
+    "error", "bug", "fix", "broken", "crash", "fail", "TypeError", "ReferenceError",
+    "SyntaxError", "ENOENT", "ECONNREFUSED", "stack trace", "panic", "exception",
+    "undefined", "null pointer", "segfault", "404", "500", "timeout", "CORS",
+    "permission denied", "not found", "unexpected token", "cannot read property"
+  ],
+  "build_terms": [
+    "add", "create", "build", "implement", "scaffold", "generate", "make",
+    "set up", "initialize", "bootstrap", "wire up", "connect", "integrate",
+    "new feature", "endpoint", "component", "page", "route", "handler"
+  ],
+  "refactor_terms": [
+    "refactor", "rename", "extract", "move", "simplify", "clean up", "restructure",
+    "reorganize", "consolidate", "dedup", "inline", "split", "merge", "modernize"
+  ],
+  "learning_terms": [
+    "how", "what", "why", "explain", "understand", "difference between",
+    "when should", "best practice", "recommend", "pros and cons", "tradeoff",
+    "help me understand", "walk me through", "teach", "learn"
+  ],
+  "devops_terms": [
+    "deploy", "docker", "ci", "cd", "pipeline", "kubernetes", "k8s", "terraform",
+    "nginx", "ssl", "dns", "cloudflare", "vercel", "aws", "gcp", "azure",
+    "systemd", "cron", "ssh", "env", "secret", "production", "staging"
+  ],
+  "testing_terms": [
+    "test", "spec", "assert", "expect", "mock", "stub", "vitest", "jest",
+    "pytest", "coverage", "e2e", "unit test", "integration test", "fixture",
+    "snapshot", "playwright", "cypress"
+  ],
+  "doc_terms": [
+    "doc", "readme", "comment", "jsdoc", "changelog", "documentation",
+    "annotate", "describe", "explain the code", "type doc", "api doc"
+  ],
+  "review_terms": [
+    "review", "pr", "pull request", "diff", "approve", "merge", "code review",
+    "feedback", "nit", "suggestion", "lgtm", "changes requested"
+  ],
+  "tool_names": [
+    "Read", "Edit", "Write", "Bash", "Grep", "Glob", "Task", "WebFetch",
+    "WebSearch", "NotebookEdit", "AskUserQuestion"
+  ],
+  "languages": {
+    "typescript": ["typescript", "ts", ".ts", ".tsx", "tsc", "tsconfig"],
+    "javascript": ["javascript", "js", ".js", ".jsx", "node", "npm", "pnpm", "yarn", "bun"],
+    "python": ["python", "py", ".py", "pip", "venv", "conda", "uv"],
+    "rust": ["rust", "rs", ".rs", "cargo", "crate"],
+    "go": ["golang", "go", ".go", "goroutine"],
+    "solidity": ["solidity", "sol", ".sol", "foundry", "hardhat", "ethers", "viem"],
+    "sql": ["sql", "sqlite", "postgres", "mysql", "prisma", "drizzle"],
+    "shell": ["bash", "zsh", "sh", "shell", ".sh"],
+    "css": ["css", "scss", "sass", "tailwind", "styled-components"],
+    "html": ["html", "htm", "jsx", "tsx", "template"]
+  },
+  "frameworks": {
+    "react": ["react", "useState", "useEffect", "useRef", "jsx", "tsx", "next.js", "nextjs", "remix"],
+    "vue": ["vue", "vuex", "nuxt", "pinia", "composition api"],
+    "svelte": ["svelte", "sveltekit"],
+    "express": ["express", "app.get", "app.post", "middleware", "router"],
+    "fastapi": ["fastapi", "uvicorn", "pydantic"],
+    "django": ["django", "models.py", "views.py", "urls.py"],
+    "cloudflare": ["workers", "wrangler", "durable objects", "kv", "d1", "r2"],
+    "vite": ["vite", "vite.config"],
+    "tailwind": ["tailwind", "tw-", "className"],
+    "prisma": ["prisma", "schema.prisma", "prisma.schema"]
+  }
+}
