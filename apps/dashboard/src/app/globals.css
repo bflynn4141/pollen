@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@theme {
+  /* Page */
+  --color-bg: #F7F5F2;
+  --color-card: #FFFFFF;
+  --color-card-border: #EBEBEA;
+  --color-card-dark: #1A1A18;
+
+  /* Text */
+  --color-text: #1A1A1A;
+  --color-text-muted: #8A8A82;
+  --color-text-count: #666666;
+  --color-text-dim: #999999;
+
+  /* Surfaces */
+  --color-bar-track: #F0EBE6;
+  --color-divider: #E8E4DF;
+  --color-pill-bg: #F0EBE6;
+  --color-pill-active: #1A1A1A;
+  --color-export-border: #E0DBD5;
+
+  /* Accent */
+  --color-accent: #E85D26;
+  --color-tab-active-border: #C66A3B;
+  --color-tab-inactive: #A09A94;
+
+  /* Trends */
+  --color-trend-up: #2D8A4E;
+  --color-trend-down: #C44A3F;
+
+  /* Tab bar fills */
+  --color-bar-topics: #C66A3B;
+  --color-bar-tools: #5F7D85;
+  --color-bar-commands: #4B8054;
+  --color-bar-models: #6D5A82;
+
+  /* Landing page */
+  --color-page-bg: #F7F5F2;
+  --color-brand: #C66A3B;
+  --color-brand-tint: #C66A3B14;
+  --color-dev-bg: #EDEAE6;
+  --color-border: #E0DBD5;
+  --color-text-secondary: #6B6560;
+  --color-terminal-tool: #5B7B8A;
+  --color-terminal-model: #7B6B8A;
+  --color-terminal-dim: #8B8580;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-bg);
+  }
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
