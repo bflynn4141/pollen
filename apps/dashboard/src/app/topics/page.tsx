@@ -20,14 +20,14 @@ export default async function TopicsPage({ searchParams }: Props) {
         config={{
           statCards: {
             totalLabel: 'Total Sessions',
-            uniqueLabel: 'Unique Topics',
+            uniqueLabel: 'Unique Intents',
             uniqueSubtitle: 'Classified categories',
-            topLabel: 'Top Topic',
+            topLabel: 'Top Intent',
           },
-          volumeTitle: 'Topic Volume',
-          trendingTitle: 'Trending Topics',
+          volumeTitle: 'Intent Volume',
+          trendingTitle: 'Trending Intents',
           barColor: 'var(--color-bar-topics)',
-          labelWidth: 120,
+          labelWidth: 240,
         }}
       />
     </DashboardShell>
