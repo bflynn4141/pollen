@@ -1,0 +1,118 @@
+---
+title: Quickstart
+description: Get Pollen running in under 2 minutes. Install the hook, verify it works, set up a wallet, and check your earnings.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+import { Step, Steps } from 'fumadocs-ui/components/steps'
+
+# Quickstart
+
+Get contributing in four steps.
+
+<Steps>
+<Step>
+### Install the hook
+
+Add the Pollen hook to your Claude Code settings:
+
+```json title="~/.claude/settings.json"
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "type": "command",
+        "command": "npx @pollen/cli hook"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "npx @pollen/cli hook"
+      }
+    ],
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "npx @pollen/cli hook"
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "type": "command",
+        "command": "npx @pollen/cli hook"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "npx @pollen/cli hook"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "npx @pollen/cli hook"
+      }
+    ]
+  }
+}
+```
+
+<Callout>
+  If you already have hooks in your settings, add the Pollen entries to the existing arrays. Multiple hooks can run on the same event.
+</Callout>
+
+The hook runs locally on every event. It classifies your prompt's topic and intent, records tool usage, and stores everything in a local SQLite database at `~/.pollen/local.db`.
+</Step>
+<Step>
+### Verify it works
+
+After a few Claude Code sessions, check your local stats:
+
+```bash
+npx @pollen/cli stats
+```
+
+You should see a summary of your contributions — total prompts, sessions, top topics, and tool usage.
+</Step>
+<Step>
+### Set up a wallet
+
+You need a wallet address to receive POLLEN tokens. The easiest way:
+
+```bash
+npx @pollen/cli wallet
+```
+
+This walks you through two options:
+- **Managed wallet** (recommended) — email-based, no keys to manage
+- **Bring your own** — register an existing Ethereum address
+
+See [Wallet Setup](/docs/wallet) for details.
+</Step>
+<Step>
+### Sync and check earnings
+
+Push your local data to the shared database:
+
+```bash
+export NEON_DATABASE_URL="postgresql://..."
+npx @pollen/cli sync
+```
+
+Then check your earnings:
+
+```bash
+npx @pollen/cli earnings
+```
+
+This shows your accumulated credits, current epoch progress, and claimable tokens.
+</Step>
+</Steps>
+
+## Next steps
+
+- [CLI command reference](/docs/cli) — all available commands
+- [How earning works](/docs/earning) — epochs, scoring, and revenue sharing
+- [Trends API](/docs/developers/trends-api) — query the aggregated data

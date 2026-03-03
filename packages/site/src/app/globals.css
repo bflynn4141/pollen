@@ -1,6 +1,44 @@
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
 @import "tailwindcss";
+@source '../../node_modules/fumadocs-ui/dist/**/*.js';
 
 :root {
+  /* Page */
+  --bg: #FAFAF8;
+  --card-bg: #FFFFFF;
+  --card-border: #EBEBEA;
+  --card-dark: #1A1A18;
+
+  /* Text */
+  --text: #1A1A1A;
+  --text-muted: #8A8A82;
+  --text-count: #666666;
+  --text-dim: #999999;
+
+  /* Surfaces */
+  --bar-track: #F0EBE6;
+  --divider: #E8E4DF;
+  --pill-bg: #F0EBE6;
+  --pill-active: #1A1A1A;
+  --export-border: #E0DBD5;
+
+  /* Accent */
+  --accent: #E85D26;
+  --tab-active-border: #C66A3B;
+  --tab-inactive: #A09A94;
+
+  /* Trends */
+  --trend-up: #2D8A4E;
+  --trend-down: #C44A3F;
+
+  /* Tab bar colors */
+  --bar-topics: #C66A3B;
+  --bar-tools: #5F7D85;
+  --bar-commands: #4B8054;
+  --bar-models: #6D5A82;
+
+  /* Legacy (marketing site) */
   --bg-primary: #FAF8F5;
   --text-primary: #2D2A26;
   --text-secondary: #6B6560;
@@ -9,7 +47,6 @@
   --pollen-blue: #A8D8EA;
   --pollen-gold: #F5D89A;
   --pollen-sage: #B5D5C5;
-  --accent: #7C6FA0;
 }
 
 body {
@@ -20,11 +57,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+/* Tailwind v4 preflight already handles the box-sizing/margin/padding reset.
+   Putting it outside @layer would override ALL spacing utilities. */
 
 /* Scroll-triggered fade-in via Intersection Observer */
 .fade-in-section {
@@ -41,4 +75,36 @@ body {
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
+}
+
+/* Fumadocs brand overrides */
+:root {
+  --fd-primary: 18 78% 53%;
+  --fd-primary-foreground: 0 0% 100%;
+  --fd-background: 40 25% 97%;
+  --fd-muted: 37 14% 93%;
+  --fd-muted-foreground: 30 8% 45%;
+}
+
+.dark, html.dark {
+  --fd-primary: 18 78% 58%;
+  --fd-background: 30 10% 8%;
+  --fd-muted: 30 10% 14%;
+  --fd-muted-foreground: 30 8% 60%;
+  --bg-primary: hsl(30 10% 8%);
+  --text-primary: hsl(30 8% 90%);
+}
+
+/* Docs heading typography */
+[data-fumadocs] h1 {
+  font-family: var(--font-playfair), serif;
+  letter-spacing: -0.02em;
+}
+
+/* Warmer inline code */
+:root {
+  --fd-code-bg: 37 20% 94%;
+}
+.dark, html.dark {
+  --fd-code-bg: 30 10% 16%;
 }

@@ -1,0 +1,13 @@
+{
+  "title": "Pollen Docs",
+  "pages": [
+    "index",
+    "quickstart",
+    "---Contributing---",
+    "wallet",
+    "cli",
+    "earning",
+    "---Building---",
+    "developers"
+  ]
+}

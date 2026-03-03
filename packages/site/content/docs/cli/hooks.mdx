@@ -1,0 +1,76 @@
+---
+title: Hook Configuration
+description: How the Pollen hook integrates with Claude Code. What events it listens to, what it captures, and how to customize it.
+---
+
+# Hook Configuration
+
+The Pollen hook is a Claude Code hook that runs locally on your machine. It processes events from your Claude Code sessions and stores anonymized features in a local SQLite database.
+
+## Supported events
+
+The hook handles these Claude Code hook events:
+
+| Event | What it captures |
+|-------|-----------------|
+| `UserPromptSubmit` | Topic classification, intent detection, language, action type |
+| `PostToolUse` | Tool name, MCP server (successful invocations) |
+| `PostToolUseFailure` | Tool name, MCP server, error context (failed invocations) |
+| `SessionStart` | New session registration with timestamp |
+| `SessionEnd` | Session arc (intent → outcome), satisfaction scoring |
+| `Stop` | Response tracking — count and average length |
+
+## Installation
+
+Add to `~/.claude/settings.json`:
+
+```json title="~/.claude/settings.json"
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "type": "command", "command": "npx @pollen/cli hook" }
+    ],
+    "PostToolUse": [
+      { "type": "command", "command": "npx @pollen/cli hook" }
+    ],
+    "PostToolUseFailure": [
+      { "type": "command", "command": "npx @pollen/cli hook" }
+    ],
+    "SessionStart": [
+      { "type": "command", "command": "npx @pollen/cli hook" }
+    ],
+    "SessionEnd": [
+      { "type": "command", "command": "npx @pollen/cli hook" }
+    ],
+    "Stop": [
+      { "type": "command", "command": "npx @pollen/cli hook" }
+    ]
+  }
+}
+```
+
+The hook reads the event type from the `hook_event_name` field in the JSON input that Claude Code passes via stdin.
+
+## What happens on each prompt
+
+When you submit a prompt in Claude Code:
+
+1. Claude Code pipes the event JSON to `npx @pollen/cli hook`
+2. The hook opens `~/.pollen/local.db` (creating it if needed)
+3. For `UserPromptSubmit`: it classifies the topic and intent locally using a lightweight classifier, then inserts a row into the `contributions` table
+4. For `PostToolUse`: it records the tool name, MCP server (if applicable), and success status into `tool_events`
+5. For `SessionEnd`: it computes the session arc and satisfaction score
+
+## Privacy
+
+Topic and intent classification is fully local — no API calls, no network requests. If you have `ANTHROPIC_API_KEY` set, the hook optionally uses Claude Haiku to extract a short subject summary from the first prompt of each session. You can disable this by unsetting the key.
+
+Data only leaves your machine when you explicitly run `pollen sync`.
+
+## Performance
+
+The hook is designed to be fast enough that you won't notice it:
+
+- Classification is rule-based (no ML inference)
+- SQLite writes are synchronous and batched
+- Async work (subject extraction) happens in the background and doesn't block the prompt

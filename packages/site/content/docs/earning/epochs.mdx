@@ -1,0 +1,53 @@
+---
+title: Epochs
+description: Pollen distributes tokens in fixed epochs. Each epoch scores all contributions and distributes POLLEN proportionally.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+
+# Epochs
+
+POLLEN tokens are distributed in **epochs** — fixed scoring periods that batch contributions together.
+
+## How epochs work
+
+1. An epoch has a start and end time
+2. All contributions synced during that window are scored
+3. Each contributor's total IVS is calculated
+4. POLLEN tokens are distributed proportionally: your share = your IVS / total IVS × epoch allocation
+5. After the epoch closes, tokens become claimable
+
+## Epoch timing
+
+Epochs run on a regular cadence. Check the current epoch status:
+
+```bash
+npx @pollen/cli earnings
+```
+
+This shows:
+- Current epoch number and progress
+- Your accumulated IVS for the current epoch
+- Claimable tokens from completed epochs
+
+## Scoring within an epoch
+
+Your IVS for an epoch is the sum of all your contribution scores:
+
+- Each `contributions` row gets a base score from topic + intent classification
+- Tool events add score based on diversity and success rate
+- Session arcs multiply the score when they have clear structure
+- Duplicate or low-entropy contributions are down-weighted
+
+## Sync before epoch close
+
+<Callout type="warn">
+  Your data only counts if synced before the epoch closes. Run `pollen sync` regularly.
+</Callout>
+
+Your data only counts if it's synced to Neon before the epoch closes. Run `pollen sync` regularly — or set up a cron job:
+
+```bash
+# Sync every 6 hours
+0 */6 * * * NEON_DATABASE_URL="postgresql://..." npx @pollen/cli sync
+```

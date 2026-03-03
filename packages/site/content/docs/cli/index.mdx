@@ -1,0 +1,73 @@
+---
+title: CLI Reference
+description: Complete reference for all pollen CLI commands — stats, queries, syncing, wallet management, and token claims.
+---
+
+# CLI Reference
+
+The Pollen CLI (`@pollen/cli`) is your local interface for viewing stats, syncing data, and managing your contributor identity.
+
+```bash
+npx @pollen/cli <command>
+```
+
+## Data commands
+
+These read from your local SQLite database at `~/.pollen/local.db`.
+
+| Command | Description |
+|---------|-------------|
+| `stats` | Summary dashboard — total prompts, sessions, top topics |
+| `intents` | Intent distribution (debug, implement, refactor, etc.) |
+| `languages` | Programming language breakdown |
+| `tools` | Tool frequency and success rates |
+| `flows` | Tool sequences, pairs, triples, and failure patterns |
+| `mcp` | MCP server usage ranking |
+| `projects` | Project type distribution |
+| `topics` | What people work on, action distribution, topic × action combos |
+| `value` | Information Value Scores and session satisfaction signals |
+| `sessions` | Session summaries and workflow arcs |
+| `when` | Time-of-day and day-of-week patterns |
+| `trends [n]` | Daily trends for the last `n` days (default: 7) |
+
+## Sync & identity
+
+| Command | Description | Requires |
+|---------|-------------|----------|
+| `sync` | Push local data to Neon | `NEON_DATABASE_URL` |
+| `verify` | Prove you're a unique human via World ID | — |
+| `status` | Show contributor ID and verification status | — |
+| `earnings` | Credits, token balance, claimable revenue | `NEON_DATABASE_URL` |
+
+## Wallet & tokens
+
+| Command | Description |
+|---------|-------------|
+| `wallet` | Interactive wallet setup (managed or BYO) |
+| `wallet --email <email>` | Create a managed wallet |
+| `wallet --address <0x...>` | Register an existing address |
+| `register <0x...>` | Legacy: link an Ethereum address |
+| `claim` | Claim POLLEN tokens for completed epochs |
+| `claim --revenue` | Claim accumulated USDC revenue |
+
+## Advanced
+
+| Command | Description | Requires |
+|---------|-------------|----------|
+| `backfill-subjects` | Extract subjects for existing sessions via Haiku | `ANTHROPIC_API_KEY` |
+
+## Environment variables
+
+| Variable | Used by | Description |
+|----------|---------|-------------|
+| `NEON_DATABASE_URL` | `sync`, `earnings`, `claim` | Neon PostgreSQL connection string |
+| `POLLEN_PRIVATE_KEY` | `claim` (BYO wallet) | Private key for signing claim transactions |
+| `POLLEN_API_KEY` | `claim` (managed wallet) | API key for proxy-based claiming |
+| `ANTHROPIC_API_KEY` | `backfill-subjects` | Anthropic API key for Haiku classification |
+
+## Data storage
+
+| Path | Description |
+|------|-------------|
+| `~/.pollen/local.db` | Local SQLite database (all your raw data) |
+| `~/.pollen/config.json` | Contributor ID, wallet config, World ID proof |

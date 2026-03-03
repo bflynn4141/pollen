@@ -1,0 +1,72 @@
+---
+title: Managed Wallet
+description: Set up a Para-powered managed wallet with just an email. No private keys, no seed phrases — claim tokens with one command.
+---
+
+# Managed Wallet
+
+The managed wallet uses [Para](https://getpara.com) to create an Ethereum wallet linked to your email. No private keys to store, no seed phrases to back up.
+
+## How it works
+
+1. You provide an email address
+2. Pollen creates a wallet via the Para API
+3. The wallet ID and derived address are saved to `~/.pollen/config.json`
+4. When you claim tokens, Pollen signs the transaction through Para's API — no private key needed on your machine
+
+## Setup
+
+```bash
+npx @pollen/cli wallet --email you@example.com
+```
+
+Or interactively:
+
+```bash
+npx @pollen/cli wallet
+# Select option 1: "Create a managed wallet"
+# Enter your email
+```
+
+Output:
+
+```
+✓ Wallet created: 0x9C87...175c
+  Linked to: you@example.com
+```
+
+## What gets stored
+
+```json title="~/.pollen/config.json"
+{
+  "contributor_id": "uuid-...",
+  "para_wallet": {
+    "wallet_id": "0c723dc6-...",
+    "address": "0x9C87...175c",
+    "email": "you@example.com"
+  },
+  "wallet_address": "0x9C87...175c"
+}
+```
+
+The `wallet_id` is the Para identifier used for signing. The `address` is your public Ethereum address on Base.
+
+## Recovery
+
+If you switch machines, run the same command with the same email:
+
+```bash
+npx @pollen/cli wallet --email you@example.com
+```
+
+Para recognizes the email and recovers the same wallet. You can also visit [getpara.com](https://getpara.com) to claim full custody of the wallet.
+
+## Full wallet features
+
+For advanced operations (send, swap, sign), install the Clara MCP server:
+
+```bash
+claude mcp add clara -- npx @clara/mcp
+```
+
+This gives you wallet management tools directly in Claude Code.

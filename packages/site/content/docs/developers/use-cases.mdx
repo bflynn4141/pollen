@@ -1,0 +1,76 @@
+---
+title: Use Cases
+description: What you can build with Pollen's prompt intelligence data. Market research, product analytics, agent building, and content creation.
+---
+
+# Use Cases
+
+Pollen's Trends API gives you a window into how developers actually use AI coding tools. Here's what you can build with it.
+
+## Market research
+
+Track which tools, frameworks, and patterns developers are adopting in real time.
+
+**Example:** Monitor framework adoption trends by comparing usage over time.
+
+```bash
+curl "https://pollen.dev/api/trends/compare?items=Next.js,Remix,Astro&period=90d"
+```
+
+This returns time series for each framework — watch adoption curves, spot inflection points, compare growth rates.
+
+**Other ideas:**
+- Track which MCP servers are gaining traction (`/tools` endpoint, filter by `mcpServers`)
+- Compare AI model usage shifts over time (`/models`)
+- Monitor which programming topics are trending (`/trending`)
+
+## Product analytics
+
+If you're building developer tools, understand how people use AI alongside your product.
+
+**Example:** See which tools have the highest failure rates — these are pain points worth solving.
+
+```bash
+curl "https://pollen.dev/api/trends/tools?period=30d"
+```
+
+Look at `success_rate` across tools. Low success rates + high usage = opportunity.
+
+**Other ideas:**
+- Understand session complexity trends (`/sessions` — prompt count distribution)
+- Find peak usage hours to schedule deployments or maintenance (`/heatmap`)
+- Track satisfaction trends to gauge overall developer experience (`/satisfaction`)
+
+## Agent builders
+
+Discover which tool combinations and workflows are most effective.
+
+**Example:** Analyze session arcs to find the most common intent → outcome patterns.
+
+```bash
+curl "https://pollen.dev/api/trends/sessions?period=30d"
+```
+
+The `arcs` array shows patterns like "debug → resolved" or "implement → completed" — use these to design agent workflows.
+
+**Other ideas:**
+- Find popular tool sequences (`/tools` → `topToolSeries` for co-occurrence patterns)
+- Explore specific domains to understand tool preferences (`/explore?q=database+migration`)
+- Build recommendation engines: "developers working on X typically use tools Y and Z"
+
+## Content creators
+
+Find what developers are struggling with and create content around it.
+
+**Example:** Find trending subjects to write about.
+
+```bash
+curl "https://pollen.dev/api/trends/trending?period=7d"
+```
+
+High growth + moderate count = emerging topic. High count + stable growth = evergreen content opportunity.
+
+**Other ideas:**
+- Deep-dive into a subject to find related topics for a comprehensive guide (`/explore`)
+- Use action distribution to understand whether people are mostly implementing, debugging, or refactoring (`/actions`)
+- Spot satisfaction dips — topics with low satisfaction need better tooling or docs

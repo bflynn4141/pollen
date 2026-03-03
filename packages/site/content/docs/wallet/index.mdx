@@ -1,0 +1,39 @@
+---
+title: Wallet Setup
+description: Set up a wallet to receive POLLEN tokens. Choose between a managed wallet (email-based, no keys) or bringing your own Ethereum address.
+---
+
+# Wallet Setup
+
+You need a wallet to receive POLLEN tokens and claim revenue. Pollen supports two approaches:
+
+| | Managed Wallet | Bring Your Own |
+|---|---|---|
+| **Setup** | Email address | Existing 0x address |
+| **Key management** | None — handled by Para | You manage your keys |
+| **Claiming** | One command, no private key | Requires `POLLEN_PRIVATE_KEY` |
+| **Portability** | Any machine via email | Wherever you have the key |
+
+## Quick setup
+
+```bash
+npx @pollen/cli wallet
+```
+
+This interactive command walks you through both options. Or use flags for non-interactive setup:
+
+```bash
+# Managed wallet
+npx @pollen/cli wallet --email you@example.com
+
+# Bring your own
+npx @pollen/cli wallet --address 0x1234...abcd
+```
+
+Your wallet config is stored at `~/.pollen/config.json`.
+
+## Next steps
+
+- [Managed wallet details](/docs/wallet/managed) — how Para wallets work
+- [Bring your own wallet](/docs/wallet/bring-your-own) — EOA registration
+- [Claiming tokens](/docs/earning/claiming) — how to claim POLLEN

@@ -1,0 +1,49 @@
+---
+title: Bring Your Own Wallet
+description: Register an existing Ethereum address for POLLEN token claims. You'll need your private key for claiming.
+---
+
+# Bring Your Own Wallet
+
+If you already have an Ethereum wallet, you can register its address directly.
+
+## Setup
+
+```bash
+npx @pollen/cli wallet --address 0x1234...abcd
+```
+
+Or interactively:
+
+```bash
+npx @pollen/cli wallet
+# Select option 2: "Use your own wallet"
+# Paste your Ethereum address
+```
+
+You can also use the legacy `register` command:
+
+```bash
+npx @pollen/cli register 0x1234...abcd
+```
+
+## Claiming with your own wallet
+
+Unlike managed wallets, claiming tokens requires your private key:
+
+```bash
+export POLLEN_PRIVATE_KEY=0x...
+npx @pollen/cli claim
+```
+
+The private key is only used locally to sign the claim transaction. It is never sent to any server.
+
+## Switching to managed
+
+If you'd prefer not to manage keys, you can switch to a managed wallet at any time:
+
+```bash
+npx @pollen/cli wallet --email you@example.com
+```
+
+This creates a new Para wallet and updates your config. Your contribution history stays linked to your `contributor_id`, not your wallet address — so your earnings carry over.

@@ -1,0 +1,64 @@
+---
+title: Claiming Tokens
+description: How to claim POLLEN tokens and USDC revenue. Managed wallets claim with one command; BYO wallets need a private key.
+---
+
+# Claiming Tokens
+
+After an epoch completes, your POLLEN tokens become claimable. If you hold POLLEN, you can also claim your share of API revenue in USDC.
+
+## Prerequisites
+
+Before claiming, you need:
+- A configured wallet (`pollen wallet`)
+- World ID verification (`pollen verify`) — proves you're a unique human
+
+## Claim POLLEN tokens
+
+### Managed wallet (recommended)
+
+```bash
+export NEON_DATABASE_URL="postgresql://..."
+export POLLEN_API_KEY="your-api-key"
+npx @pollen/cli claim
+```
+
+The managed wallet signs the claim transaction through the Para API — no private key on your machine.
+
+### BYO wallet
+
+```bash
+export NEON_DATABASE_URL="postgresql://..."
+export POLLEN_PRIVATE_KEY=0x...
+npx @pollen/cli claim
+```
+
+## Claim USDC revenue
+
+POLLEN holders earn a pro-rata share of Trends API revenue. Claim it:
+
+```bash
+npx @pollen/cli claim --revenue
+```
+
+Revenue accumulates continuously. You can claim at any time — there's no epoch lock for revenue claims.
+
+## Check your balance
+
+```bash
+npx @pollen/cli earnings
+```
+
+This shows:
+- **Credits** — your raw contribution score
+- **POLLEN balance** — tokens you've already claimed
+- **Claimable** — tokens ready to claim from completed epochs
+- **Revenue** — accumulated USDC from API fees
+
+## Troubleshooting
+
+**"No wallet configured"** — Run `pollen wallet` first.
+
+**"Set NEON_DATABASE_URL"** — You need a connection string. This is provided when you join as a contributor.
+
+**"Set POLLEN_API_KEY"** — For managed wallets, you need an API key. This is issued during onboarding.

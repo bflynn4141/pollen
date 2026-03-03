@@ -1,0 +1,76 @@
+---
+title: x402 Micropayments
+description: Pay for Trends API access with x402 micropayments. No API keys, no subscriptions — pay per request with stablecoins.
+---
+
+# x402 Micropayments
+
+The Trends API supports [x402](https://www.x402.org/) — an HTTP-native payment protocol. Instead of API keys or subscriptions, you pay per request using stablecoins on Base.
+
+## How it works
+
+1. Make a request to any Trends API endpoint
+2. If payment is required, you receive an HTTP `402 Payment Required` response with pricing details
+3. Your client pays the specified amount (typically fractions of a cent per request)
+4. Retry the request with the payment receipt in the header
+5. The API returns the data
+
+## Example flow
+
+```bash
+# 1. Initial request returns 402
+curl -i "https://pollen.dev/api/trends/overview?period=30d"
+# HTTP/2 402
+# X-Payment-Amount: 0.001
+# X-Payment-Currency: USDC
+# X-Payment-Network: base
+# X-Payment-Address: 0x...
+
+# 2. Pay and retry with receipt
+curl -H "X-Payment-Receipt: 0x..." \
+  "https://pollen.dev/api/trends/overview?period=30d"
+# HTTP/2 200
+# { "totalPrompts": 14832, ... }
+```
+
+## Client libraries
+
+The x402 protocol has client libraries that handle the payment flow automatically:
+
+```typescript
+import { createx402Client } from '@x402/client'
+
+const client = createx402Client({
+  wallet: yourWallet, // any EVM wallet/signer
+  network: 'base',
+})
+
+// Payments happen automatically — just fetch
+const data = await client.fetch(
+  'https://pollen.dev/api/trends/overview?period=30d'
+)
+```
+
+## Pricing
+
+Requests are priced by endpoint complexity:
+
+| Endpoint | Price |
+|----------|-------|
+| `/overview`, `/autocomplete` | Low |
+| `/topics`, `/tools`, `/commands`, `/models` | Low |
+| `/actions`, `/heatmap`, `/satisfaction` | Low |
+| `/trending` | Low |
+| `/sessions`, `/explore`, `/compare` | Medium |
+
+Exact prices are returned in the `402` response headers. Prices may change based on data freshness and query cost.
+
+## Revenue flow
+
+100% of API payment revenue flows to POLLEN token holders via the revenue sharing mechanism. When you pay for a query, that money goes directly to the people who contributed the data.
+
+See [How earning works](/docs/earning) for details on the revenue distribution model.
+
+## Free tier
+
+The public trends dashboard at [pollen.dev/trends](https://pollen.dev/trends) is free. x402 payments only apply to programmatic API access beyond the cached public dashboard.
