@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import { querySubjectExplore } from '@/lib/queries'
-import type { Period } from '@/lib/trends'
+import { parsePeriod } from '@/lib/parse-period'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const query = searchParams.get('q')
-  const period = (searchParams.get('period') ?? 'all') as Period
+  const query = searchParams.get('q')?.trim()
+  const period = parsePeriod(searchParams.get('period'), 'all')
 
-  if (!query) {
-    return NextResponse.json({ error: 'Missing q parameter' }, { status: 400 })
+  if (!query || query.length > 200) {
+    return NextResponse.json({ error: 'Invalid query' }, { status: 400 })
   }
 
   const data = await querySubjectExplore(query, period)

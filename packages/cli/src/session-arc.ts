@@ -1,13 +1,19 @@
 import type Database from 'better-sqlite3'
 import type { DurationBucket, SessionOutcome, Intent, Domain, SatisfactionSignals } from './types.js'
+import {
+  MS_PER_MINUTE,
+  DURATION_THRESHOLDS,
+  SATISFACTION_WEIGHTS,
+  SATISFACTION_THRESHOLDS,
+} from './config.js'
 
 export function computeDurationBucket(startedAt: number, endedAt: number): DurationBucket {
-  const minutes = (endedAt - startedAt) / 60000
+  const minutes = (endedAt - startedAt) / MS_PER_MINUTE
 
-  if (minutes < 5) return 'quick'
-  if (minutes < 15) return 'short'
-  if (minutes < 60) return 'medium'
-  if (minutes < 180) return 'long'
+  if (minutes < DURATION_THRESHOLDS.QUICK) return 'quick'
+  if (minutes < DURATION_THRESHOLDS.SHORT) return 'short'
+  if (minutes < DURATION_THRESHOLDS.MEDIUM) return 'medium'
+  if (minutes < DURATION_THRESHOLDS.LONG) return 'long'
   return 'marathon'
 }
 
@@ -152,22 +158,22 @@ export function computeSatisfactionScore(
 
   const signals: SatisfactionSignals = {
     git_activity: data.has_git_activity,
-    low_failure_rate: failureRate < 0.2,
+    low_failure_rate: failureRate < SATISFACTION_THRESHOLDS.FAILURE_RATE_MAX,
     no_retry_storms: !data.has_retry_storm,
-    reasonable_duration: durationMinutes > 2 && durationMinutes < 240,
+    reasonable_duration: durationMinutes > SATISFACTION_THRESHOLDS.MIN_DURATION_MINUTES && durationMinutes < SATISFACTION_THRESHOLDS.MAX_DURATION_MINUTES,
     tool_engagement: data.tool_use_count > 0,
-    consistent_intent: intentConsistency > 0.5,
+    consistent_intent: intentConsistency > SATISFACTION_THRESHOLDS.INTENT_CONSISTENCY_MIN,
     clean_ending: outcome === 'completed',
   }
 
   let score = 0
-  if (signals.git_activity) score += 15
-  if (signals.low_failure_rate) score += 25
-  if (signals.no_retry_storms) score += 15
-  if (signals.reasonable_duration) score += 10
-  if (signals.tool_engagement) score += 15
-  if (signals.consistent_intent) score += 10
-  if (signals.clean_ending) score += 10
+  if (signals.git_activity) score += SATISFACTION_WEIGHTS.GIT_ACTIVITY
+  if (signals.low_failure_rate) score += SATISFACTION_WEIGHTS.LOW_FAILURE_RATE
+  if (signals.no_retry_storms) score += SATISFACTION_WEIGHTS.NO_RETRY_STORMS
+  if (signals.reasonable_duration) score += SATISFACTION_WEIGHTS.REASONABLE_DURATION
+  if (signals.tool_engagement) score += SATISFACTION_WEIGHTS.TOOL_ENGAGEMENT
+  if (signals.consistent_intent) score += SATISFACTION_WEIGHTS.CONSISTENT_INTENT
+  if (signals.clean_ending) score += SATISFACTION_WEIGHTS.CLEAN_ENDING
 
   return { score, signals }
 }
@@ -193,7 +199,7 @@ export function computeSessionArc(
 } {
   const data = gatherSessionArcData(db, sessionId)
   const outcome = computeOutcome(data.tool_failure_count, data.tool_use_count, data.prompt_count)
-  const durationMinutes = (endedAt - startedAt) / 60000
+  const durationMinutes = (endedAt - startedAt) / MS_PER_MINUTE
   const satisfaction = computeSatisfactionScore(data, outcome, durationMinutes)
 
   return {

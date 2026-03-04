@@ -1,7 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import type Database from 'better-sqlite3'
-
-const BATCH_SIZE = 100
+import { SYNC_BATCH_SIZE } from './config.js'
 
 interface SyncResult {
   contributions: number
@@ -29,8 +28,8 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   ).all(lastContrib) as Record<string, unknown>[]
 
   let contribCount = 0
-  for (let i = 0; i < contributions.length; i += BATCH_SIZE) {
-    const batch = contributions.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < contributions.length; i += SYNC_BATCH_SIZE) {
+    const batch = contributions.slice(i, i + SYNC_BATCH_SIZE)
     for (const row of batch) {
       await sql`
         INSERT INTO contributions (
@@ -70,8 +69,8 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   ).all(lastTool) as Record<string, unknown>[]
 
   let toolCount = 0
-  for (let i = 0; i < toolEvents.length; i += BATCH_SIZE) {
-    const batch = toolEvents.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < toolEvents.length; i += SYNC_BATCH_SIZE) {
+    const batch = toolEvents.slice(i, i + SYNC_BATCH_SIZE)
     for (const row of batch) {
       await sql`
         INSERT INTO tool_events (
@@ -101,8 +100,8 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   ).all(lastSession) as Record<string, unknown>[]
 
   let sessionCount = 0
-  for (let i = 0; i < sessions.length; i += BATCH_SIZE) {
-    const batch = sessions.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < sessions.length; i += SYNC_BATCH_SIZE) {
+    const batch = sessions.slice(i, i + SYNC_BATCH_SIZE)
     for (const row of batch) {
       await sql`
         INSERT INTO sessions (

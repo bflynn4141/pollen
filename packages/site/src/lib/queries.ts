@@ -5,16 +5,7 @@ import type {
   CompareItem, SubjectExploreResponse, SubjectAutocompleteItem,
   SubjectTrendingItem, SubjectSessionItem,
 } from './trends'
-
-function periodToMs(period: Period): number | null {
-  if (period === 'all') return null
-  const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
-  return Date.now() - days * 86400000
-}
-
-function bucketInterval(period: Period): string {
-  return period === '7d' ? 'day' : period === '90d' || period === 'all' ? 'week' : 'day'
-}
+import { periodToMs, bucketInterval } from './parse-period'
 
 // ── Overview ──
 

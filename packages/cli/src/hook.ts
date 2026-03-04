@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { dirname } from 'node:path'
 import { initDb } from './store.js'
 import type { HookInput } from './types.js'
 import { handlePromptSubmit } from './hooks/prompt.js'
@@ -8,8 +8,7 @@ import { handlePostToolUseFailure } from './hooks/tool-failure.js'
 import { handleSessionStart } from './hooks/session-start.js'
 import { handleSessionEnd } from './hooks/session-end.js'
 import { handleStop } from './hooks/stop.js'
-
-const DB_PATH = join(process.env.HOME ?? '~', '.pollen', 'local.db')
+import { DB_PATH } from './config.js'
 
 function ensureDir(filepath: string): void {
   mkdirSync(dirname(filepath), { recursive: true })

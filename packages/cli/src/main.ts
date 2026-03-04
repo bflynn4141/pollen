@@ -1,9 +1,7 @@
-#!/usr/bin/env node
-import { join } from 'node:path'
 import {
   initDb, getStats,
-  queryIntentDistribution, queryLanguageDistribution, queryToolUsage,
-  querySessionStats, queryTimePatterns, queryTrends,
+  queryIntentDistribution, queryLanguageDistribution,
+  queryTimePatterns, queryTrends,
   queryToolFrequency, queryToolPairs, queryToolFailures, queryToolTriples,
   querySessionSummaries, querySessionArcs,
   queryMcpServerUsage, queryProjectDistribution,
@@ -11,7 +9,7 @@ import {
   querySatisfactionByIntent, querySatisfactionOverview,
 } from './store.js'
 import {
-  renderStats, renderIntents, renderLanguages, renderTools, renderSessions, renderWhen, renderTrends,
+  renderStats, renderIntents, renderLanguages, renderWhen, renderTrends,
   renderToolFrequency, renderToolPairs, renderToolFailures, renderToolTriples,
   renderSessionSummaries, renderSessionArcs,
   renderMcpServers, renderProjects,
@@ -20,12 +18,10 @@ import {
 import { syncToNeon } from './sync.js'
 import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
-import { registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress } from './config.js'
+import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress } from './config.js'
 import { createInterface } from 'node:readline'
 import { formatUnits } from 'viem'
 import { fetchEarnings, renderEarnings } from './earnings.js'
-
-const DB_PATH = join(process.env.HOME ?? '~', '.pollen', 'local.db')
 
 function openDb() {
   try {
@@ -109,6 +105,14 @@ try {
       console.log('Backfilling session subjects via Haiku...')
       const result = await backfillSubjects(db)
       console.log(`Done: ${result.filled} filled, ${result.skipped} skipped (${result.total} total)`)
+      break
+    }
+    case 'my': {
+      const { render } = await import('ink')
+      const { MyApp } = await import('./ui/MyApp.js')
+      const { createElement } = await import('react')
+      const app = render(createElement(MyApp, { db }))
+      await app.waitUntilExit()
       break
     }
     case 'verify': {
@@ -299,13 +303,6 @@ try {
       console.log('    BASE_RPC_URL=https://...')
       break
     }
-    // Legacy aliases
-    case 'tools-legacy':
-      console.log(renderTools(queryToolUsage(db)))
-      break
-    case 'sessions-legacy':
-      console.log(renderSessions(querySessionStats(db)))
-      break
     default:
       console.log([
         'Usage: pollen <command>',
@@ -323,6 +320,7 @@ try {
         '  sessions    Session summaries + workflow arcs',
         '  when        Time patterns',
         '  trends [n]  Daily trends (last n days, default 7)',
+        '  my          Interactive dashboard — see exactly what you\'ve contributed',
         '  sync        Push local data to Neon (needs NEON_DATABASE_URL)',
         '  verify      Prove you are a unique human via World ID',
         '  status      Show contributor identity + verification status',

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { querySubjectTrending } from '@/lib/queries'
-import type { Period } from '@/lib/trends'
+import { parsePeriod } from '@/lib/parse-period'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const period = (searchParams.get('period') ?? '30d') as Period
+  const period = parsePeriod(searchParams.get('period'))
 
   const data = await querySubjectTrending(period)
 

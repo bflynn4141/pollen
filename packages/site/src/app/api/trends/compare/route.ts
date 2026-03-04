@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { queryCompare } from '@/lib/queries'
-import type { Period } from '@/lib/trends'
+import { parsePeriod } from '@/lib/parse-period'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const period = (searchParams.get('period') ?? '30d') as Period
+  const period = parsePeriod(searchParams.get('period'))
   const items = searchParams.get('items')?.split(',').filter(Boolean) ?? []
   const type = (searchParams.get('type') ?? 'topics') as 'topics' | 'actions' | 'tools'
 

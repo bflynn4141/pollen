@@ -40,13 +40,14 @@
 
   /* Legacy (marketing site) */
   --bg-primary: #FAF8F5;
-  --text-primary: #2D2A26;
+  --bg-card: #FFFFFF;
+  --text-primary: #1A1A1A;
   --text-secondary: #6B6560;
-  --pollen-pink: #F2B5D4;
-  --pollen-lavender: #C8B6FF;
-  --pollen-blue: #A8D8EA;
-  --pollen-gold: #F5D89A;
-  --pollen-sage: #B5D5C5;
+  --text-muted: #9B9590;
+  --accent: #C45D3E;
+  --accent-hover: #A84D32;
+  --bar-fill: #C45D3E;
+  --border: #E8E4DF;
 }
 
 body {
@@ -60,19 +61,6 @@ body {
 /* Tailwind v4 preflight already handles the box-sizing/margin/padding reset.
    Putting it outside @layer would override ALL spacing utilities. */
 
-/* Scroll-triggered fade-in via Intersection Observer */
-.fade-in-section {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.7s ease-out, transform 0.7s ease-out;
-}
-
-.fade-in-section.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-/* Smooth scrolling */
 html {
   scroll-behavior: smooth;
 }

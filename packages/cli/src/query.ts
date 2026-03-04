@@ -1,4 +1,4 @@
-import type { IntentRow, LangRow, Stats, TimeRow, ToolRow, TrendRow, ToolFrequencyRow, ToolPairRow, ToolFailureRow, SessionSummaryRow, SessionArcRow, McpServerRow, ProjectTypeRow, ToolTripleRow, TopicRow, ActionRow, ActionTopicRow, TopicSatisfactionRow, SatisfactionByIntentRow, SatisfactionOverviewRow } from './store.js'
+import type { IntentRow, LangRow, Stats, TimeRow, TrendRow, ToolFrequencyRow, ToolPairRow, ToolFailureRow, SessionSummaryRow, SessionArcRow, McpServerRow, ProjectTypeRow, ToolTripleRow, TopicRow, ActionRow, ActionTopicRow, TopicSatisfactionRow, SatisfactionByIntentRow, SatisfactionOverviewRow } from './store.js'
 
 export function bar(ratio: number, width = 20): string {
   const filled = Math.round(ratio * width)
@@ -46,35 +46,6 @@ export function renderLanguages(languages: LangRow[]): string {
   })
 
   return ['Languages', '=========', ...lines, ''].join('\n')
-}
-
-export function renderTools(tools: ToolRow[]): string {
-  if (tools.length === 0) return 'No tool usage data yet.\n'
-
-  const total = tools.reduce((sum, r) => sum + r.count, 0)
-  const lines = tools.map(r => {
-    const pct = ((r.count / total) * 100).toFixed(0).padStart(3)
-    const b = bar(r.count / total)
-    return `  ${r.tool.padEnd(16)} ${pct}%  ${b}  (${r.count})`
-  })
-
-  return ['Tool Usage', '==========', ...lines, ''].join('\n')
-}
-
-export function renderSessions(stats: { avg: number; sessions: { session_id: string; prompt_count: number }[] }): string {
-  if (stats.sessions.length === 0) return 'No session data yet.\n'
-
-  const longest = stats.sessions[0]
-  const lines = [
-    'Session Stats',
-    '=============',
-    `  Avg prompts/session:  ${stats.avg.toFixed(1)}`,
-    `  Total sessions:       ${stats.sessions.length}`,
-    `  Longest session:      ${longest.prompt_count} prompts`,
-    '',
-  ]
-
-  return lines.join('\n')
 }
 
 export function renderWhen(patterns: { byHour: TimeRow[]; byDay: TimeRow[] }): string {
