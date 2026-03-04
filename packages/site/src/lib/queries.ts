@@ -502,6 +502,28 @@ export async function querySubjectTrending(period: Period): Promise<SubjectTrend
   })
 }
 
+// ── Dashboard helpers ──
+
+function calcTrends(rows: Record<string, unknown>[], prevMap: Map<string, number>): DashboardItem[] {
+  return rows.map(r => {
+    const name = r.name as string
+    const count = Number(r.count)
+    const prev = prevMap.get(name) ?? 0
+    let trend: 'up' | 'down' | 'stable' = 'stable'
+    let changePercent: number | null = null
+    if (prev > 0) {
+      changePercent = Math.round(((count - prev) / prev) * 100)
+      if (changePercent > 10) trend = 'up'
+      else if (changePercent < -10) trend = 'down'
+    } else if (count > 0) {
+      // New item with no previous data — mark as trending up
+      changePercent = 100
+      trend = 'up'
+    }
+    return { name, count, changePercent, trend }
+  })
+}
+
 // ── Dashboard: Topics ──
 
 export async function queryTopicDashboard(period: Period): Promise<DashboardItem[]> {
@@ -510,10 +532,11 @@ export async function queryTopicDashboard(period: Period): Promise<DashboardItem
     const cutoff = periodToMs(period)
 
     const rows = await sql`
-      SELECT topic as name, COUNT(*) as count
-      FROM contributions
-      WHERE topic IS NOT NULL ${cutoff ? sql`AND timestamp > ${cutoff}` : sql``}
-      GROUP BY topic
+      SELECT subject as name, COUNT(*) as count
+      FROM sessions
+      WHERE subject IS NOT NULL AND subject != 'general'
+        ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+      GROUP BY subject
       ORDER BY count DESC
     `
 
@@ -521,32 +544,18 @@ export async function queryTopicDashboard(period: Period): Promise<DashboardItem
     if (cutoff) {
       const prevCutoff = cutoff - (Date.now() - cutoff)
       const prevRows = await sql`
-        SELECT topic as name, COUNT(*) as count
-        FROM contributions
-        WHERE topic IS NOT NULL
-          AND timestamp > ${prevCutoff} AND timestamp <= ${cutoff}
-        GROUP BY topic
+        SELECT subject as name, COUNT(*) as count
+        FROM sessions
+        WHERE subject IS NOT NULL AND subject != 'general'
+          AND started_at > ${prevCutoff} AND started_at <= ${cutoff}
+        GROUP BY subject
       `
       for (const r of prevRows) {
         prevMap.set(r.name as string, Number(r.count))
       }
     }
 
-    return rows.map(r => {
-      const name = r.name as string
-      const count = Number(r.count)
-      const prev = prevMap.get(name) ?? 0
-      let trend: 'up' | 'down' | 'stable' = 'stable'
-      let changePercent: number | null = null
-      if (prev > 0) {
-        changePercent = Math.round(((count - prev) / prev) * 100)
-        if (changePercent > 10) trend = 'up'
-        else if (changePercent < -10) trend = 'down'
-      } else if (count > 0) {
-        trend = 'up'
-      }
-      return { name, count, changePercent, trend }
-    })
+    return calcTrends(rows, prevMap)
   } catch {
     return []
   }
@@ -581,21 +590,7 @@ export async function queryToolDashboard(period: Period): Promise<DashboardItem[
       }
     }
 
-    return rows.map(r => {
-      const name = r.name as string
-      const count = Number(r.count)
-      const prev = prevMap.get(name) ?? 0
-      let trend: 'up' | 'down' | 'stable' = 'stable'
-      let changePercent: number | null = null
-      if (prev > 0) {
-        changePercent = Math.round(((count - prev) / prev) * 100)
-        if (changePercent > 10) trend = 'up'
-        else if (changePercent < -10) trend = 'down'
-      } else if (count > 0) {
-        trend = 'up'
-      }
-      return { name, count, changePercent, trend }
-    })
+    return calcTrends(rows, prevMap)
   } catch {
     return []
   }
@@ -631,21 +626,7 @@ export async function queryModelUsage(period: Period): Promise<(DashboardItem & 
       }
     }
 
-    return rows.map(r => {
-      const name = r.name as string
-      const count = Number(r.count)
-      const prev = prevMap.get(name) ?? 0
-      let trend: 'up' | 'down' | 'stable' = 'stable'
-      let changePercent: number | null = null
-      if (prev > 0) {
-        changePercent = Math.round(((count - prev) / prev) * 100)
-        if (changePercent > 10) trend = 'up'
-        else if (changePercent < -10) trend = 'down'
-      } else if (count > 0) {
-        trend = 'up'
-      }
-      return { name, count, changePercent, trend, model: name }
-    })
+    return calcTrends(rows, prevMap).map(item => ({ ...item, model: item.name }))
   } catch {
     return []
   }
@@ -681,21 +662,7 @@ export async function queryCommandRanking(period: Period): Promise<(DashboardIte
       }
     }
 
-    return rows.map(r => {
-      const name = r.name as string
-      const count = Number(r.count)
-      const prev = prevMap.get(name) ?? 0
-      let trend: 'up' | 'down' | 'stable' = 'stable'
-      let changePercent: number | null = null
-      if (prev > 0) {
-        changePercent = Math.round(((count - prev) / prev) * 100)
-        if (changePercent > 10) trend = 'up'
-        else if (changePercent < -10) trend = 'down'
-      } else if (count > 0) {
-        trend = 'up'
-      }
-      return { name, count, changePercent, trend, command_category: name }
-    })
+    return calcTrends(rows, prevMap).map(item => ({ ...item, command_category: item.name }))
   } catch {
     return []
   }
