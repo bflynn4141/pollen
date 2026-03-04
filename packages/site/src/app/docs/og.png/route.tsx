@@ -13,7 +13,7 @@ export async function GET() {
           width: '1200px',
           height: '630px',
           padding: '64px 72px 56px 72px',
-          backgroundColor: '#FAF8F5',
+          backgroundColor: '#FFFFFF',
           fontFamily: 'system-ui, sans-serif',
           position: 'relative',
         }}
