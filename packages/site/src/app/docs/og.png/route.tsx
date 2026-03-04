@@ -18,18 +18,6 @@ export async function GET() {
           position: 'relative',
         }}
       >
-        {/* Accent bar */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '480px',
-            height: '4px',
-            background: 'linear-gradient(90deg, #C45D3E 0%, #D4896E 100%)',
-          }}
-        />
-
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
