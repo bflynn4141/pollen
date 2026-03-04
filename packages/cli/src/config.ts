@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { createInterface } from 'node:readline'
 
 // ── Time constants ──
 
@@ -119,7 +120,132 @@ export function getWalletAddress(): string | null {
 
 export const PROXY_URL = process.env.POLLEN_PROXY_URL ?? 'https://clara-proxy.bflynn4141.workers.dev'
 
-/** Create or recover a Para wallet via Clara proxy */
+/** Interactive wallet setup — prompts user to choose managed or BYO wallet.
+ *  Also supports non-interactive flags (--email, --address) via argv. */
+export async function runInteractiveWallet(argv: string[] = process.argv): Promise<{ address: string; type: 'managed' | 'existing' }> {
+  const emailFlag = argv.indexOf('--email')
+  const addrFlag = argv.indexOf('--address')
+
+  if (emailFlag !== -1 && argv[emailFlag + 1]) {
+    const email = argv[emailFlag + 1]
+    const { address } = await setupWallet(email)
+    console.log(`\u2713 Wallet created: ${address}`)
+    console.log(`  Linked to: ${email}`)
+    console.log('')
+    console.log('  For full wallet features (send, swap, sign):')
+    console.log('    Install Clara MCP: claude mcp add clara -- npx @clara/mcp')
+    return { address, type: 'managed' }
+  }
+
+  if (addrFlag !== -1 && argv[addrFlag + 1]) {
+    const addr = argv[addrFlag + 1]
+    if (!isValidAddress(addr)) {
+      console.error(`Invalid Ethereum address: ${addr}`)
+      process.exit(1)
+    }
+    registerWallet(addr)
+    console.log(`\u2713 Wallet registered: ${addr}`)
+    console.log('  Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
+    return { address: addr, type: 'existing' }
+  }
+
+  // Interactive
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const ask = (q: string): Promise<string> => new Promise(resolve => rl.question(q, resolve))
+
+  console.log('')
+  console.log('  How do you want to set up your wallet?')
+  console.log('')
+  console.log('  1. Create a managed wallet (recommended)')
+  console.log('     Email-based. No private keys to manage. Claim tokens with one command.')
+  console.log('')
+  console.log('  2. Use your own wallet')
+  console.log('     Bring an existing Ethereum address. You\'ll need your private key to claim.')
+  console.log('')
+
+  const choice = await ask('  Choice [1]: ')
+  const picked = choice.trim() || '1'
+
+  if (picked === '1') {
+    const email = await ask('  Email: ')
+    if (!email.trim() || !email.includes('@')) {
+      rl.close()
+      console.error('  Invalid email.')
+      process.exit(1)
+    }
+    console.log('')
+    console.log('  Sending verification code...')
+    const { sessionId } = await initWalletVerification(email.trim())
+    console.log('  ✓ Code sent! Check your email.')
+    console.log('')
+    const code = await ask('  Verification code: ')
+    rl.close()
+    if (!code.trim()) {
+      console.error('  No code entered.')
+      process.exit(1)
+    }
+    const { address } = await verifyAndCreateWallet(email.trim(), code.trim(), sessionId)
+    console.log('')
+    console.log(`\u2713 Wallet created: ${address}`)
+    console.log(`  Linked to: ${email.trim()}`)
+    console.log('')
+    console.log('  For full wallet features (send, swap, sign):')
+    console.log('    Install Clara MCP: claude mcp add clara -- npx @clara/mcp')
+    return { address, type: 'managed' }
+  } else {
+    const addr = await ask('  Ethereum address (0x...): ')
+    rl.close()
+    if (!isValidAddress(addr.trim())) {
+      console.error('  Invalid Ethereum address.')
+      process.exit(1)
+    }
+    registerWallet(addr.trim())
+    console.log('')
+    console.log(`\u2713 Wallet registered: ${addr.trim()}`)
+    console.log('  Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
+    return { address: addr.trim(), type: 'existing' }
+  }
+}
+
+/** Step 1: Initiate email verification — Para sends OTP to the email */
+export async function initWalletVerification(email: string): Promise<{ sessionId: string }> {
+  const res = await fetch(`${PROXY_URL}/pollen/wallet/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Failed to send verification code: ${text}`)
+  }
+  return await res.json() as { sessionId: string }
+}
+
+/** Step 2: Verify OTP code and create/recover wallet */
+export async function verifyAndCreateWallet(
+  email: string, code: string, sessionId: string
+): Promise<{ walletId: string; address: string }> {
+  const res = await fetch(`${PROXY_URL}/pollen/wallet/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code, sessionId }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Verification failed: ${text}`)
+  }
+  const { walletId, address } = await res.json() as { walletId: string; address: string }
+
+  // Save to config
+  const config = loadConfig() ?? { contributor_id: getOrCreateContributorId() }
+  config.para_wallet = { wallet_id: walletId, address, email }
+  config.wallet_address = address  // backward compat
+  saveConfig(config)
+
+  return { walletId, address }
+}
+
+/** Legacy: Create or recover a Para wallet via Clara proxy (no OTP, for scripted use) */
 export async function setupWallet(email: string): Promise<{ walletId: string; address: string }> {
   const res = await fetch(`${PROXY_URL}/pollen/wallet`, {
     method: 'POST',

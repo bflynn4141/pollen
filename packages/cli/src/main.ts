@@ -18,10 +18,10 @@ import {
 import { syncToNeon } from './sync.js'
 import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
-import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress } from './config.js'
-import { createInterface } from 'node:readline'
+import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
 import { formatUnits } from 'viem'
 import { fetchEarnings, renderEarnings } from './earnings.js'
+import { fetchPoints, renderPoints } from './points.js'
 
 function openDb() {
   try {
@@ -123,6 +123,12 @@ try {
       runStatus()
       break
     }
+    case 'setup': {
+      const { runSetup } = await import('./setup.js')
+      const demo = process.argv.includes('--demo')
+      await runSetup(demo)
+      break
+    }
     case 'earnings': {
       const connStr = process.env.NEON_DATABASE_URL
       if (!connStr) {
@@ -135,6 +141,21 @@ try {
         console.log('No pollen config found. Run `pollen verify` to set up identity.')
       } else {
         console.log(renderEarnings(data))
+      }
+      break
+    }
+    case 'points': {
+      const connStr = process.env.NEON_DATABASE_URL
+      if (!connStr) {
+        console.error('Set NEON_DATABASE_URL to view points. Example:')
+        console.error('  export NEON_DATABASE_URL="postgresql://..."')
+        process.exit(1)
+      }
+      const data = await fetchPoints(connStr)
+      if (!data) {
+        console.log('No pollen config found. Run `pollen verify` to set up identity.')
+      } else {
+        console.log(renderPoints(data))
       }
       break
     }
@@ -157,83 +178,7 @@ try {
       break
     }
     case 'wallet': {
-      const emailFlag = process.argv.indexOf('--email')
-      const addrFlag = process.argv.indexOf('--address')
-
-      if (emailFlag !== -1 && process.argv[emailFlag + 1]) {
-        // Direct: pollen wallet --email user@example.com
-        const email = process.argv[emailFlag + 1]
-        try {
-          const { address } = await setupWallet(email)
-          console.log(`\u2713 Wallet created: ${address}`)
-          console.log(`  Linked to: ${email}`)
-          console.log('')
-          console.log('  For full wallet features (send, swap, sign):')
-          console.log('    Install Clara MCP: claude mcp add clara -- npx @clara/mcp')
-        } catch (err: any) {
-          console.error(`Wallet setup failed: ${err.message}`)
-          process.exit(1)
-        }
-      } else if (addrFlag !== -1 && process.argv[addrFlag + 1]) {
-        // Direct: pollen wallet --address 0x...
-        const addr = process.argv[addrFlag + 1]
-        if (!isValidAddress(addr)) {
-          console.error(`Invalid Ethereum address: ${addr}`)
-          process.exit(1)
-        }
-        registerWallet(addr)
-        console.log(`\u2713 Wallet registered: ${addr}`)
-        console.log('  Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
-      } else {
-        // Interactive
-        const rl = createInterface({ input: process.stdin, output: process.stdout })
-        const ask = (q: string): Promise<string> => new Promise(resolve => rl.question(q, resolve))
-
-        console.log('')
-        console.log('  How do you want to set up your wallet?')
-        console.log('')
-        console.log('  1. Create a managed wallet (recommended)')
-        console.log('     Email-based. No private keys to manage. Claim tokens with one command.')
-        console.log('')
-        console.log('  2. Use your own wallet')
-        console.log('     Bring an existing Ethereum address. You\'ll need your private key to claim.')
-        console.log('')
-
-        const choice = await ask('  Choice [1]: ')
-        const picked = choice.trim() || '1'
-
-        if (picked === '1') {
-          const email = await ask('  Email: ')
-          rl.close()
-          if (!email.trim() || !email.includes('@')) {
-            console.error('  Invalid email.')
-            process.exit(1)
-          }
-          try {
-            const { address } = await setupWallet(email.trim())
-            console.log('')
-            console.log(`\u2713 Wallet created: ${address}`)
-            console.log(`  Linked to: ${email.trim()}`)
-            console.log('')
-            console.log('  For full wallet features (send, swap, sign):')
-            console.log('    Install Clara MCP: claude mcp add clara -- npx @clara/mcp')
-          } catch (err: any) {
-            console.error(`  Wallet setup failed: ${err.message}`)
-            process.exit(1)
-          }
-        } else {
-          const addr = await ask('  Ethereum address (0x...): ')
-          rl.close()
-          if (!isValidAddress(addr.trim())) {
-            console.error('  Invalid Ethereum address.')
-            process.exit(1)
-          }
-          registerWallet(addr.trim())
-          console.log('')
-          console.log(`\u2713 Wallet registered: ${addr.trim()}`)
-          console.log('  Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
-        }
-      }
+      await runInteractiveWallet()
       break
     }
     case 'claim': {
@@ -308,6 +253,8 @@ try {
         'Usage: pollen <command>',
         '',
         'Commands:',
+        '  setup           Guided onboarding — hooks, wallet, everything',
+        '  setup --demo    Same flow, nothing written to disk (for demos)',
         '  stats       Summary dashboard',
         '  intents     Intent distribution',
         '  languages   Language breakdown',
@@ -325,6 +272,7 @@ try {
         '  verify      Prove you are a unique human via World ID',
         '  status      Show contributor identity + verification status',
         '  earnings    Show credits, token balance, and claimable revenue',
+        '  points      Simulated POLLEN balance (same math as real distribution)',
         '  wallet      Set up a wallet (managed or bring-your-own)',
         '  register    Link an Ethereum wallet: pollen register <address>',
         '  claim       Claim POLLEN tokens for completed epochs',
