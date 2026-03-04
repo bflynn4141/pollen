@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { SUBJECT_MODEL } from './config.js'
 
 const SYSTEM_PROMPT =
   'Extract a 3-5 word subject describing what the user is building or working on. ' +
@@ -12,7 +13,7 @@ export async function extractSubject(promptText: string): Promise<string | null>
 
   const client = new Anthropic({ apiKey })
   const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: SUBJECT_MODEL,
     max_tokens: 30,
     messages: [{ role: 'user', content: promptText }],
     system: SYSTEM_PROMPT,

@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import type { Contribution, CoarsenedToolEvent, SessionRecord } from './types.js'
 import { migrateSchema } from './migrate.js'
+import { MS_PER_DAY } from './config.js'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS contributions (
@@ -152,7 +153,7 @@ export function queryIntentDistribution(db: Database.Database, days?: number): I
   let sql = 'SELECT intent, COUNT(*) as count FROM contributions'
   const params: unknown[] = []
   if (days) {
-    const cutoff = Date.now() - days * 86400000
+    const cutoff = Date.now() - days * MS_PER_DAY
     sql += ' WHERE timestamp > ?'
     params.push(cutoff)
   }
@@ -211,7 +212,7 @@ export function queryTimePatterns(db: Database.Database): { byHour: TimeRow[]; b
 
 export interface TrendRow { date: string; count: number }
 export function queryTrends(db: Database.Database, days = 7): TrendRow[] {
-  const cutoff = Date.now() - days * 86400000
+  const cutoff = Date.now() - days * MS_PER_DAY
   return db.prepare(`
     SELECT date(timestamp / 1000, 'unixepoch') as date, COUNT(*) as count
     FROM contributions
@@ -279,7 +280,7 @@ export function queryToolFrequency(db: Database.Database, days?: number): ToolFr
   `
   const params: unknown[] = []
   if (days) {
-    const cutoff = Date.now() - days * 86400000
+    const cutoff = Date.now() - days * MS_PER_DAY
     sql += ' WHERE timestamp > ?'
     params.push(cutoff)
   }
@@ -497,7 +498,7 @@ export function queryTopicDistribution(db: Database.Database, days?: number): To
   let sql = 'SELECT topic, COUNT(*) as count FROM contributions WHERE topic IS NOT NULL'
   const params: unknown[] = []
   if (days) {
-    const cutoff = Date.now() - days * 86400000
+    const cutoff = Date.now() - days * MS_PER_DAY
     sql += ' AND timestamp > ?'
     params.push(cutoff)
   }
@@ -510,7 +511,7 @@ export function queryActionDistribution(db: Database.Database, days?: number): A
   let sql = 'SELECT action, COUNT(*) as count FROM contributions WHERE action IS NOT NULL'
   const params: unknown[] = []
   if (days) {
-    const cutoff = Date.now() - days * 86400000
+    const cutoff = Date.now() - days * MS_PER_DAY
     sql += ' AND timestamp > ?'
     params.push(cutoff)
   }
@@ -566,6 +567,80 @@ export function querySatisfactionByIntent(db: Database.Database): SatisfactionBy
     GROUP BY dominant_intent
     ORDER BY session_count DESC
   `).all() as SatisfactionByIntentRow[]
+}
+
+// --- Interactive dashboard queries ---
+
+export interface SessionSummaryFullRow {
+  session_id: string
+  started_at: number
+  ended_at: number | null
+  duration_bucket: string | null
+  prompt_count: number
+  tool_use_count: number
+  tool_failure_count: number
+  dominant_intent: string | null
+  dominant_domain: string | null
+  outcome: string | null
+  satisfaction_score: number | null
+  subject: string | null
+  languages_used: string | null
+  unique_tools: string | null
+  mcp_servers_used: string | null
+}
+
+export function querySessionSummariesFull(db: Database.Database, limit = 100): SessionSummaryFullRow[] {
+  return db.prepare(`
+    SELECT session_id, started_at, ended_at, duration_bucket,
+      prompt_count, tool_use_count, tool_failure_count,
+      dominant_intent, dominant_domain, outcome,
+      satisfaction_score, subject, languages_used, unique_tools, mcp_servers_used
+    FROM sessions
+    ORDER BY started_at DESC
+    LIMIT ?
+  `).all(limit) as SessionSummaryFullRow[]
+}
+
+export function querySessionContributions(
+  db: Database.Database, sessionId: string
+): Record<string, unknown>[] {
+  return db.prepare(
+    'SELECT * FROM contributions WHERE session_id = ? ORDER BY timestamp'
+  ).all(sessionId) as Record<string, unknown>[]
+}
+
+export interface SessionToolSummaryRow {
+  tool_name: string
+  count: number
+  success_count: number
+}
+
+export function querySessionToolSummary(
+  db: Database.Database, sessionId: string
+): SessionToolSummaryRow[] {
+  return db.prepare(`
+    SELECT tool_name, COUNT(*) as count,
+      SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) as success_count
+    FROM tool_events WHERE session_id = ?
+    GROUP BY tool_name ORDER BY count DESC
+  `).all(sessionId) as SessionToolSummaryRow[]
+}
+
+export interface FieldCountRow {
+  value: string
+  count: number
+}
+
+export function querySessionFieldCounts(
+  db: Database.Database, sessionId: string, field: string
+): FieldCountRow[] {
+  const allowed = ['intent', 'complexity', 'prompt_style', 'domain', 'action', 'topic']
+  if (!allowed.includes(field)) return []
+  return db.prepare(`
+    SELECT ${field} as value, COUNT(*) as count
+    FROM contributions WHERE session_id = ? AND ${field} IS NOT NULL
+    GROUP BY ${field} ORDER BY count DESC
+  `).all(sessionId) as FieldCountRow[]
 }
 
 export interface SatisfactionOverviewRow {

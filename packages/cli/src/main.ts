@@ -1,8 +1,7 @@
-import { join } from 'node:path'
 import {
   initDb, getStats,
-  queryIntentDistribution, queryLanguageDistribution, queryToolUsage,
-  querySessionStats, queryTimePatterns, queryTrends,
+  queryIntentDistribution, queryLanguageDistribution,
+  queryTimePatterns, queryTrends,
   queryToolFrequency, queryToolPairs, queryToolFailures, queryToolTriples,
   querySessionSummaries, querySessionArcs,
   queryMcpServerUsage, queryProjectDistribution,
@@ -10,7 +9,7 @@ import {
   querySatisfactionByIntent, querySatisfactionOverview,
 } from './store.js'
 import {
-  renderStats, renderIntents, renderLanguages, renderTools, renderSessions, renderWhen, renderTrends,
+  renderStats, renderIntents, renderLanguages, renderWhen, renderTrends,
   renderToolFrequency, renderToolPairs, renderToolFailures, renderToolTriples,
   renderSessionSummaries, renderSessionArcs,
   renderMcpServers, renderProjects,
@@ -18,8 +17,7 @@ import {
 } from './query.js'
 import { syncToNeon } from './sync.js'
 import { backfillSubjects } from './backfill-subjects.js'
-
-const DB_PATH = join(process.env.HOME ?? '~', '.pollen', 'local.db')
+import { DB_PATH } from './config.js'
 
 function openDb() {
   try {
@@ -104,13 +102,14 @@ try {
       console.log(`Done: ${result.filled} filled, ${result.skipped} skipped (${result.total} total)`)
       break
     }
-    // Legacy aliases
-    case 'tools-legacy':
-      console.log(renderTools(queryToolUsage(db)))
+    case 'my': {
+      const { render } = await import('ink')
+      const { MyApp } = await import('./ui/MyApp.js')
+      const { createElement } = await import('react')
+      const app = render(createElement(MyApp, { db }))
+      await app.waitUntilExit()
       break
-    case 'sessions-legacy':
-      console.log(renderSessions(querySessionStats(db)))
-      break
+    }
     default:
       console.log([
         'Usage: pollen <command>',
@@ -128,6 +127,7 @@ try {
         '  sessions    Session summaries + workflow arcs',
         '  when        Time patterns',
         '  trends [n]  Daily trends (last n days, default 7)',
+        '  my          Interactive dashboard — see exactly what you\'ve contributed',
         '  sync        Push local data to Neon (needs NEON_DATABASE_URL)',
         '  backfill-subjects  Extract subjects for existing sessions (needs ANTHROPIC_API_KEY)',
       ].join('\n'))

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Inter } from "next/font/google";
+import { Space_Grotesk, Inter } from "next/font/google";
 import "./globals.css";
 
-const playfair = Playfair_Display({
+const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-playfair",
+  variable: "--font-space-grotesk",
 });
 
 const inter = Inter({
@@ -15,22 +15,21 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Pollen — Prompt Intelligence Network",
+  title: "Prompt Trends — The Shared Intelligence Network",
   description:
-    "Your prompts pollinate shared intelligence. Opt in, contribute anonymized prompt features, and earn crypto.",
+    "Your prompts have value. Install one MCP server. Contribute anonymized intents, tool calls, command patterns, and model preferences. Earn tokens when the data is queried.",
   openGraph: {
-    title: "Pollen — Prompt Intelligence Network",
+    title: "Prompt Trends — The Shared Intelligence Network",
     description:
-      "Your prompts pollinate shared intelligence. Opt in via a CLI hook. Prompts are classified locally. Contributors earn crypto.",
+      "Your prompts have value. Contribute anonymized prompt intelligence and earn tokens.",
     type: "website",
-    url: "https://pollen.dev",
-    siteName: "Pollen",
+    siteName: "Prompt Trends",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Pollen — Prompt Intelligence Network",
+    title: "Prompt Trends — The Shared Intelligence Network",
     description:
-      "Your prompts pollinate shared intelligence. Opt in via a CLI hook. Contributors earn crypto.",
+      "Your prompts have value. Contribute anonymized prompt intelligence and earn tokens.",
   },
 };
 
@@ -40,7 +39,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${inter.variable}`}>
+    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable}`}>
       <body>{children}</body>
     </html>
   );

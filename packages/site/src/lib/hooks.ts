@@ -3,17 +3,17 @@
 import { useState, useEffect } from "react";
 
 /**
- * Detects whether the device has a fine pointer (mouse/trackpad).
- * Returns false on touch-only devices → triggers ambient mode.
+ * Detects mobile via viewport width (max-width: 768px).
+ * Responds to browser resize and DevTools device toolbar.
  */
 export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia("(pointer: fine)");
-    setIsMobile(!mq.matches);
+    const mq = window.matchMedia("(max-width: 768px)");
+    setIsMobile(mq.matches);
 
-    const handler = (e: MediaQueryListEvent) => setIsMobile(!e.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);

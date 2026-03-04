@@ -1,38 +1,27 @@
-import FadeInSection from "@/components/ui/FadeInSection";
-import PollenCanvas from "@/components/canvas/PollenCanvas";
-import Hero from "@/components/sections/Hero";
-import HowItWorks from "@/components/sections/HowItWorks";
-import WhatWeCollect from "@/components/sections/WhatWeCollect";
-import LiveStats from "@/components/sections/LiveStats";
-import ForBuyers from "@/components/sections/ForBuyers";
-import Trust from "@/components/sections/Trust";
-import CTAFooter from "@/components/sections/CTAFooter";
+import { NavBar } from '@/components/NavBar'
+import { Hero } from '@/components/Hero'
+import { DataPreview } from '@/components/DataPreview'
+import { HowItWorks } from '@/components/HowItWorks'
+import { DataModel } from '@/components/DataModel'
+import { ForDevelopers } from '@/components/ForDevelopers'
+import { StatsBar } from '@/components/StatsBar'
+import { Trust } from '@/components/Trust'
+import { CtaFooter } from '@/components/CtaFooter'
 
 export default function Home() {
   return (
     <>
-      <PollenCanvas />
-      <main className="relative z-1">
+      <NavBar />
+      <main>
         <Hero />
-        <FadeInSection>
-          <HowItWorks />
-        </FadeInSection>
-        <FadeInSection>
-          <WhatWeCollect />
-        </FadeInSection>
-        <FadeInSection>
-          <LiveStats />
-        </FadeInSection>
-        <FadeInSection>
-          <ForBuyers />
-        </FadeInSection>
-        <FadeInSection>
-          <Trust />
-        </FadeInSection>
-        <FadeInSection>
-          <CTAFooter />
-        </FadeInSection>
+        <DataPreview />
+        <HowItWorks />
+        <DataModel />
+        <ForDevelopers />
+        <StatsBar />
+        <Trust />
+        <CtaFooter />
       </main>
     </>
-  );
+  )
 }

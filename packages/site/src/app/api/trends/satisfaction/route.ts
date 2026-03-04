@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { querySatisfactionTrend } from '@/lib/queries'
-import type { Period } from '@/lib/trends'
+import { parsePeriod } from '@/lib/parse-period'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const period = (searchParams.get('period') ?? '90d') as Period
+  const period = parsePeriod(searchParams.get('period'), '90d')
 
   const data = await querySatisfactionTrend(period)
 
