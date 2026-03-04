@@ -52,9 +52,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${playfair.variable} ${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" className={`${playfair.variable} ${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} light`} style={{ colorScheme: 'light' }}>
       <body>
-        <RootProvider>{children}</RootProvider>
+        <RootProvider forcedTheme="light">{children}</RootProvider>
       </body>
     </html>
   );
