@@ -635,15 +635,16 @@ export async function queryModelUsage(period: Period): Promise<(DashboardItem & 
 // ── Dashboard: Commands ──
 
 export async function queryCommandRanking(period: Period): Promise<(DashboardItem & { command_category: string })[]> {
-  const sql = getDb()
-  const cutoff = periodToMs(period)
-
   try {
+    const sql = getDb()
+    const cutoff = periodToMs(period)
+
     const rows = await sql`
-      SELECT intent as name, COUNT(*) as count
-      FROM contributions
-      WHERE intent IS NOT NULL ${cutoff ? sql`AND timestamp > ${cutoff}` : sql``}
-      GROUP BY intent
+      SELECT command_category as name, COUNT(*) as count
+      FROM tool_events
+      WHERE command_category IS NOT NULL
+        ${cutoff ? sql`AND timestamp > ${cutoff}` : sql``}
+      GROUP BY command_category
       ORDER BY count DESC
     `
 
@@ -651,11 +652,11 @@ export async function queryCommandRanking(period: Period): Promise<(DashboardIte
     if (cutoff) {
       const prevCutoff = cutoff - (Date.now() - cutoff)
       const prevRows = await sql`
-        SELECT intent as name, COUNT(*) as count
-        FROM contributions
-        WHERE intent IS NOT NULL
+        SELECT command_category as name, COUNT(*) as count
+        FROM tool_events
+        WHERE command_category IS NOT NULL
           AND timestamp > ${prevCutoff} AND timestamp <= ${cutoff}
-        GROUP BY intent
+        GROUP BY command_category
       `
       for (const r of prevRows) {
         prevMap.set(r.name as string, Number(r.count))
