@@ -203,7 +203,7 @@ export function DataPreview() {
               {HEADER_LABELS[active]}
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 14 : 20 }}>
               {data.items.map((item, i) => (
                 <AnimatedRow
                   key={`${animKey}-${item.label}`}
