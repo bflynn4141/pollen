@@ -1,6 +1,5 @@
 import { queryTopicDashboard } from '@/lib/queries'
 import type { Period } from '@/lib/trends'
-import StatCards from '@/components/dashboard/StatCards'
 import VolumeChart from '@/components/dashboard/VolumeChart'
 import TrendingList from '@/components/dashboard/TrendingList'
 
@@ -13,59 +12,32 @@ export default async function TopicsPage({ searchParams }: Props) {
   const period = (params.period ?? '30d') as Period
   const items = await queryTopicDashboard(period)
 
-  const total = items.reduce((sum, i) => sum + i.count, 0)
-  const unique = items.length
-  const top = items[0]
-
   return (
-    <div className="space-y-8">
-      <StatCards
-        cards={[
-          {
-            label: 'Total Sessions',
-            value: total.toLocaleString(),
-            subtitle: '+18.3% from last period',
-          },
-          {
-            label: 'Unique Topics',
-            value: unique.toLocaleString(),
-            subtitle: `across ${total.toLocaleString()} sessions`,
-          },
-          {
-            label: 'Top Topic',
-            value: top?.name ?? '—',
-            subtitle: top ? `${top.count.toLocaleString()} sessions this period` : 'No data',
-            variant: 'featured',
-          },
-        ]}
-      />
-
-      <div className="grid grid-cols-[1fr_380px] gap-5">
-        <div
-          className="rounded-xl p-6"
-          style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
-        >
-          <VolumeChart
-            title="Topic Volume"
-            items={items.map(i => ({ name: i.name, count: i.count }))}
-            color="var(--bar-topics)"
-            labelWidth={130}
-          />
-        </div>
-        <div
-          className="rounded-xl p-6"
-          style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
-        >
-          <TrendingList
-            title="Trending Topics"
-            items={items.map(i => ({
-              name: i.name,
-              changePercent: i.changePercent,
-              count: i.count,
-              trend: i.trend,
-            }))}
-          />
-        </div>
+    <div className="grid grid-cols-[1fr_380px] gap-5">
+      <div
+        className="rounded-xl p-6"
+        style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
+      >
+        <VolumeChart
+          title="Topic Volume"
+          items={items.map(i => ({ name: i.name, count: i.count }))}
+          color="var(--bar-topics)"
+          labelWidth={130}
+        />
+      </div>
+      <div
+        className="rounded-xl p-6"
+        style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
+      >
+        <TrendingList
+          title="Trending Topics"
+          items={items.map(i => ({
+            name: i.name,
+            changePercent: i.changePercent,
+            count: i.count,
+            trend: i.trend,
+          }))}
+        />
       </div>
     </div>
   )

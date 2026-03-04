@@ -524,6 +524,33 @@ function calcTrends(rows: Record<string, unknown>[], prevMap: Map<string, number
   })
 }
 
+// ── Dashboard: Global Stats ──
+
+export async function queryDashboardStats(): Promise<{
+  totalSessions: number
+  totalPrompts: number
+  totalToolEvents: number
+}> {
+  try {
+    const sql = getDb()
+    const cutoff = periodToMs('30d')
+
+    const [sessions, prompts, tools] = await Promise.all([
+      sql`SELECT COUNT(*) as c FROM sessions ${cutoff ? sql`WHERE started_at > ${cutoff}` : sql``}`,
+      sql`SELECT COUNT(*) as c FROM contributions ${cutoff ? sql`WHERE timestamp > ${cutoff}` : sql``}`,
+      sql`SELECT COUNT(*) as c FROM tool_events ${cutoff ? sql`WHERE timestamp > ${cutoff}` : sql``}`,
+    ])
+
+    return {
+      totalSessions: Number(sessions[0].c),
+      totalPrompts: Number(prompts[0].c),
+      totalToolEvents: Number(tools[0].c),
+    }
+  } catch {
+    return { totalSessions: 0, totalPrompts: 0, totalToolEvents: 0 }
+  }
+}
+
 // ── Dashboard: Topics ──
 
 export async function queryTopicDashboard(period: Period): Promise<DashboardItem[]> {

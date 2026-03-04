@@ -47,7 +47,7 @@ export function NavBar() {
         </a>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-          <a href="/trends" style={linkStyle}>
+          <a href="/trends/topics" style={linkStyle}>
             Dashboard
           </a>
           <a href="#how-it-works" style={linkStyle}>

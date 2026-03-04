@@ -1,8 +1,12 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
 import DashboardTabs from '@/components/dashboard/DashboardTabs'
+import StatCards from '@/components/dashboard/StatCards'
+import { queryDashboardStats } from '@/lib/queries'
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const stats = await queryDashboardStats()
+
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
       <div className="mx-auto max-w-[1280px] px-10 pt-10 pb-16">
@@ -49,8 +53,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        {/* Tab navigation */}
-        <div className="mt-6">
+        {/* Stat cards — consistent across all tabs */}
+        <div className="mt-8">
+          <StatCards
+            cards={[
+              {
+                label: 'Total Sessions',
+                value: stats.totalSessions.toLocaleString(),
+                subtitle: 'Last 30 days',
+              },
+              {
+                label: 'Prompt Volume',
+                value: stats.totalPrompts.toLocaleString(),
+                subtitle: 'Captured contributions',
+              },
+              {
+                label: 'Tool Events',
+                value: stats.totalToolEvents.toLocaleString(),
+                subtitle: 'MCP + built-in calls',
+              },
+            ]}
+          />
+        </div>
+
+        {/* Tab navigation — below stat cards */}
+        <div className="mt-8">
           <Suspense fallback={null}>
             <DashboardTabs />
           </Suspense>
