@@ -3,7 +3,7 @@ import type {
   Period, TimePoint, OverviewResponse, TopicTrendItem, ActionTrendItem,
   ToolRankItem, McpRankItem, HeatmapCell, SessionArc, SessionListItem,
   CompareItem, SubjectExploreResponse, SubjectAutocompleteItem,
-  SubjectTrendingItem, SubjectSessionItem,
+  SubjectTrendingItem, SubjectSessionItem, DashboardItem,
 } from './trends'
 import { periodToMs, bucketInterval } from './parse-period'
 
@@ -499,6 +499,189 @@ export async function querySubjectTrending(period: Period): Promise<SubjectTrend
       growth = Math.round(((count - prev) / prev) * 100)
     }
     return { subject, count, growth }
+  })
+}
+
+// ── Dashboard: Topics ──
+
+export async function queryTopicDashboard(period: Period): Promise<DashboardItem[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT topic as name, COUNT(*) as count
+    FROM contributions
+    WHERE topic IS NOT NULL ${cutoff ? sql`AND timestamp > ${cutoff}` : sql``}
+    GROUP BY topic
+    ORDER BY count DESC
+  `
+
+  let prevMap = new Map<string, number>()
+  if (cutoff) {
+    const prevCutoff = cutoff - (Date.now() - cutoff)
+    const prevRows = await sql`
+      SELECT topic as name, COUNT(*) as count
+      FROM contributions
+      WHERE topic IS NOT NULL
+        AND timestamp > ${prevCutoff} AND timestamp <= ${cutoff}
+      GROUP BY topic
+    `
+    for (const r of prevRows) {
+      prevMap.set(r.name as string, Number(r.count))
+    }
+  }
+
+  return rows.map(r => {
+    const name = r.name as string
+    const count = Number(r.count)
+    const prev = prevMap.get(name) ?? 0
+    let trend: 'up' | 'down' | 'stable' = 'stable'
+    let changePercent: number | null = null
+    if (prev > 0) {
+      changePercent = Math.round(((count - prev) / prev) * 100)
+      if (changePercent > 10) trend = 'up'
+      else if (changePercent < -10) trend = 'down'
+    } else if (count > 0) {
+      trend = 'up'
+    }
+    return { name, count, changePercent, trend }
+  })
+}
+
+// ── Dashboard: Tools ──
+
+export async function queryToolDashboard(period: Period): Promise<DashboardItem[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT tool_name as name, COUNT(*) as count
+    FROM tool_events
+    ${cutoff ? sql`WHERE timestamp > ${cutoff}` : sql``}
+    GROUP BY tool_name
+    ORDER BY count DESC
+  `
+
+  let prevMap = new Map<string, number>()
+  if (cutoff) {
+    const prevCutoff = cutoff - (Date.now() - cutoff)
+    const prevRows = await sql`
+      SELECT tool_name as name, COUNT(*) as count
+      FROM tool_events
+      WHERE timestamp > ${prevCutoff} AND timestamp <= ${cutoff}
+      GROUP BY tool_name
+    `
+    for (const r of prevRows) {
+      prevMap.set(r.name as string, Number(r.count))
+    }
+  }
+
+  return rows.map(r => {
+    const name = r.name as string
+    const count = Number(r.count)
+    const prev = prevMap.get(name) ?? 0
+    let trend: 'up' | 'down' | 'stable' = 'stable'
+    let changePercent: number | null = null
+    if (prev > 0) {
+      changePercent = Math.round(((count - prev) / prev) * 100)
+      if (changePercent > 10) trend = 'up'
+      else if (changePercent < -10) trend = 'down'
+    } else if (count > 0) {
+      trend = 'up'
+    }
+    return { name, count, changePercent, trend }
+  })
+}
+
+// ── Dashboard: Models ──
+
+export async function queryModelUsage(period: Period): Promise<(DashboardItem & { model: string })[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT model as name, COUNT(*) as count
+    FROM sessions
+    WHERE model IS NOT NULL ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY model
+    ORDER BY count DESC
+  `
+
+  let prevMap = new Map<string, number>()
+  if (cutoff) {
+    const prevCutoff = cutoff - (Date.now() - cutoff)
+    const prevRows = await sql`
+      SELECT model as name, COUNT(*) as count
+      FROM sessions
+      WHERE model IS NOT NULL
+        AND started_at > ${prevCutoff} AND started_at <= ${cutoff}
+      GROUP BY model
+    `
+    for (const r of prevRows) {
+      prevMap.set(r.name as string, Number(r.count))
+    }
+  }
+
+  return rows.map(r => {
+    const name = r.name as string
+    const count = Number(r.count)
+    const prev = prevMap.get(name) ?? 0
+    let trend: 'up' | 'down' | 'stable' = 'stable'
+    let changePercent: number | null = null
+    if (prev > 0) {
+      changePercent = Math.round(((count - prev) / prev) * 100)
+      if (changePercent > 10) trend = 'up'
+      else if (changePercent < -10) trend = 'down'
+    } else if (count > 0) {
+      trend = 'up'
+    }
+    return { name, count, changePercent, trend, model: name }
+  })
+}
+
+// ── Dashboard: Commands ──
+
+export async function queryCommandRanking(period: Period): Promise<(DashboardItem & { command_category: string })[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT command_category as name, COUNT(*) as count
+    FROM contributions
+    WHERE command_category IS NOT NULL ${cutoff ? sql`AND timestamp > ${cutoff}` : sql``}
+    GROUP BY command_category
+    ORDER BY count DESC
+  `
+
+  let prevMap = new Map<string, number>()
+  if (cutoff) {
+    const prevCutoff = cutoff - (Date.now() - cutoff)
+    const prevRows = await sql`
+      SELECT command_category as name, COUNT(*) as count
+      FROM contributions
+      WHERE command_category IS NOT NULL
+        AND timestamp > ${prevCutoff} AND timestamp <= ${cutoff}
+      GROUP BY command_category
+    `
+    for (const r of prevRows) {
+      prevMap.set(r.name as string, Number(r.count))
+    }
+  }
+
+  return rows.map(r => {
+    const name = r.name as string
+    const count = Number(r.count)
+    const prev = prevMap.get(name) ?? 0
+    let trend: 'up' | 'down' | 'stable' = 'stable'
+    let changePercent: number | null = null
+    if (prev > 0) {
+      changePercent = Math.round(((count - prev) / prev) * 100)
+      if (changePercent > 10) trend = 'up'
+      else if (changePercent < -10) trend = 'down'
+    } else if (count > 0) {
+      trend = 'up'
+    }
+    return { name, count, changePercent, trend, command_category: name }
   })
 }
 

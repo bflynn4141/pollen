@@ -1,6 +1,13 @@
 // Shared types for the /api/trends/* responses
 
-export type Period = '7d' | '30d' | '90d' | 'all'
+export type Period = '24h' | '7d' | '30d' | '90d' | 'all'
+
+export interface DashboardItem {
+  name: string
+  count: number
+  changePercent: number | null
+  trend: 'up' | 'down' | 'stable'
+}
 
 export interface TimePoint {
   date: string
