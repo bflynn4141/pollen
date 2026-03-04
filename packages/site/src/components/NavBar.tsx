@@ -1,9 +1,12 @@
 'use client'
 
+import { usePathname } from 'next/navigation'
 import { useIsMobile } from '@/lib/hooks'
 
 export function NavBar() {
   const isMobile = useIsMobile()
+  const pathname = usePathname()
+  const onDashboard = pathname.startsWith('/trends/')
 
   return (
     <nav
@@ -32,7 +35,7 @@ export function NavBar() {
 
       {isMobile ? (
         <a
-          href="#for-developers"
+          href="/docs"
           style={{
             fontSize: 12,
             fontWeight: 600,
@@ -43,18 +46,32 @@ export function NavBar() {
             border: '1px solid var(--accent)',
           }}
         >
-          For Developers
+          Docs
         </a>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-          <a href="/trends/topics" style={linkStyle}>
+          <a
+            href="/trends/topics"
+            style={{
+              ...linkStyle,
+              fontWeight: onDashboard ? 600 : 500,
+              color: onDashboard ? '#1A1A1A' : 'var(--text-secondary)',
+            }}
+          >
             Dashboard
           </a>
-          <a href="#how-it-works" style={linkStyle}>
+          <a href={onDashboard ? '/#how-it-works' : '#how-it-works'} style={linkStyle}>
             How It Works
           </a>
-          <a href="#for-developers" style={{ ...linkStyle, color: 'var(--accent)' }}>
-            For Developers
+          <a
+            href="/docs"
+            style={{
+              ...linkStyle,
+              fontWeight: pathname.startsWith('/docs') ? 600 : 500,
+              color: pathname.startsWith('/docs') ? '#1A1A1A' : 'var(--accent)',
+            }}
+          >
+            Docs
           </a>
           <a
             href="https://github.com/bflynn4141/pollen"

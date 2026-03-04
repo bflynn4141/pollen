@@ -164,7 +164,7 @@ export function ForDevelopers() {
           }}
         >
           <a
-            href="#"
+            href="/docs/developers/trends-api"
             style={{
               padding: '12px 28px',
               fontSize: 15,
