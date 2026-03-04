@@ -60,9 +60,6 @@ export function NavBar() {
           >
             Dashboard
           </a>
-          <a href={onDashboard ? '/#how-it-works' : '#how-it-works'} style={linkStyle}>
-            How It Works
-          </a>
           <a
             href="/docs"
             style={{
