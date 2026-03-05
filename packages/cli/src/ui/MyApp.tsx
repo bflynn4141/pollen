@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Box, Text, useApp } from 'ink'
 import { StatsHeader } from './StatsHeader.js'
 import { SessionList } from './SessionList.js'

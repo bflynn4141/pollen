@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { COPPER, MUTED, TEXT_DIM } from './theme.js'
 import type { SessionSummaryFullRow } from '../store.js'

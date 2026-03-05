@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { COPPER, MUTED, TEXT_DIM, syncIndicator, BOX } from './theme.js'
 import type { SessionToolSummaryRow, FieldCountRow } from '../store.js'
