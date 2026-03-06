@@ -1,0 +1,30 @@
+{
+  "network": "base-mainnet",
+  "chainId": 8453,
+  "deployedAt": "2026-03-05",
+  "deployer": "0x284A5164DdCBD9efA82c3dA87b8C2eae72e8e9dD",
+  "contracts": {
+    "PollenToken": {
+      "address": "0xFa8B0e3DcC0788d4a6b5fEEFBe9FF03f596DD2ED",
+      "revenueToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "initialMints": [
+        {
+          "to": "0x9C87d52543A57B1a02eeD0497D43bDb87D0B175c",
+          "amount": "50000",
+          "label": "Brian (primary contributor)"
+        },
+        {
+          "to": "0x284A5164DdCBD9efA82c3dA87b8C2eae72e8e9dD",
+          "amount": "5000",
+          "label": "Demo wallet"
+        }
+      ]
+    },
+    "PollenSettlement": {
+      "address": "0x3ECa3185dE4622b65B2EF4dDc2dB6E7d0cB1B672",
+      "pollenToken": "0xFa8B0e3DcC0788d4a6b5fEEFBe9FF03f596DD2ED",
+      "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "revenueSplit": "100% to POLLEN holders"
+    }
+  }
+}

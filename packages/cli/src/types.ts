@@ -178,6 +178,17 @@ export interface ResponseMeta {
   has_error_mention: boolean
 }
 
+export interface IVSBreakdown {
+  subject: number
+  topicAction: number
+  tools: number
+  commands: number
+  freshness: number
+  depth: number
+  sequenceEntropy: number
+  authenticityMultiplier: number
+}
+
 export interface TermDictionary {
   error_terms: string[]
   build_terms: string[]

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Box, Text, useApp } from 'ink'
 import { StatsHeader } from './StatsHeader.js'
 import { SessionList } from './SessionList.js'
@@ -25,6 +25,13 @@ export function MyApp({ db }: Props) {
   const { exit } = useApp()
   const [view, setView] = useState<View>({ screen: 'list' })
   const [listIndex, setListIndex] = useState(0)
+  const [tick, setTick] = useState(0)
+
+  // Poll SQLite every 2s so new hook data appears live
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 2000)
+    return () => clearInterval(id)
+  }, [])
 
   const stats = getStats(db)
   const sessions = querySessionSummariesFull(db, 100)

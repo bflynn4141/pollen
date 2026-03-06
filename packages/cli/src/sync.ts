@@ -6,6 +6,7 @@ interface SyncResult {
   contributions: number
   tool_events: number
   sessions: number
+  scored: number
 }
 
 export async function syncToNeon(db: Database.Database, connectionString: string): Promise<SyncResult> {
@@ -152,6 +153,7 @@ export async function syncToNeon(db: Database.Database, connectionString: string
     contributions: contribCount,
     tool_events: toolCount,
     sessions: sessionCount,
+    scored: 0,
   }
 }
 

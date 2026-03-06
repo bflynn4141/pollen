@@ -20,8 +20,6 @@ import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
 import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
 import { formatUnits } from 'viem'
-import { fetchEarnings, renderEarnings } from './earnings.js'
-import { fetchPoints, renderPoints } from './points.js'
 
 function openDb() {
   try {
@@ -136,6 +134,7 @@ try {
         console.error('  export NEON_DATABASE_URL="postgresql://..."')
         process.exit(1)
       }
+      const { fetchEarnings, renderEarnings } = await import('./earnings.js')
       const data = await fetchEarnings(connStr)
       if (!data) {
         console.log('No pollen config found. Run `pollen verify` to set up identity.')
@@ -151,6 +150,7 @@ try {
         console.error('  export NEON_DATABASE_URL="postgresql://..."')
         process.exit(1)
       }
+      const { fetchPoints, renderPoints } = await import('./points.js')
       const data = await fetchPoints(connStr)
       if (!data) {
         console.log('No pollen config found. Run `pollen verify` to set up identity.')
