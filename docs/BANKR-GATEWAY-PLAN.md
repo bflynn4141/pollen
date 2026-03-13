@@ -1,221 +1,320 @@
-# Bankr LLM Gateway Integration Plan
+# POLLEN Token via Bankr + LLM Gateway Integration Plan
 
-> Integrate Bankr's LLM Gateway into Pollen so the network can self-fund its
-> own AI compute costs while giving contributors a token with real utility.
+> Deploy $POLLEN via Bankr/Clanker on Base, use Bankr LLM Gateway for compute,
+> and market to the Bankr user base.
+
+## Strategy
+
+**Deploy POLLEN as the native token using Bankr.** Bankr deploys tokens via
+Clanker on Base — this gives us instant Uniswap V3 liquidity, swap fee revenue
+to the creator wallet, and visibility across the Bankr/Farcaster ecosystem.
+Bankr users are already crypto-native AI power users — the exact audience for
+a prompt intelligence network.
 
 ## Current State
 
 | Component | Status |
 |-----------|--------|
-| POLLEN smart contracts (PollenToken.sol, PollenDistributor.sol) | Code exists, **not deployed** |
+| POLLEN smart contracts (custom Forge) | Code exists, **not deployed** |
 | Bankr LLM Gateway | **Live** — unified API for Claude, GPT, Gemini |
 | $BNKR token on Base | **Deployed** — `0x22aF33FE49fD1Fa80c7149773dDe5890D3c76F3b` |
 | Pollen x402 query revenue | **Live** — buyers pay USDC per API query |
-| Pollen scoring (IVS) | Runs locally, no LLM calls needed today |
-
-## The Opportunity
-
-Pollen currently has two places where LLM inference is (or will be) needed:
-
-1. **Contribution scoring** — As the IVS model grows more sophisticated, it
-   may need LLM calls for semantic quality scoring, deduplication, and trend
-   extraction.
-2. **Trend report generation** — Higher-tier API endpoints could use LLM
-   summarization to produce natural-language trend reports for buyers.
-3. **Future MCP query layer (Phase 5)** — Open-ended exploration queries will
-   require LLM reasoning over aggregated data.
-
-Bankr LLM Gateway lets agents pay for inference by holding funds in a Bankr
-wallet. Revenue from x402 query fees can flow into that wallet, creating a
-**self-sustaining compute loop**.
+| Pollen CLI + hooks | **Live** — `npx @pollen/cli` |
 
 ## Architecture
 
 ```
-BUYERS                          POLLEN PLATFORM                    BANKR
-─────                           ───────────────                    ─────
-x402 query ──── USDC ────────▶  Revenue Pool
-                                    │
-                                    ├── 70% → POLLEN holders (contributor rewards)
-                                    ├── 20% → Protocol treasury
-                                    └── 10% → Infrastructure wallet
-                                                │
-                                                ▼
-                                        Bankr Wallet (Base)
-                                                │
-                                                ▼
-                                        Bankr LLM Gateway
-                                         ┌─────────────┐
-                                         │ Claude API   │
-                                         │ GPT API      │
-                                         │ Gemini API   │
-                                         └─────────────┘
-                                                │
-                                                ▼
-                                    IVS scoring / Trend reports
-                                    returned to platform
+BANKR ECOSYSTEM                    POLLEN NETWORK                     BUYERS
+───────────────                    ──────────────                     ──────
+
+@bankrbot deploys                  Pollen Platform                    x402 queries
+$POLLEN on Base ──────────────▶   ┌──────────────┐                   │
+(via Clanker)                      │              │◀──── USDC ────────┘
+                                   │   Revenue    │
+Bankr LLM Gateway ◀── credits ── │    Pool      │
+     │                             │              │
+     ▼                             └──────┬───────┘
+Claude / GPT / Gemini                     │
+     │                                    ├── 70% → POLLEN holders (contributor rewards)
+     ▼                                    ├── 20% → Protocol treasury
+Scoring + trend reports                   └── 10% → Bankr wallet → LLM Gateway credits
+     │
+     ▼
+Better data quality → More buyers → More revenue → Loop
 ```
 
-## Integration Plan
+## Phase 1: Deploy $POLLEN via Bankr (Week 1)
 
-### Phase A: Bankr Wallet + Gateway Setup (Week 1)
+### 1a. Token Launch via Bankr/Clanker
 
-**Goal:** Platform holds a Bankr wallet that can pay for LLM inference.
+Bankr uses [Clanker](https://clanker.world) under the hood for token deployment.
+Two paths:
 
-1. **Create a Pollen platform Bankr wallet**
-   - Use Bankr's headless email OTP flow to provision a wallet
-   - Store the API key as `BANKR_API_KEY` in platform environment
-   - The wallet auto-provisions Base + EVM addresses
+**Option A — Social launch (recommended for visibility):**
+- Tag `@bankrbot` on X or Farcaster with the token concept
+- Bankr deploys $POLLEN as an ERC-20 on Base via Clanker
+- Automatic Uniswap V3 liquidity pool creation
+- Creator wallet receives 0.4% of all swap fees
+- Instant tradability + discoverability on Bankr, DEXScreener, GeckoTerminal
 
-2. **Configure LLM Gateway access**
-   - Set up the LLM Gateway key via `bankr config set llmKey`
-   - Target model: Claude (via `api: "anthropic-messages"` override)
-   - Set rate limits appropriate for platform usage
+**Option B — Programmatic launch via Clawncher SDK:**
+```bash
+npm install -g clawncher
+# or
+npm install @clawnch/clawncher-sdk
+```
+- Deploy with full control over name, symbol, supply, metadata
+- Same Clanker contracts, same liquidity setup
+- Better for precise parameter control
 
-3. **Fund the wallet**
-   - Seed the Bankr wallet with initial USDC from protocol treasury
-   - Configure the infrastructure revenue split (10%) to auto-route to
-     the Bankr wallet address on Base
+### 1b. Token Parameters
 
-4. **Add gateway client to platform**
-   - Create `packages/site/src/lib/bankr-gateway.ts`
-   - Wrap Bankr LLM Gateway as an OpenAI-compatible client
-   - Add cost tracking per-call for transparency
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Name | Pollen | Matches brand |
+| Symbol | POLLEN | Clear, memorable |
+| Chain | Base | Already the target chain for all Pollen infra |
+| Supply | TBD (Clanker default or custom) | Clanker typically does 100B supply |
+| Liquidity | Auto (Uniswap V3 via Clanker) | Immediate tradability |
+| Creator fees | 0.4% of swaps → Pollen treasury | Passive revenue stream |
 
-### Phase B: LLM-Powered Scoring (Weeks 2-3)
+### 1c. Record Token Address
 
-**Goal:** Use Bankr-funded LLM calls to enhance contribution quality scoring.
+After deployment, capture the contract address and update:
+- `POLLEN_TOKEN_ADDRESS` env var on Vercel + platform
+- CLI config to point to the live token
+- Site documentation with contract address + BaseScan link
 
-1. **Semantic quality scoring**
-   - After local IVS scoring, optionally call Claude via Bankr Gateway
-     for a second-pass semantic evaluation on borderline contributions
-   - Score dimensions: novelty, specificity, actionability
-   - Only invoke for contributions where local IVS confidence < 0.7
+### 1d. What Changes in the Codebase
 
-2. **Deduplication enhancement**
-   - Use embeddings (via Gateway) for semantic dedup across contributors
-   - Catches rephrased duplicates that keyword matching misses
+The existing `PollenToken.sol` (custom Forge contract) had built-in revenue
+sharing (`claimRevenue()`, `earned()`, `holdingSince()`). A Clanker-deployed
+token is a standard ERC-20 — so we need to handle distribution differently:
 
-3. **Cost controls**
-   - Budget cap per epoch (e.g., $50/week from infrastructure split)
-   - Fallback to local-only scoring if wallet balance drops below threshold
-   - Track cost-per-contribution for ROI monitoring
+**Keep as-is:**
+- `PollenDistributor.sol` (Merkle-tree distribution) — deploy separately
+  to distribute POLLEN tokens to contributors each epoch
+- `claim.ts` — the Merkle claim flow still works, just points to the
+  Clanker-deployed token address
+- `previewClaim()` — `balanceOf` works on any ERC-20
 
-### Phase C: LLM-Enhanced Trend Reports (Weeks 4-5)
+**Modify:**
+- `claim.ts` — remove `claimRevenue()` calls (revenue sharing moves off-chain
+  or to a separate RevenueDistributor contract)
+- `main.ts` — update the `claim` command messaging to reference Bankr deployment
+- `config.ts` — add `BANKR_API_KEY` and `BANKR_LLM_KEY` to config
 
-**Goal:** Offer premium trend endpoints powered by LLM summarization.
+**New:**
+- `packages/site/src/lib/bankr-gateway.ts` — Bankr LLM Gateway client
+- Revenue distribution via epoch snapshots + Merkle proofs (USDC sent
+  separately from token claims)
 
-1. **New premium endpoints**
-   - `POST /api/trends/report` — LLM-generated natural language summary
-   - `POST /api/trends/insights` — Cross-domain pattern analysis
-   - Higher x402 pricing ($0.05-0.10) to cover LLM compute costs
+## Phase 2: Bankr LLM Gateway for Compute (Weeks 2-3)
 
-2. **Report generation pipeline**
-   - Aggregate raw trend data from existing endpoints
-   - Pass to Claude via Bankr Gateway with structured prompt
-   - Cache results for 1 hour to amortize costs
-   - Revenue from these endpoints feeds back into the Bankr wallet
+### 2a. Set Up Platform Bankr Wallet
 
-3. **Self-sustaining economics**
-   - Premium endpoints generate more revenue than they cost in compute
-   - Surplus flows back to infrastructure wallet → Bankr wallet → more compute
-   - Target: 3x revenue-to-cost ratio on premium endpoints
+1. Create Bankr wallet via headless email OTP flow
+2. Store `BANKR_API_KEY` in platform environment
+3. Configure LLM Gateway key: `bankr config set llmKey`
+4. Seed wallet with USDC from protocol treasury
+5. Wire 10% infrastructure revenue split to auto-fund the wallet
 
-### Phase D: POLLEN Token + BNKR Synergy (Weeks 6-8)
+### 2b. Build Gateway Client
 
-**Goal:** Create token utility that bridges POLLEN and the Bankr ecosystem.
+Create `packages/site/src/lib/bankr-gateway.ts`:
 
-Two options (not mutually exclusive):
+```typescript
+// Bankr LLM Gateway — OpenAI-compatible endpoint
+// Agents pay for inference via Bankr wallet balance
+const BANKR_GATEWAY_URL = 'https://api.bankr.bot/v1' // or equivalent
 
-#### Option 1: POLLEN Token with Bankr Gateway Utility
+export async function callLLM(opts: {
+  model: string          // 'claude-haiku-4-5-20251001' | 'claude-sonnet-4-5-20250514'
+  messages: Message[]
+  maxTokens?: number
+}) {
+  const res = await fetch(`${BANKR_GATEWAY_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.BANKR_LLM_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      messages: opts.messages,
+      max_tokens: opts.maxTokens ?? 1024,
+    }),
+  })
+  return res.json()
+}
+```
 
-Deploy the existing POLLEN smart contracts with an added utility dimension:
+### 2c. Use Cases for LLM Compute
 
-- POLLEN holders can **stake POLLEN to unlock premium API tiers**
-- Contributors who hold POLLEN get **boosted IVS multipliers**
-- Protocol uses Bankr Gateway for all LLM compute (funded by revenue)
-- POLLEN remains the contributor reward + revenue-share token
-- BNKR integration: accept BNKR as an alternative payment method for
-  x402 queries alongside USDC
+| Use Case | Model | Trigger | Est. Cost |
+|----------|-------|---------|-----------|
+| Semantic quality scoring | Haiku | IVS confidence < 0.7 | ~$0.001/call |
+| Deduplication (embeddings) | Haiku | Every contribution | ~$0.0005/call |
+| Trend report generation | Sonnet | Premium API endpoint | ~$0.01/report |
+| MCP query reasoning (future) | Sonnet | Open-ended queries | ~$0.02/query |
 
-#### Option 2: Use BNKR as the Native Token
+### 2d. Cost Controls
 
-Skip deploying a separate POLLEN token entirely:
+- Hard budget cap per epoch: $50/week from infrastructure split
+- Fallback to local-only scoring if balance < $10
+- Per-call cost tracking logged to Neon for transparency
+- Model routing: use Haiku by default, Sonnet only for premium endpoints
 
-- Contributors earn **BNKR directly** for contributions
-- Revenue sharing flows through BNKR staking (Bankr already supports this)
-- 90% of Bankr revenue goes to BNKR stakers — contributors benefit
-- Lower overhead: no custom token deployment, no liquidity bootstrapping
-- Leverage existing BNKR liquidity (~$2.7M) and market cap (~$47M)
-- Bankr wallet already handles custody, staking, and yield
+## Phase 3: Revenue Distribution Rework (Weeks 3-4)
 
-#### Option 3: Hybrid — POLLEN Token + BNKR Payments
+Since Clanker tokens are standard ERC-20s (no built-in `claimRevenue()`),
+revenue distribution needs a separate mechanism:
 
-- Deploy POLLEN for contributor rewards and governance
-- Accept BNKR for query payments (alongside USDC)
-- Use Bankr wallet for all operational treasury management
-- BNKR holders get a discount on query prices (e.g., 20% off)
-- Creates demand for BNKR from Pollen's buyer base
+### Option A: Off-chain USDC distribution (simpler)
 
-### Phase E: Self-Funding Compute Loop (Ongoing)
+1. Platform tracks USDC revenue per epoch
+2. At epoch close, compute pro-rata share per POLLEN holder
+3. Distribute USDC via batch transfer from treasury wallet
+4. Contributors claim via `pollen claim --revenue` which hits the proxy
 
-**Goal:** The network pays for its own AI infrastructure automatically.
+### Option B: Deploy RevenueDistributor contract (trustless)
+
+1. Deploy a simple Merkle-based USDC distributor (similar to PollenDistributor)
+2. Each epoch: snapshot POLLEN balances, compute shares, publish Merkle root
+3. Contributors claim on-chain with proof
+4. Reuse existing `claim.ts` patterns
+
+**Recommendation:** Start with Option A (off-chain), migrate to Option B once
+volume justifies gas costs. The PollenDistributor.sol for token claims should
+still be deployed on-chain via Forge for trustless contributor rewards.
+
+## Phase 4: Marketing to Bankr Users (Weeks 4-6)
+
+### Why Bankr Users Are the Perfect Audience
+
+- **Already crypto-native** — have wallets, understand tokens
+- **AI power users** — many use Claude, GPT, etc. daily
+- **Agent-curious** — interested in autonomous AI + DeFi loops
+- **On Base** — same chain, zero friction
+- **Social-first** — active on Farcaster + X, viral distribution
+
+### Marketing Strategy
+
+1. **Launch announcement via @bankrbot on X/Farcaster**
+   - Deploy $POLLEN live in a post — the deployment IS the announcement
+   - "The first token that pays you for using Claude Code"
+   - Bankr users can buy $POLLEN immediately
+
+2. **Bankr skill integration**
+   - Submit a Pollen skill to [BankrBot/openclaw-skills](https://github.com/BankrBot/openclaw-skills)
+   - Lets Bankr agents query Pollen trend data natively
+   - "Ask @bankrbot: What are developers building with Claude Code this week?"
+
+3. **Cross-promotion with Bankr ecosystem**
+   - Pollen as a featured data source in Bankr's agent marketplace
+   - Joint content: "How AI agents are using prompt intelligence"
+   - POLLEN listed on Bankr's swap interface
+
+4. **Contributor onboarding via Bankr wallets**
+   - Add Bankr as a third wallet option in `pollen wallet`:
+     1. Managed wallet (Para) — existing
+     2. Bring your own — existing
+     3. **Bankr wallet** — new, one command, works with LLM Gateway too
+   - Contributors who use Bankr wallets get the bonus of their wallet
+     being LLM Gateway-ready
+
+5. **Flywheel: Contributors → Token holders → Bankr users → Contributors**
+   ```
+   Claude Code user installs Pollen
+        │
+        ▼
+   Earns POLLEN tokens for contributions
+        │
+        ▼
+   Discovers Bankr ecosystem (swap, trade, DeFi)
+        │
+        ▼
+   Tells other Claude Code users → More contributors
+        │
+        ▼
+   More data → Better trends → More buyers → More revenue → Higher POLLEN value
+   ```
+
+## Phase 5: Self-Funding Compute Loop (Ongoing)
 
 ```
-Revenue In (x402 queries)
+Revenue In (x402 queries + swap fees)
     │
     ▼
 Revenue Pool (USDC on Base)
     │
-    ├── 70% → Contributor rewards (POLLEN or BNKR)
+    ├── 70% → POLLEN epoch distribution (Merkle claims)
     ├── 20% → Protocol development
     └── 10% → Bankr Wallet
                 │
                 ▼
           LLM Gateway Credits
                 │
-                ├── Contribution scoring (improves data quality)
-                ├── Trend report generation (generates more revenue)
-                └── Future: MCP query reasoning
-                        │
-                        ▼
-                Higher quality → More buyers → More revenue → More compute
+                ├── Contribution scoring (better data quality)
+                ├── Trend reports (premium endpoints, more revenue)
+                └── MCP query reasoning (future)
 ```
 
-## Implementation Priority
+Plus: 0.4% creator swap fees from Clanker → additional treasury revenue.
 
-| Priority | Task | Effort | Impact |
-|----------|------|--------|--------|
-| P0 | Create Bankr wallet + fund it | 1 day | Unblocks everything |
-| P0 | Build `bankr-gateway.ts` client wrapper | 1 day | Core infra |
-| P1 | Wire infrastructure revenue split to Bankr wallet | 2 days | Self-funding |
-| P1 | LLM-enhanced IVS scoring | 3 days | Data quality |
-| P2 | Premium trend report endpoints | 3 days | Revenue growth |
-| P2 | Decide POLLEN vs BNKR vs hybrid token strategy | 1 week | Token economics |
-| P3 | BNKR payment support in x402 layer | 3 days | Ecosystem synergy |
-| P3 | Self-funding monitoring dashboard | 2 days | Operational visibility |
+## Implementation Checklist
 
-## Key Decisions Needed
+| # | Task | Effort | Depends On |
+|---|------|--------|------------|
+| 1 | Deploy $POLLEN via Bankr/Clanker | 1 day | — |
+| 2 | Record token address, update env vars + docs | 1 day | 1 |
+| 3 | Deploy PollenDistributor.sol (Forge, for Merkle claims) | 1 day | 1 |
+| 4 | Update `claim.ts` — remove custom revenue methods, point to Clanker token | 1 day | 2 |
+| 5 | Create Bankr platform wallet + fund it | 1 day | — |
+| 6 | Build `bankr-gateway.ts` client | 1 day | 5 |
+| 7 | Wire 10% revenue split to Bankr wallet | 2 days | 5 |
+| 8 | LLM-enhanced IVS scoring via Gateway | 3 days | 6 |
+| 9 | Premium trend report endpoints | 3 days | 6 |
+| 10 | Add Bankr wallet option to `pollen wallet` | 2 days | 5 |
+| 11 | Submit Pollen skill to openclaw-skills repo | 1 day | 2 |
+| 12 | Off-chain USDC revenue distribution | 3 days | 2 |
+| 13 | Marketing launch (X/Farcaster deployment post) | 1 day | 1 |
 
-1. **Token strategy**: Deploy POLLEN, use BNKR, or hybrid?
-   - POLLEN gives full control but requires liquidity bootstrapping
-   - BNKR gives instant liquidity + Bankr ecosystem but less control
-   - Hybrid captures both but adds complexity
+## Codebase Changes Summary
 
-2. **Compute budget**: What % of revenue should fund LLM inference?
-   - Current plan: 10% (infrastructure split)
-   - Could increase to 15-20% if premium endpoints generate surplus
+### Modified Files
 
-3. **Model selection**: Which LLM for scoring/reports?
-   - Claude (best quality, higher cost) vs Haiku (good enough, cheaper)
-   - Bankr Gateway supports automatic failover between providers
+| File | Change |
+|------|--------|
+| `packages/cli/src/claim.ts` | Remove `claimRevenue()` / `TOKEN_ABI` revenue methods, keep Merkle distributor flow, point to Clanker token |
+| `packages/cli/src/main.ts` | Update claim command messaging, remove Forge deployment instructions, add `bankr-wallet` command |
+| `packages/cli/src/config.ts` | Add `bankr_wallet` to `PollenConfig`, add `BANKR_API_KEY` / `BANKR_LLM_KEY` env refs |
+| `packages/cli/src/earnings.ts` | Update to read from Clanker token address |
+| `packages/site/.env` | Add `BANKR_API_KEY`, `BANKR_LLM_KEY`, `POLLEN_TOKEN_ADDRESS` |
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `packages/site/src/lib/bankr-gateway.ts` | Bankr LLM Gateway client wrapper |
+| `packages/site/src/app/api/trends/report/route.ts` | Premium LLM-powered trend reports |
+| `packages/site/src/app/api/trends/insights/route.ts` | Premium LLM-powered cross-domain insights |
+
+### Removed/Deprecated
+
+| Item | Reason |
+|------|--------|
+| `contracts/src/PollenToken.sol` | Replaced by Clanker-deployed ERC-20 |
+| `contracts/script/Deploy.s.sol` (token portion) | Token deployed via Bankr, not Forge |
+| Revenue sharing in `PollenToken.sol` | Moves to off-chain distribution or separate contract |
 
 ## Risk Mitigation
 
 | Risk | Mitigation |
 |------|------------|
-| Bankr Gateway downtime | Fallback to direct API keys, local-only scoring |
-| LLM costs exceed revenue | Hard budget caps per epoch, local-only fallback |
-| BNKR price volatility | Hold operating funds in USDC, convert to BNKR only for payments |
-| Bankr platform risk | Keep direct API keys as backup, modular gateway abstraction |
-| Smart contract risk | Audit before deployment, timelocks on admin functions |
+| Clanker token is standard ERC-20 (no custom features) | Deploy PollenDistributor separately for Merkle claims; handle revenue off-chain |
+| Bankr Gateway downtime | Fallback to direct Anthropic API keys |
+| LLM costs exceed revenue | Hard budget caps, Haiku by default, local-only fallback |
+| Token gets confused with unrelated POLLEN tokens | Clear branding, official contract address in docs + CLI |
+| Bankr platform dependency | Modular gateway abstraction, direct API backup |
+| Swap fee revenue volatility | Don't depend on it — treat as bonus treasury income |
