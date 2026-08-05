@@ -26,6 +26,12 @@ function paymentHeader(to = SETTLEMENT, value = '50000'): string {
   )
 }
 
+function smartWalletPaymentHeader(): string {
+  const decoded = JSON.parse(atob(paymentHeader()))
+  decoded.payload.signature = `0x${'11'.repeat(66)}`
+  return btoa(JSON.stringify(decoded))
+}
+
 function testApp(relayer: PaymentRelayer) {
   const app = new Hono()
   app.use('*', createPollenPaymentMiddleware(relayer))
@@ -100,6 +106,7 @@ describe('Pollen x402 Base relayer', () => {
     const relayer: PaymentRelayer = {
       verify: vi.fn().mockResolvedValue({ isValid: true, payer: PAYER }),
       settle: vi.fn(),
+      release: vi.fn(),
     }
     const app = new Hono()
     app.use('*', createPollenPaymentMiddleware(relayer))
@@ -110,6 +117,30 @@ describe('Pollen x402 Base relayer', () => {
     }, env)
 
     expect(response.status).toBe(500)
+    expect(relayer.settle).not.toHaveBeenCalled()
+    expect(relayer.release).toHaveBeenCalledOnce()
+  })
+
+  it('rejects unsupported smart-wallet signatures before protected work', async () => {
+    const relayer: PaymentRelayer = {
+      verify: vi.fn().mockResolvedValue({ isValid: true, payer: PAYER }),
+      settle: vi.fn(),
+    }
+    const handler = vi.fn()
+    const app = new Hono()
+    app.use('*', createPollenPaymentMiddleware(relayer))
+    app.get('/grid', c => {
+      handler()
+      return c.json({ ok: true })
+    })
+
+    const response = await app.request('/grid', {
+      headers: { 'X-PAYMENT': smartWalletPaymentHeader() },
+    }, env)
+
+    expect(response.status).toBe(402)
+    expect(handler).not.toHaveBeenCalled()
+    expect(relayer.verify).not.toHaveBeenCalled()
     expect(relayer.settle).not.toHaveBeenCalled()
   })
 })

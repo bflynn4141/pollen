@@ -15,6 +15,7 @@ import {
 } from '@pollen/data'
 import { runEpochClose } from './epoch-close'
 import { createPollenPaymentMiddleware, type X402RelayEnv } from './x402-relay'
+export { X402SettlementRelayer } from './x402-relay'
 
 /**
  * pollen-api — Cloudflare Worker serving the public /api/v1 endpoints at

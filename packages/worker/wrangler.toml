@@ -20,10 +20,19 @@ compatibility_flags = ["nodejs_compat"]
 # 2) epoch-close: score the just-closed epoch, Tuesdays 00:10 UTC
 crons = ["0 */6 * * *", "10 0 * * 2"]
 
+[[durable_objects.bindings]]
+name = "X402_RELAYER"
+class_name = "X402SettlementRelayer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["X402SettlementRelayer"]
+
 [vars]
 # Base-mainnet x402 payments settle atomically through PollenSettlementV2;
 # PollenTokenV2 then holds the USDC until each POLLEN holder claims on-chain.
 X402_PAY_TO = "0x4548475CA9EE1BEff99fFfa3b691815388B1E139"
+POLLEN_TOKEN_ADDRESS = "0x8ED2E55875Bf4C3082364441FfD314Ec6E228318"
 BASE_RPC_URL = "https://mainnet.base.org"
 
 # Secrets — set via `wrangler secret put <NAME>`:
