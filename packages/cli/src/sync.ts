@@ -2,6 +2,7 @@ import { neon } from '@neondatabase/serverless'
 import type { NeonQueryFunction } from '@neondatabase/serverless'
 import type Database from 'better-sqlite3'
 import { SYNC_BATCH_SIZE, getOrCreateContributorId, loadConfig } from './config.js'
+import { finalizeStaleSessions } from './finalize.js'
 
 interface SyncResult {
   contributions: number
@@ -15,6 +16,10 @@ interface SyncResult {
 export async function syncToNeon(db: Database.Database, connectionString: string): Promise<SyncResult> {
   const sql = neon(connectionString)
   const contributorId = getOrCreateContributorId()
+
+  // Close out idle sessions first so their outcome/satisfaction ship in
+  // this sync instead of staying NULL forever.
+  finalizeStaleSessions(db)
 
   // Upsert contributor identity (wallet + World ID) from ~/.pollen/config.json.
   // Non-fatal: the contributors table may not be migrated yet.

@@ -1,11 +1,16 @@
 import type Database from 'better-sqlite3'
 import { detectProjectType } from '../coarsen.js'
 import { getOrCreateContributorId } from '../config.js'
+import { finalizeStaleSessions } from '../finalize.js'
 import { insertSession } from '../store.js'
 import type { HookInput } from '../types.js'
 
 export function handleSessionStart(db: Database.Database, input: HookInput): void {
   if (!input.session_id) return
+
+  // Opportunistically close out sessions that never got a SessionEnd
+  // (killed terminal, crash) so outcomes materialize without one.
+  finalizeStaleSessions(db, { excludeSessionId: input.session_id })
 
   insertSession(db, {
     session_id: input.session_id,
