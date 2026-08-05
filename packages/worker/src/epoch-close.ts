@@ -31,11 +31,11 @@ import { getDb } from '@pollen/data'
 const EPOCH_ORIGIN = Date.UTC(2026, 1, 24)
 const EPOCH_DURATION_MS = 7 * 24 * 60 * 60 * 1000
 
-function currentEpoch(): number {
+export function currentEpoch(): number {
   return Math.floor((Date.now() - EPOCH_ORIGIN) / EPOCH_DURATION_MS) + 1
 }
 
-function epochBounds(epoch: number): { startsAt: number; endsAt: number } {
+export function epochBounds(epoch: number): { startsAt: number; endsAt: number } {
   const startsAt = EPOCH_ORIGIN + (epoch - 1) * EPOCH_DURATION_MS
   return { startsAt, endsAt: startsAt + EPOCH_DURATION_MS }
 }
@@ -43,6 +43,81 @@ function epochBounds(epoch: number): { startsAt: number; endsAt: number } {
 export interface EpochCloseOutcome {
   status: number
   body: Record<string, unknown>
+}
+
+export interface EpochHealth {
+  epoch: number
+  window: { starts_at: number; ends_at: number }
+  contributors: number
+  payout_eligible_contributors: number
+  tool_events: number
+  attributed_tool_events: number
+  sessions: number
+  attributed_sessions: number
+  active_registered_contributors: number
+  epoch_scores: number
+  payout_ready: boolean
+  healthy: boolean
+}
+
+/** Aggregate-only diagnostics for the protected production health endpoint. */
+export async function getEpochHealth(epoch = currentEpoch() - 1): Promise<EpochHealth> {
+  const lastClosed = currentEpoch() - 1
+  if (!Number.isInteger(epoch) || epoch < 1 || epoch > lastClosed) {
+    throw new Error(`epoch must be an integer between 1 and ${lastClosed}`)
+  }
+  const { startsAt, endsAt } = epochBounds(epoch)
+  const sql = getDb()
+  const rows = await sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM contributors) AS contributors,
+      (SELECT COUNT(*)::int FROM contributors
+        WHERE world_id_nullifier IS NOT NULL AND verified_at IS NOT NULL AND wallet_address IS NOT NULL
+      ) AS payout_eligible_contributors,
+      (SELECT COUNT(*)::int FROM tool_events
+        WHERE timestamp >= ${startsAt} AND timestamp < ${endsAt}
+      ) AS tool_events,
+      (SELECT COUNT(*)::int FROM tool_events
+        WHERE contributor_id IS NOT NULL AND timestamp >= ${startsAt} AND timestamp < ${endsAt}
+      ) AS attributed_tool_events,
+      (SELECT COUNT(*)::int FROM sessions
+        WHERE started_at >= ${startsAt} AND started_at < ${endsAt}
+      ) AS sessions,
+      (SELECT COUNT(*)::int FROM sessions
+        WHERE contributor_id IS NOT NULL AND started_at >= ${startsAt} AND started_at < ${endsAt}
+      ) AS attributed_sessions,
+      (SELECT COUNT(DISTINCT c.contributor_id)::int
+        FROM contributors c
+        WHERE EXISTS (
+          SELECT 1 FROM tool_events t
+          WHERE t.contributor_id = c.contributor_id
+            AND t.timestamp >= ${startsAt} AND t.timestamp < ${endsAt}
+        ) OR EXISTS (
+          SELECT 1 FROM sessions s
+          WHERE s.contributor_id = c.contributor_id
+            AND s.started_at >= ${startsAt} AND s.started_at < ${endsAt}
+        )
+      ) AS active_registered_contributors,
+      (SELECT COUNT(*)::int FROM epoch_scores WHERE epoch = ${epoch}) AS epoch_scores
+  `
+  const row = rows[0] ?? {}
+  const health = {
+    epoch,
+    window: { starts_at: startsAt, ends_at: endsAt },
+    contributors: Number(row.contributors ?? 0),
+    payout_eligible_contributors: Number(row.payout_eligible_contributors ?? 0),
+    tool_events: Number(row.tool_events ?? 0),
+    attributed_tool_events: Number(row.attributed_tool_events ?? 0),
+    sessions: Number(row.sessions ?? 0),
+    attributed_sessions: Number(row.attributed_sessions ?? 0),
+    active_registered_contributors: Number(row.active_registered_contributors ?? 0),
+    epoch_scores: Number(row.epoch_scores ?? 0),
+  }
+  return {
+    ...health,
+    payout_ready: health.epoch_scores > 0 && health.payout_eligible_contributors > 0,
+    healthy: health.active_registered_contributors > 0 && health.epoch_scores > 0,
+  }
 }
 
 export async function runEpochClose(

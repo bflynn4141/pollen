@@ -13,8 +13,8 @@ import {
   readToolHistory,
   readTrendingTools,
 } from '@pollen/data'
-import { runEpochClose } from './epoch-close'
-import { createPollenPaymentMiddleware, type X402RelayEnv } from './x402-relay'
+import { getEpochHealth, runEpochClose } from './epoch-close'
+import { createPollenPaymentMiddleware, getRelayerHealth, type X402RelayEnv } from './x402-relay'
 export { X402SettlementRelayer } from './x402-relay'
 
 /**
@@ -170,6 +170,26 @@ app.post('/admin/run/epoch-close', async c => {
   return c.json(result.body, result.status as 200, NO_STORE)
 })
 
+app.get('/admin/health', async c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  try {
+    const epochParam = c.req.query('epoch')
+    const [epoch, relayer] = await Promise.all([
+      getEpochHealth(epochParam != null ? Number(epochParam) : undefined),
+      getRelayerHealth(c.env),
+    ])
+    const healthy = epoch.healthy && relayer.healthy
+    return c.json({ ok: healthy, epoch, relayer }, healthy ? 200 : 503, NO_STORE)
+  } catch (err) {
+    return c.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      500,
+      NO_STORE,
+    )
+  }
+})
+
 // ── Cron triggers (wrangler.toml [triggers].crons) ──
 
 async function scheduled(controller: ScheduledController, env: Env): Promise<void> {
@@ -184,6 +204,10 @@ async function scheduled(controller: ScheduledController, env: Env): Promise<voi
       const result = await runEpochClose()
       console.log(`[cron epoch-close] ${JSON.stringify(result.body)}`)
       if (result.status >= 500) throw new Error(`epoch-close failed: ${JSON.stringify(result.body)}`)
+      const health = await getEpochHealth()
+      if (!health.healthy) {
+        console.error(`[cron epoch-health] ${JSON.stringify(health)}`)
+      }
       break
     }
     default:
