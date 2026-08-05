@@ -25,6 +25,20 @@
       "pollenToken": "0xFa8B0e3DcC0788d4a6b5fEEFBe9FF03f596DD2ED",
       "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
       "revenueSplit": "100% to POLLEN holders"
+    },
+    "pollenTokenV2": {
+      "address": "0x8ED2E55875Bf4C3082364441FfD314Ec6E228318",
+      "transactionHash": "0x11a0983918766d58a97aa823921545e8a9ec04d3912908b854fe4953844d8224",
+      "admin": "0x4C4c5c436C23E6B4aE1a42E83412104cAd84bef4",
+      "minter": "0x20dc07cb573f56D3aeFb284fEB31e031408Ad010",
+      "revenueToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    },
+    "pollenSettlementV2": {
+      "address": "0x4548475CA9EE1BEff99fFfa3b691815388B1E139",
+      "transactionHash": "0xdc0368e275faed9bfe38d0534f310d872d33b3986f378783060ee40017596e85",
+      "pollenToken": "0x8ED2E55875Bf4C3082364441FfD314Ec6E228318",
+      "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "revenueSplit": "100% to POLLEN holders"
     }
   }
 }

@@ -20,7 +20,9 @@ contract PollenSettlementV2Test is Test {
         buyer = vm.addr(buyerKey);
 
         usdc = new MockUSDC();
-        token = new PollenTokenV2(address(usdc), address(this));
+        token = new PollenTokenV2(
+            address(usdc), address(this), address(this), new address[](0), new uint256[](0)
+        );
         settlement = new PollenSettlementV2(address(usdc), address(token));
 
         vm.warp(token.EPOCH_ZERO());

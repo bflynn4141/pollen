@@ -232,7 +232,11 @@ export interface Whoami {
 
 export async function whoami(driver: SplitsDriver): Promise<Whoami> {
   const raw = asRecord(await driver.callTool('auth_whoami', {}), 'auth whoami')
-  const localKey = raw.localKey as Record<string, unknown> | null | undefined
+  const data = raw.data
+  const identity = data !== null && typeof data === 'object' && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : raw
+  const localKey = identity.localKey as Record<string, unknown> | null | undefined
   return { raw, localKeyRegistered: !!(localKey && localKey.signerId) }
 }
 

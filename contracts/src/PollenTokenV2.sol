@@ -74,11 +74,24 @@ contract PollenTokenV2 is ERC20, AccessControl {
     event EpochMinted(uint256 indexed epoch, uint256 amount, uint256 recipients);
     event MigrationMinted(address indexed to, uint256 amount);
 
-    constructor(address _revenueToken, address admin) ERC20("Pollen", "POLLEN") {
+    constructor(
+        address _revenueToken,
+        address admin,
+        address minter,
+        address[] memory migrationRecipients,
+        uint256[] memory migrationAmounts
+    ) ERC20("Pollen", "POLLEN") {
         require(_revenueToken != address(0), "revenue token is zero");
         require(admin != address(0), "admin is zero");
+        require(minter != address(0), "minter is zero");
+        require(migrationRecipients.length == migrationAmounts.length, "migration length mismatch");
         revenueToken = IERC20(_revenueToken);
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(MINTER_ROLE, minter);
+
+        for (uint256 i = 0; i < migrationRecipients.length; i++) {
+            _migrationMint(migrationRecipients[i], migrationAmounts[i]);
+        }
     }
 
     // ── Epochs ──────────────────────────────────────────────
@@ -128,6 +141,12 @@ contract PollenTokenV2 is ERC20, AccessControl {
      * @dev Not subject to epoch caps, but lifetime-capped at MIGRATION_CAP.
      */
     function mint(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _migrationMint(to, amount);
+    }
+
+    function _migrationMint(address to, uint256 amount) internal {
+        require(to != address(0), "migration recipient is zero");
+        require(amount > 0, "migration amount is zero");
         require(migrationMinted + amount <= MIGRATION_CAP, "migration cap exceeded");
         migrationMinted += amount;
         _mint(to, amount);

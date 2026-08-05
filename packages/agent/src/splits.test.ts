@@ -65,6 +65,13 @@ describe('whoami', () => {
     expect((await whoami(driver)).localKeyRegistered).toBe(true)
   })
 
+  it('reports a registered local signing key from the CLI data envelope', async () => {
+    const { driver } = fakeDriver({
+      auth_whoami: () => ({ data: { orgName: 'Pollen', localKey: { signerId: 'sig_1' } } }),
+    })
+    expect((await whoami(driver)).localKeyRegistered).toBe(true)
+  })
+
   it('reports an unregistered or missing local key', async () => {
     const { driver } = fakeDriver({ auth_whoami: () => ({ org: 'pollen', localKey: { signerId: null } }) })
     expect((await whoami(driver)).localKeyRegistered).toBe(false)

@@ -19,8 +19,9 @@ contract PollenTokenV2Test is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        token = new PollenTokenV2(address(usdc), address(this)); // admin = this test
-        token.grantRole(token.MINTER_ROLE(), minter);
+        token = new PollenTokenV2(
+            address(usdc), address(this), minter, new address[](0), new uint256[](0)
+        ); // admin = this test
 
         EPOCH_ZERO = token.EPOCH_ZERO();
         vm.warp(EPOCH_ZERO); // epoch 1 begins
@@ -304,6 +305,32 @@ contract PollenTokenV2Test is Test {
     }
 
     // ── Migration cap ───────────────────────────────────────
+
+    function test_constructorAtomicallyConfiguresRolesAndMigrationWithoutPrivilegingDeployer() public {
+        address admin = makeAddr("splits-admin");
+        address payoutMinter = makeAddr("splits-payout");
+        address deployer = makeAddr("temporary-deployer");
+
+        address[] memory migrationRecipients = new address[](2);
+        migrationRecipients[0] = alice;
+        migrationRecipients[1] = bob;
+        uint256[] memory migrationAmounts = new uint256[](2);
+        migrationAmounts[0] = 50_000e18;
+        migrationAmounts[1] = 5_000e18;
+
+        vm.prank(deployer);
+        PollenTokenV2 configured = new PollenTokenV2(
+            address(usdc), admin, payoutMinter, migrationRecipients, migrationAmounts
+        );
+
+        assertTrue(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), admin));
+        assertTrue(configured.hasRole(configured.MINTER_ROLE(), payoutMinter));
+        assertFalse(configured.hasRole(configured.DEFAULT_ADMIN_ROLE(), deployer));
+        assertFalse(configured.hasRole(configured.MINTER_ROLE(), deployer));
+        assertEq(configured.balanceOf(alice), 50_000e18);
+        assertEq(configured.balanceOf(bob), 5_000e18);
+        assertEq(configured.migrationMinted(), configured.MIGRATION_CAP());
+    }
 
     function test_migrationCap() public {
         token.mint(alice, 50_000e18);
