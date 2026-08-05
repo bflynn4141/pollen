@@ -1,199 +1,168 @@
-/**
- * World ID bridge protocol — pure Node.js implementation.
- *
- * Flow:
- *  1. Generate AES-256-GCM key
- *  2. Encrypt verification request
- *  3. POST to bridge → get request_id
- *  4. Show QR / URL for World App scanning
- *  5. Poll bridge for encrypted proof
- *  6. Decrypt and return proof
- */
-import { webcrypto } from 'node:crypto'
+/** World ID 4 production flow for the CLI. */
+import {
+  IDKit,
+  proofOfHuman,
+  type IDKitRequest,
+  type IDKitResult,
+} from '@worldcoin/idkit-core'
 
-const BRIDGE_URL = 'https://bridge.worldcoin.org'
+export const APP_ID = process.env.WORLD_ID_APP_ID
+export const RP_ID = process.env.WORLD_ID_RP_ID
+export const ACTION = process.env.WORLD_ID_ACTION ?? 'pollen-verify-v2'
 
-// World ID app registration — public values, not secrets.
-// Production app id comes from WORLD_ID_APP_ID; the staging id remains the
-// dev fallback (staging proofs will fail server-side verification, which is
-// the correct behavior — no more client-side bypass).
-export const APP_ID = process.env.WORLD_ID_APP_ID ?? 'app_staging_d14d23238b2b9db320070f80948dc6a8'
-export const ACTION = process.env.WORLD_ID_ACTION ?? 'pollen-verify'
+const POLLEN_API_URL = process.env.POLLEN_API_URL
+  ?? 'https://site-alpha-umber-69.vercel.app'
 
-// Base URL of the pollen site, which owns server-side proof verification
-const POLLEN_API_URL = process.env.POLLEN_API_URL ?? 'https://www.pollen.id'
-
-export interface WorldIdProof {
-  nullifier_hash: string
-  merkle_root: string
-  proof: string
-  verification_level: string
+interface RpSignatureResponse {
+  app_id: string
+  rp_id: string
+  action: string
+  sig: string
+  nonce: string
+  created_at: number
+  expires_at: number
 }
 
-// --- Crypto helpers ---
-
-async function generateKey(): Promise<{ key: CryptoKey; iv: Uint8Array }> {
-  const crypto = webcrypto as unknown as Crypto
-  return {
-    iv: crypto.getRandomValues(new Uint8Array(12)),
-    key: await crypto.subtle.generateKey(
-      { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'],
-    ),
-  }
-}
-
-async function exportKeyBase64(key: CryptoKey): Promise<string> {
-  const crypto = webcrypto as unknown as Crypto
-  const raw = await crypto.subtle.exportKey('raw', key)
-  return Buffer.from(raw).toString('base64')
-}
-
-async function encrypt(key: CryptoKey, iv: Uint8Array, plaintext: string): Promise<{ iv: string; payload: string }> {
-  const crypto = webcrypto as unknown as Crypto
-  const encoded = new TextEncoder().encode(plaintext)
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as unknown as ArrayBuffer }, key, encoded)
-  return {
-    iv: Buffer.from(iv).toString('base64'),
-    payload: Buffer.from(ciphertext).toString('base64'),
-  }
-}
-
-async function decrypt(key: CryptoKey, ivB64: string, payloadB64: string): Promise<string> {
-  const crypto = webcrypto as unknown as Crypto
-  const iv = Buffer.from(ivB64, 'base64')
-  const ciphertext = Buffer.from(payloadB64, 'base64')
-  const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext)
-  return new TextDecoder().decode(plaintext)
-}
-
-// --- Bridge protocol ---
-
-interface BridgeSession {
+export interface BridgeSession {
   requestId: string
-  connectorURI: string   // QR code content — user scans this
-  key: CryptoKey         // for decrypting the response
+  connectorURI: string
+  request: IDKitRequest
 }
 
-export async function createBridgeSession(): Promise<BridgeSession> {
-  const { key, iv } = await generateKey()
-  const keyB64 = await exportKeyBase64(key)
+/**
+ * IDKit resolves its bundled WASM as a file: URL. Browsers can fetch that URL,
+ * but Node's fetch intentionally cannot, so provide a narrowly scoped loader
+ * while the SDK initializes.
+ */
+export async function fetchIdKitResource(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  fallback: typeof fetch,
+): Promise<Response> {
+  const url = input instanceof URL ? input : null
+  if (url?.protocol === 'file:') {
+    const { readFile } = await import('node:fs/promises')
+    return new Response(await readFile(url), {
+      headers: { 'Content-Type': 'application/wasm' },
+    })
+  }
+  return fallback(input, init)
+}
 
-  // Encrypt the verification request
-  const request = JSON.stringify({
-    app_id: APP_ID,
-    action: ACTION,
-    signal: '',
-    credential_types: ['device'],
-    verification_level: 'device',
-  })
+async function initializeRequest(create: () => Promise<IDKitRequest>): Promise<IDKitRequest> {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => (
+    fetchIdKitResource(input, init, originalFetch)
+  )) as typeof fetch
 
-  const encrypted = await encrypt(key, iv, request)
+  try {
+    return await create()
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
 
-  // POST to bridge
-  const res = await fetch(`${BRIDGE_URL}/request`, {
+export async function createBridgeSession(contributorId: string): Promise<BridgeSession> {
+  if (!APP_ID || !RP_ID) {
+    throw new Error('WORLD_ID_APP_ID and WORLD_ID_RP_ID are required for production verification')
+  }
+
+  const signatureResponse = await fetch(`${POLLEN_API_URL}/api/v1/worldid/rp-signature`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(encrypted),
+    body: '{}',
   })
-
-  if (!res.ok) {
-    throw new Error(`Bridge request failed: ${res.status} ${await res.text()}`)
+  if (!signatureResponse.ok) {
+    throw new Error(`World ID signature request failed: ${signatureResponse.status}`)
   }
 
-  const { request_id } = await res.json() as { request_id: string }
+  const signature = await signatureResponse.json() as RpSignatureResponse
+  if (
+    signature.app_id !== APP_ID
+    || signature.rp_id !== RP_ID
+    || signature.action !== ACTION
+    || !signature.sig
+  ) {
+    throw new Error('World ID signature response does not match the CLI configuration')
+  }
 
-  // Construct the connector URI (what gets shown as QR)
-  const connectorURI = `https://worldcoin.org/verify?t=wld&i=${request_id}&k=${encodeURIComponent(keyB64)}`
+  const request = await initializeRequest(() => IDKit.request({
+      app_id: APP_ID as `app_${string}`,
+      action: ACTION,
+      rp_context: {
+        rp_id: RP_ID,
+        nonce: signature.nonce,
+        created_at: signature.created_at,
+        expires_at: signature.expires_at,
+        signature: signature.sig,
+      },
+      // This is a new production app, so accepting legacy proofs would only
+      // create a second nullifier path for the same person.
+      allow_legacy_proofs: false,
+      environment: 'production',
+    }).preset(proofOfHuman({ signal: contributorId })),
+  )
 
-  return { requestId: request_id, connectorURI, key }
-}
-
-interface BridgeResponse {
-  status: 'initialized' | 'retrieved' | 'completed'
-  response: { iv: string; payload: string } | null
+  return {
+    requestId: request.requestId,
+    connectorURI: request.connectorURI,
+    request,
+  }
 }
 
 export async function pollForProof(
   session: BridgeSession,
   opts: { timeoutMs?: number; intervalMs?: number } = {},
-): Promise<WorldIdProof> {
-  const timeout = opts.timeoutMs ?? 120_000 // 2 minutes
-  const interval = opts.intervalMs ?? 3_000  // 3 seconds
-  const deadline = Date.now() + timeout
-
-  while (Date.now() < deadline) {
-    const res = await fetch(`${BRIDGE_URL}/response/${session.requestId}`)
-    if (!res.ok) {
-      throw new Error(`Bridge poll failed: ${res.status}`)
-    }
-
-    const data = await res.json() as BridgeResponse
-
-    if (data.status === 'completed' && data.response) {
-      // Decrypt the proof
-      const plaintext = await decrypt(
-        session.key, data.response.iv, data.response.payload,
-      )
-      const parsed = JSON.parse(plaintext) as WorldIdProof | { error_code: string }
-
-      if ('error_code' in parsed) {
-        throw new Error(`World App error: ${parsed.error_code}`)
-      }
-
-      return parsed as WorldIdProof
-    }
-
-    // Wait before next poll
-    await new Promise(resolve => setTimeout(resolve, interval))
+): Promise<IDKitResult> {
+  const completion = await session.request.pollUntilCompletion({
+    timeout: opts.timeoutMs ?? 600_000,
+    pollInterval: opts.intervalMs ?? 2_000,
+  })
+  if (!completion.success) {
+    throw new Error(`World App error: ${completion.error}`)
   }
-
-  throw new Error('Verification timed out — user did not complete in World App')
+  return completion.result
 }
-
-// --- Server-side verification (via the pollen site) ---
 
 export interface VerifyResponse {
   success: boolean
   nullifier?: string
+  verification_level?: string
   code?: string
   detail?: string
 }
 
-/**
- * Verify a World ID proof server-side.
- *
- * The proof is POSTed to the pollen site's verify route, which forwards it to
- * Worldcoin's cloud verifier and, on success, marks the contributor verified
- * in Neon. Verification is no longer skippable client-side — the site is the
- * single authority on who counts as a verified human.
- */
-export async function verifyProof(proof: WorldIdProof, contributorId: string): Promise<VerifyResponse> {
-  let res: Response
+export async function verifyProof(
+  result: IDKitResult,
+  contributorId: string,
+): Promise<VerifyResponse> {
+  let response: Response
   try {
-    res = await fetch(`${POLLEN_API_URL}/api/v1/worldid/verify`, {
+    response = await fetch(`${POLLEN_API_URL}/api/v1/worldid/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contributor_id: contributorId,
-        proof: proof.proof,
-        merkle_root: proof.merkle_root,
-        nullifier_hash: proof.nullifier_hash,
-        verification_level: proof.verification_level,
-      }),
+      body: JSON.stringify({ contributor_id: contributorId, idkit_result: result }),
     })
-  } catch (err) {
-    return { success: false, code: 'network_error', detail: (err as Error).message }
+  } catch (error) {
+    return { success: false, code: 'network_error', detail: (error as Error).message }
   }
 
   let data: VerifyResponse
   try {
-    data = await res.json() as VerifyResponse
+    data = await response.json() as VerifyResponse
   } catch {
-    return { success: false, code: `http_${res.status}`, detail: 'Invalid response from verification server' }
+    return {
+      success: false,
+      code: `http_${response.status}`,
+      detail: 'Invalid response from verification server',
+    }
   }
-
-  if (!res.ok) {
-    return { success: false, code: data.code ?? `http_${res.status}`, detail: data.detail }
+  if (!response.ok) {
+    return {
+      success: false,
+      code: data.code ?? `http_${response.status}`,
+      detail: data.detail,
+    }
   }
   return data
 }

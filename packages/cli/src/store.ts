@@ -58,7 +58,11 @@ CREATE TABLE IF NOT EXISTS tool_events (
   response_file_paths INTEGER,
   response_has_code INTEGER,
   response_has_error INTEGER,
-  response_summary TEXT
+  response_summary TEXT,
+  tool_use_id TEXT,
+  agent_id TEXT,
+  agent_type TEXT,
+  effort_level TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tool_session ON tool_events(session_id);
@@ -98,7 +102,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   unique_mcp_servers INTEGER DEFAULT 0,
   permission_mode TEXT,
   subagent_count INTEGER DEFAULT 0,
-  context_compactions INTEGER DEFAULT 0
+  context_compactions INTEGER DEFAULT 0,
+  transcript_path TEXT,
+  stop_tool_use_count INTEGER,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cached_input_tokens INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_started ON sessions(started_at);
@@ -187,8 +196,10 @@ export interface LifecycleEvent {
 }
 
 export function insertLifecycleEvent(db: Database.Database, event: LifecycleEvent): void {
+  // INSERT OR IGNORE: live hooks use random UUIDs; the Codex backfill uses
+  // deterministic ids so re-runs are no-ops.
   db.prepare(`
-    INSERT INTO lifecycle_events (id, session_id, timestamp, event_type, parent_event_id, metadata, contributor_id)
+    INSERT OR IGNORE INTO lifecycle_events (id, session_id, timestamp, event_type, parent_event_id, metadata, contributor_id)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     event.id, event.session_id, event.timestamp, event.event_type,
@@ -344,14 +355,17 @@ export function getStats(db: Database.Database): Stats {
 // --- Tool Events ---
 
 export function insertToolEvent(db: Database.Database, event: CoarsenedToolEvent): void {
+  // INSERT OR IGNORE: live hooks use random UUIDs (never collide); the Codex
+  // backfill uses deterministic ids so re-runs are no-ops.
   db.prepare(`
-    INSERT INTO tool_events (
+    INSERT OR IGNORE INTO tool_events (
       id, session_id, timestamp, tool_name, tool_category,
       success, error_category, file_extension, command_category, sequence_number,
       mcp_server, duration_ms, contributor_id,
       response_type, response_size, response_file_paths,
-      response_has_code, response_has_error, response_summary
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      response_has_code, response_has_error, response_summary,
+      tool_use_id, agent_id, agent_type, effort_level
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     event.id,
     event.session_id,
@@ -372,6 +386,10 @@ export function insertToolEvent(db: Database.Database, event: CoarsenedToolEvent
     event.response_has_code != null ? (event.response_has_code ? 1 : 0) : null,
     event.response_has_error != null ? (event.response_has_error ? 1 : 0) : null,
     event.response_summary ?? null,
+    event.tool_use_id ?? null,
+    event.agent_id ?? null,
+    event.agent_type ?? null,
+    event.effort_level ?? null,
   )
 }
 
@@ -459,8 +477,9 @@ export function insertSession(db: Database.Database, session: SessionRecord): vo
       satisfaction_score, satisfaction_signals, subject,
       contributor_id, permission_mode,
       edit_count, read_count, search_to_edit_ratio, error_recovery_rate,
-      mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions,
+      transcript_path, input_tokens, output_tokens, cached_input_tokens
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     session.session_id,
     session.model,
@@ -495,6 +514,10 @@ export function insertSession(db: Database.Database, session: SessionRecord): vo
     session.unique_mcp_servers ?? 0,
     session.subagent_count ?? 0,
     session.context_compactions ?? 0,
+    session.transcript_path ?? null,
+    session.input_tokens ?? null,
+    session.output_tokens ?? null,
+    session.cached_input_tokens ?? null,
   )
 }
 
@@ -511,6 +534,8 @@ export function updateSession(db: Database.Database, session: Partial<SessionRec
     'subject', 'permission_mode',
     'edit_count', 'read_count', 'search_to_edit_ratio', 'error_recovery_rate',
     'mcp_tool_count', 'unique_mcp_servers', 'subagent_count', 'context_compactions',
+    'transcript_path', 'stop_tool_use_count',
+    'input_tokens', 'output_tokens', 'cached_input_tokens',
   ]
 
   for (const key of updatable) {

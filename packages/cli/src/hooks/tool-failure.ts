@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { classifyToolCategory, extractFileExtension, classifyCommand, classifyError, extractMcpServer } from '../coarsen.js'
+import { classifyToolCategory, extractFileExtension, classifyCommand, classifyError, extractMcpServer, extractEffortLevel } from '../coarsen.js'
 import { getOrCreateContributorId } from '../config.js'
 import { insertToolEvent, getToolEventCount, insertX402Event } from '../store.js'
 import type { HookInput } from '../types.js'
@@ -35,6 +35,10 @@ export function handlePostToolUseFailure(db: Database.Database, input: HookInput
     response_type: 'error_output',
     response_has_error: true,
     response_summary: errorText ? errorText.slice(0, 200) : null,
+    tool_use_id: input.tool_use_id ?? null,
+    agent_id: input.agent_id ?? null,
+    agent_type: input.agent_type ?? null,
+    effort_level: extractEffortLevel(input.effort),
   })
 
   // x402 failure tracking

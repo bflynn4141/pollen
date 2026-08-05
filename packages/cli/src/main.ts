@@ -106,6 +106,26 @@ try {
       console.log(`Done: ${result.filled} filled, ${result.skipped} skipped (${result.total} total)`)
       break
     }
+    case 'backfill': {
+      if (!process.argv.includes('--codex')) {
+        console.error('Usage: pollen backfill --codex [--days N]')
+        process.exit(1)
+      }
+      const daysIdx = process.argv.indexOf('--days')
+      const days = daysIdx !== -1 ? parseInt(process.argv[daysIdx + 1] ?? '30', 10) : 30
+      if (!Number.isFinite(days) || days <= 0) {
+        console.error('--days must be a positive number')
+        process.exit(1)
+      }
+      const { backfillCodex } = await import('./codex-backfill.js')
+      console.log(`Backfilling Codex sessions (last ${days} days)...`)
+      const result = await backfillCodex(db, { days })
+      for (const warning of result.warnings) {
+        console.warn(`  ⚠  ${warning}`)
+      }
+      console.log(`Done: ${result.sessions} sessions, ${result.toolEvents} tool events from ${result.files} files (${result.skippedFiles} skipped)`)
+      break
+    }
     case 'seed': {
       const { seedV4 } = await import('./seed-v4.js')
       console.log('Seeding v4 demo data...')
@@ -130,6 +150,11 @@ try {
       break
     }
     case 'setup': {
+      if (process.argv.includes('--codex')) {
+        const { runCodexSetup } = await import('./codex-setup.js')
+        await runCodexSetup()
+        break
+      }
       const { runSetup } = await import('./setup.js')
       const demo = process.argv.includes('--demo')
       await runSetup(demo)
@@ -289,6 +314,8 @@ try {
         'Commands:',
         '  setup           Guided onboarding — hooks, wallet, everything',
         '  setup --demo    Same flow, nothing written to disk (for demos)',
+        '  setup --codex   Install pollen hooks into ~/.codex/hooks.json',
+        '  backfill --codex [--days N]  Ingest historical Codex sessions (default 30 days)',
         '  stats       Summary dashboard',
         '  intents     Intent distribution',
         '  languages   Language breakdown',

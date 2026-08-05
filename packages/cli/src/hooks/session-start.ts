@@ -38,5 +38,14 @@ export function handleSessionStart(db: Database.Database, input: HookInput): voi
     subject: null,
     contributor_id: getOrCreateContributorId(),
     permission_mode: input.permission_mode ?? null,
+    transcript_path: input.transcript_path ?? null,
   })
+
+  // Session row may already exist (resume, or insert above was a no-op via
+  // OR IGNORE) — backfill transcript_path only when absent.
+  if (input.transcript_path) {
+    db.prepare(
+      'UPDATE sessions SET transcript_path = ? WHERE session_id = ? AND transcript_path IS NULL'
+    ).run(input.transcript_path, input.session_id)
+  }
 }

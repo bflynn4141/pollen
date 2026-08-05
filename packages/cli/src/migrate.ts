@@ -143,4 +143,37 @@ export function migrateSchema(db: Database.Database): void {
   if (!hasColumn(db, 'contributions', 'permission_mode')) {
     db.prepare('ALTER TABLE contributions ADD COLUMN permission_mode TEXT').run()
   }
+
+  // --- v5: Claude Code capture upgrades (tool_use_id, subagent attribution, effort) ---
+  if (!hasColumn(db, 'tool_events', 'tool_use_id')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN tool_use_id TEXT').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'agent_id')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN agent_id TEXT').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'agent_type')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN agent_type TEXT').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'effort_level')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN effort_level TEXT').run()
+  }
+
+  // --- v5: sessions capture upgrades ---
+  if (!hasColumn(db, 'sessions', 'transcript_path')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN transcript_path TEXT').run()
+  }
+  if (!hasColumn(db, 'sessions', 'stop_tool_use_count')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN stop_tool_use_count INTEGER').run()
+  }
+
+  // --- v5: Codex backfill token totals ---
+  if (!hasColumn(db, 'sessions', 'input_tokens')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN input_tokens INTEGER').run()
+  }
+  if (!hasColumn(db, 'sessions', 'output_tokens')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN output_tokens INTEGER').run()
+  }
+  if (!hasColumn(db, 'sessions', 'cached_input_tokens')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN cached_input_tokens INTEGER').run()
+  }
 }

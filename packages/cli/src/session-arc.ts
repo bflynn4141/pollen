@@ -21,7 +21,12 @@ export function computeOutcome(
   toolFailureCount: number,
   toolUseCount: number,
   promptCount: number,
+  hasStopFailure = false,
 ): SessionOutcome {
+  // v5: session whose last lifecycle event is a StopFailure ended on an API
+  // error — prefer error_exit regardless of tool stats
+  if (hasStopFailure) return 'error_exit'
+
   // If a high percentage of tool uses failed, likely error exit
   if (toolUseCount > 0 && toolFailureCount / toolUseCount > 0.5) return 'error_exit'
 
@@ -50,6 +55,8 @@ interface ArcData {
   subagent_count: number
   context_compactions: number
   error_recovery_rate: number | null
+  // v5: true when the session's last lifecycle event is a stop_failure
+  has_stop_failure: boolean
 }
 
 export function gatherSessionArcData(db: Database.Database, sessionId: string): ArcData {
@@ -145,6 +152,8 @@ export function gatherSessionArcData(db: Database.Database, sessionId: string): 
   // v4: count subagents and context compactions from lifecycle_events (if table exists)
   let subagentCount = 0
   let contextCompactions = 0
+  // v5: end-quality — did this session end on a StopFailure?
+  let hasStopFailure = false
   try {
     const subRow = db.prepare(
       "SELECT COUNT(*) as c FROM lifecycle_events WHERE session_id = ? AND event_type = 'subagent_start'"
@@ -155,6 +164,11 @@ export function gatherSessionArcData(db: Database.Database, sessionId: string): 
       "SELECT COUNT(*) as c FROM lifecycle_events WHERE session_id = ? AND event_type = 'pre_compact'"
     ).get(sessionId) as { c: number }
     contextCompactions = compactRow.c
+
+    const lastLifecycle = db.prepare(
+      'SELECT event_type FROM lifecycle_events WHERE session_id = ? ORDER BY timestamp DESC, id DESC LIMIT 1'
+    ).get(sessionId) as { event_type: string } | undefined
+    hasStopFailure = lastLifecycle?.event_type === 'stop_failure'
   } catch {
     // lifecycle_events table may not exist yet
   }
@@ -177,6 +191,7 @@ export function gatherSessionArcData(db: Database.Database, sessionId: string): 
     subagent_count: subagentCount,
     context_compactions: contextCompactions,
     error_recovery_rate: errorRecoveryRate,
+    has_stop_failure: hasStopFailure,
   }
 }
 
@@ -265,7 +280,7 @@ export function computeSessionArc(
   context_compactions: number
 } {
   const data = gatherSessionArcData(db, sessionId)
-  const outcome = computeOutcome(data.tool_failure_count, data.tool_use_count, data.prompt_count)
+  const outcome = computeOutcome(data.tool_failure_count, data.tool_use_count, data.prompt_count, data.has_stop_failure)
   const durationMinutes = (endedAt - startedAt) / MS_PER_MINUTE
   const satisfaction = computeSatisfactionScore(data, outcome, durationMinutes)
 

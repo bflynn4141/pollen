@@ -70,6 +70,25 @@ export type HookEventName =
   | 'SubagentStop'
   | 'Notification'
   | 'PreCompact'
+  // v5: Claude Code capture upgrades (v2.1.211)
+  | 'UserPromptExpansion'
+  | 'StopFailure'
+  | 'PermissionRequest'
+  | 'PermissionDenied'
+  | 'PostCompact'
+
+// Closed vocabulary for StopFailure.error_type (v2.1.211)
+export type StopFailureErrorType =
+  | 'rate_limit'
+  | 'overloaded'
+  | 'authentication_failed'
+  | 'oauth_org_not_allowed'
+  | 'billing_error'
+  | 'invalid_request'
+  | 'model_not_found'
+  | 'server_error'
+  | 'max_output_tokens'
+  | 'unknown'
 
 export interface HookInput {
   session_id?: string
@@ -81,14 +100,22 @@ export interface HookInput {
   // PostToolUse / PostToolUseFailure fields
   tool_name?: string
   tool_input?: Record<string, unknown>
-  tool_response?: string   // future: tool response content
+  // Claude Code sends a string; Codex may send a structured object
+  tool_response?: string | Record<string, unknown>
   error?: string           // Claude Code sends 'error', not 'tool_error'
   tool_error?: string      // deprecated: kept for backward compat
+  // v5: tool_use_id on PreToolUse/PostToolUse/PostToolUseFailure
+  tool_use_id?: string
+  // v5: present when the hook fires inside a subagent
+  agent_id?: string
+  // v5: effort level on tool events + Stop (low|medium|high|xhigh|max)
+  effort?: { level?: string } | string
   // Model info (SessionStart)
   model?: string
   source?: string
   // Stop event fields
   last_assistant_message?: string
+  tool_use_count?: number  // v5: on Stop
   // SessionEnd fields
   reason?: string
   // SubagentStart/Stop fields
@@ -101,6 +128,20 @@ export interface HookInput {
   // PreCompact fields
   context_size?: number
   conversation_length?: number
+  // v5: UserPromptExpansion fields (expanded_prompt is intentionally never stored)
+  prompt_id?: string
+  command_name?: string
+  expanded_prompt?: string
+  // v5: StopFailure fields (error_message free text is intentionally never stored)
+  error_type?: string
+  error_message?: string
+  // v5: PermissionDenied fields
+  denial_reason?: string
+  // v5: PostCompact fields
+  compaction_trigger?: string
+  trigger?: string         // defensive alias (PreCompact-style payloads)
+  // Codex: turn-scoped events carry a turn id
+  turn_id?: string
 }
 
 // Tool usage coarsening types
@@ -166,6 +207,11 @@ export interface CoarsenedToolEvent {
   response_has_code?: boolean | null
   response_has_error?: boolean | null
   response_summary?: string | null
+  // v5: capture upgrades
+  tool_use_id?: string | null
+  agent_id?: string | null
+  agent_type?: string | null
+  effort_level?: string | null
 }
 
 // Session tracking types
@@ -208,6 +254,13 @@ export interface SessionRecord {
   permission_mode?: string | null
   subagent_count?: number
   context_compactions?: number
+  // v5: capture upgrades
+  transcript_path?: string | null
+  stop_tool_use_count?: number | null
+  // v5: Codex backfill token totals
+  input_tokens?: number | null
+  output_tokens?: number | null
+  cached_input_tokens?: number | null
 }
 
 export interface SatisfactionSignals {

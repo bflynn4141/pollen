@@ -223,6 +223,16 @@ export function extractTopic(text: string): string | null {
   return null
 }
 
+// v5: effort level from hook payloads. Claude Code sends { level: 'high' };
+// be defensive about a bare string. Closed vocab: low|medium|high|xhigh|max.
+const EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
+
+export function extractEffortLevel(effort: { level?: string } | string | undefined): string | null {
+  const level = typeof effort === 'string' ? effort : effort?.level
+  if (typeof level !== 'string') return null
+  return EFFORT_LEVELS.has(level) ? level : null
+}
+
 // Extract MCP server name from tool name: mcp__<server>__<tool> → server
 // Server names may themselves contain underscores (mcp__ccd_session__spawn_task),
 // so split on the "__" separator instead of matching [^_]+.

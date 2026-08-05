@@ -1,7 +1,7 @@
 /**
  * `pollen verify` — World ID human verification flow.
  *
- * Proves a contributor is a unique human via device-level verification.
+ * Proves a contributor is a unique human via World ID Proof of Human.
  * Stores nullifier_hash locally; attaches contributor_id to future sessions.
  */
 import { loadConfig, saveConfig, getOrCreateContributorId } from './config.js'
@@ -25,10 +25,10 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
   const contributorId = save ? getOrCreateContributorId() : 'demo'
 
   console.log('Starting World ID verification...')
-  console.log('This proves you are a unique human (device-level, no biometrics).\n')
+  console.log('This proves you are a unique human with World ID.\n')
 
   // 3. Create bridge session
-  const session = await createBridgeSession()
+  const session = await createBridgeSession(contributorId)
 
   // 4. Display QR code + fallback URL
   try {
@@ -47,7 +47,7 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
 
   console.log('Scan the QR code with World App, or open this URL on your phone:')
   console.log(`\n  ${session.connectorURI}\n`)
-  console.log('Waiting for verification (2 min timeout)...\n')
+  console.log('Waiting for verification (10 min timeout)...\n')
 
   // 5. Poll for proof
   const proof = await pollForProof(session)
@@ -57,7 +57,8 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
   const result = await verifyProof(proof, contributorId)
 
   if (!result.success) {
-    console.error(`✗ Verification failed: ${result.code ?? result.detail ?? 'unknown error'}`)
+    const reason = [result.code, result.detail].filter(Boolean).join(' — ')
+    console.error(`✗ Verification failed: ${reason || 'unknown error'}`)
     process.exit(1)
   }
 
@@ -66,8 +67,8 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
     const updatedConfig = loadConfig() ?? { contributor_id: contributorId }
     updatedConfig.contributor_id = contributorId
     updatedConfig.world_id = {
-      nullifier_hash: proof.nullifier_hash,
-      verification_level: proof.verification_level,
+      nullifier_hash: result.nullifier!,
+      verification_level: result.verification_level!,
       verified_at: new Date().toISOString(),
     }
     saveConfig(updatedConfig)
@@ -75,7 +76,7 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
 
   console.log('✓ Verified! You are a unique human.')
   console.log(`  Contributor: ${contributorId}`)
-  console.log(`  Nullifier:   ${proof.nullifier_hash.slice(0, 18)}...`)
+  console.log(`  Nullifier:   ${result.nullifier!.slice(0, 18)}...`)
   if (save) {
     console.log('\nYour contributor_id will be attached to future sessions.')
   }

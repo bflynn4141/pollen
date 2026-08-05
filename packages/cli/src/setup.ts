@@ -29,6 +29,12 @@ const POLLEN_HOOK_EVENTS = [
   'SubagentStop',
   'Notification',
   'PreCompact',
+  // v5 capture upgrades (Claude Code v2.1.211)
+  'UserPromptExpansion',
+  'StopFailure',
+  'PermissionRequest',
+  'PermissionDenied',
+  'PostCompact',
 ] as const
 
 /** The hook entry installed for new users (published npm package) */

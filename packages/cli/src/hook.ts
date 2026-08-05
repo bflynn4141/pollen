@@ -12,6 +12,11 @@ import { handleSubagentStart, handleSubagentStop } from './hooks/subagent.js'
 import { handlePreToolUse } from './hooks/pre-tool-use.js'
 import { handleNotification } from './hooks/notification.js'
 import { handlePreCompact } from './hooks/context-compact.js'
+import {
+  handlePromptExpansion, handleStopFailure,
+  handlePermissionRequest, handlePermissionDenied, handlePostCompact,
+} from './hooks/capture-events.js'
+import { handleCodexPostToolUse } from './codex-hook.js'
 import { DB_PATH } from './config.js'
 
 function ensureDir(filepath: string): void {
@@ -26,26 +31,38 @@ interface HookResult {
 /**
  * Runs the hook synchronously and returns any pending async work.
  * The caller is responsible for awaiting pendingWork before closing db.
+ *
+ * `source` is set from the `--source <name>` argv flag on the registered hook
+ * command (Codex hooks are installed with `--source codex`). In Codex mode:
+ * sessions are tagged source='codex', and PostToolUse payloads are inspected
+ * for embedded errors (Codex has no PostToolUseFailure event).
  */
-export function runHookSync(input: HookInput): HookResult {
+export function runHookSync(input: HookInput, source?: string): HookResult {
   ensureDir(DB_PATH)
   const db = initDb(DB_PATH)
   let pendingWork: Promise<void> | null = null
 
   const event = input.hook_event_name ?? 'UserPromptSubmit'
+  const isCodex = source === 'codex'
 
   switch (event) {
     case 'UserPromptSubmit':
       pendingWork = handlePromptSubmit(db, input)
       break
     case 'PostToolUse':
-      handlePostToolUse(db, input)
+      if (isCodex) {
+        handleCodexPostToolUse(db, input)
+      } else {
+        handlePostToolUse(db, input)
+      }
       break
     case 'PostToolUseFailure':
       handlePostToolUseFailure(db, input)
       break
     case 'SessionStart':
-      handleSessionStart(db, input)
+      // Codex SessionStart payloads carry their own `source` (e.g. 'vscode');
+      // the pollen source column tracks the CLI, so force 'codex'.
+      handleSessionStart(db, isCodex ? { ...input, source: 'codex' } : input)
       break
     case 'SessionEnd':
       handleSessionEnd(db, input)
@@ -68,19 +85,42 @@ export function runHookSync(input: HookInput): HookResult {
     case 'PreCompact':
       handlePreCompact(db, input)
       break
+    case 'UserPromptExpansion':
+      handlePromptExpansion(db, input)
+      break
+    case 'StopFailure':
+      handleStopFailure(db, input)
+      break
+    case 'PermissionRequest':
+      handlePermissionRequest(db, input)
+      break
+    case 'PermissionDenied':
+      handlePermissionDenied(db, input)
+      break
+    case 'PostCompact':
+      handlePostCompact(db, input)
+      break
   }
 
   return { pendingWork, db }
 }
 
 // Backward-compat: awaits all work then closes db
-export async function runHook(input: HookInput): Promise<void> {
-  const { pendingWork, db } = runHookSync(input)
+export async function runHook(input: HookInput, source?: string): Promise<void> {
+  const { pendingWork, db } = runHookSync(input, source)
   try {
     if (pendingWork) await pendingWork
   } finally {
     db.close()
   }
+}
+
+/** Parse `--source <name>` from the hook command's argv (e.g. `--source codex`) */
+export function parseSourceFlag(argv: string[]): string | undefined {
+  const idx = argv.indexOf('--source')
+  if (idx === -1) return undefined
+  const val = argv[idx + 1]
+  return typeof val === 'string' && !val.startsWith('--') ? val : undefined
 }
 
 // Main: read stdin, do sync work, unblock Claude Code, then await async work
@@ -95,7 +135,7 @@ async function main(): Promise<void> {
     }
 
     const input: HookInput = JSON.parse(data)
-    const result = runHookSync(input)
+    const result = runHookSync(input, parseSourceFlag(process.argv))
     pendingWork = result.pendingWork
     db = result.db
   } catch {

@@ -98,7 +98,8 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           success, error_category, file_extension, command_category,
           sequence_number, mcp_server, duration_ms,
           contributor_id, response_type, response_size,
-          response_file_paths, response_has_code, response_has_error, response_summary
+          response_file_paths, response_has_code, response_has_error, response_summary,
+          tool_use_id, agent_id, agent_type, effort_level
         ) VALUES (
           ${row.id}, ${row.session_id}, ${toInt(row.timestamp)},
           ${row.tool_name}, ${row.tool_category},
@@ -106,7 +107,8 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           ${row.command_category}, ${toInt(row.sequence_number)}, ${row.mcp_server}, ${toInt(row.duration_ms)},
           ${row.contributor_id ?? contributorId}, ${row.response_type}, ${toInt(row.response_size)},
           ${row.response_file_paths}, ${toBoolNullable(row.response_has_code)},
-          ${toBoolNullable(row.response_has_error)}, ${row.response_summary}
+          ${toBoolNullable(row.response_has_error)}, ${row.response_summary},
+          ${row.tool_use_id}, ${row.agent_id}, ${row.agent_type}, ${row.effort_level}
         )
         ON CONFLICT (id) DO NOTHING
       `
@@ -144,7 +146,9 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           satisfaction_score, satisfaction_signals, subject,
           contributor_id, permission_mode,
           edit_count, read_count, search_to_edit_ratio, error_recovery_rate,
-          mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions
+          mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions,
+          transcript_path, stop_tool_use_count,
+          input_tokens, output_tokens, cached_input_tokens
         ) VALUES (
           ${row.session_id}, ${row.model}, ${row.source},
           ${toInt(row.started_at)}, ${toInt(row.ended_at)},
@@ -157,7 +161,9 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           ${row.subject},
           ${row.contributor_id ?? contributorId}, ${row.permission_mode},
           ${row.edit_count}, ${row.read_count}, ${row.search_to_edit_ratio}, ${row.error_recovery_rate},
-          ${row.mcp_tool_count}, ${row.unique_mcp_servers}, ${row.subagent_count}, ${row.context_compactions}
+          ${row.mcp_tool_count}, ${row.unique_mcp_servers}, ${row.subagent_count}, ${row.context_compactions},
+          ${row.transcript_path}, ${toInt(row.stop_tool_use_count)},
+          ${toInt(row.input_tokens)}, ${toInt(row.output_tokens)}, ${toInt(row.cached_input_tokens)}
         )
         ON CONFLICT (session_id) DO UPDATE SET
           ended_at = EXCLUDED.ended_at,
@@ -171,6 +177,10 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           unique_tools = EXCLUDED.unique_tools,
           languages_used = EXCLUDED.languages_used,
           outcome = EXCLUDED.outcome,
+          end_reason = EXCLUDED.end_reason,
+          mcp_servers_used = EXCLUDED.mcp_servers_used,
+          response_count = EXCLUDED.response_count,
+          avg_response_length = EXCLUDED.avg_response_length,
           satisfaction_score = EXCLUDED.satisfaction_score,
           satisfaction_signals = EXCLUDED.satisfaction_signals,
           subject = EXCLUDED.subject,
@@ -183,7 +193,12 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           mcp_tool_count = EXCLUDED.mcp_tool_count,
           unique_mcp_servers = EXCLUDED.unique_mcp_servers,
           subagent_count = EXCLUDED.subagent_count,
-          context_compactions = EXCLUDED.context_compactions
+          context_compactions = EXCLUDED.context_compactions,
+          transcript_path = COALESCE(EXCLUDED.transcript_path, sessions.transcript_path),
+          stop_tool_use_count = EXCLUDED.stop_tool_use_count,
+          input_tokens = EXCLUDED.input_tokens,
+          output_tokens = EXCLUDED.output_tokens,
+          cached_input_tokens = EXCLUDED.cached_input_tokens
       `
     }
     sessionCount += batch.length

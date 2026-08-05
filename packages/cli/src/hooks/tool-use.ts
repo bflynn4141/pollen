@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import { classifyToolCategory, extractFileExtension, classifyCommand, extractMcpServer, inferResponseType, classifyToolResponse } from '../coarsen.js'
+import { classifyToolCategory, extractFileExtension, classifyCommand, extractMcpServer, inferResponseType, classifyToolResponse, extractEffortLevel } from '../coarsen.js'
 import { getOrCreateContributorId } from '../config.js'
 import { insertToolEvent, getToolEventCount, insertX402Event } from '../store.js'
 import type { HookInput } from '../types.js'
@@ -59,8 +59,12 @@ export function handlePostToolUse(db: Database.Database, input: HookInput): void
   const contributorId = getOrCreateContributorId()
 
   // Coarsen tool response if available, otherwise infer from tool name
-  const response = input.tool_response
-    ? classifyToolResponse(toolName, input.tool_response)
+  // (Codex may send a structured object — stringify for classification)
+  const responseText = typeof input.tool_response === 'string'
+    ? input.tool_response
+    : input.tool_response != null ? JSON.stringify(input.tool_response) : null
+  const response = responseText
+    ? classifyToolResponse(toolName, responseText)
     : null
 
   insertToolEvent(db, {
@@ -83,6 +87,10 @@ export function handlePostToolUse(db: Database.Database, input: HookInput): void
     response_has_code: response?.has_code_blocks ?? null,
     response_has_error: response?.has_error ?? null,
     response_summary: response?.truncated_summary ?? null,
+    tool_use_id: input.tool_use_id ?? null,
+    agent_id: input.agent_id ?? null,
+    agent_type: input.agent_type ?? null, // verbatim — closed vocab incl. 'plugin:name'
+    effort_level: extractEffortLevel(input.effort),
   })
 
   // x402 event tracking — detect payment-related MCP tool calls
