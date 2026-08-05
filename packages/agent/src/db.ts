@@ -13,7 +13,7 @@
  * durable Splits proposal ID; confirmation replaces it with the chain hash.
  */
 import { neon } from '@neondatabase/serverless'
-import { formatUnits } from 'viem'
+import { formatUnits, getAddress, verifyMessage, type Hex } from 'viem'
 import type { EligibleScore, PayoutAmount } from './prorata.js'
 
 export interface ExistingPayout {
@@ -22,6 +22,22 @@ export interface ExistingPayout {
   amount: string
   tx_hash: string | null
   status: string
+}
+
+export async function hasValidWalletBinding(
+  contributorId: string,
+  walletAddress: string,
+  signature: Hex,
+): Promise<boolean> {
+  try {
+    return await verifyMessage({
+      address: getAddress(walletAddress),
+      message: `pollen:register:${contributorId}`,
+      signature,
+    })
+  } catch {
+    return false
+  }
 }
 
 /** Store abstraction so payout logic is unit-testable without a database. */
@@ -49,20 +65,30 @@ export function createNeonStore(connectionString: string): PayoutStore {
 
     async fetchEligibleScores(epoch: number): Promise<EligibleScore[]> {
       const rows = await sql`
-        SELECT es.contributor_id, es.score::text AS score, c.wallet_address
+        SELECT es.contributor_id, es.score::text AS score,
+               c.wallet_address, c.wallet_binding_sig
         FROM epoch_scores es
         JOIN contributors c ON c.contributor_id = es.contributor_id
         WHERE es.epoch = ${epoch}
           AND c.world_id_nullifier IS NOT NULL
           AND c.verified_at IS NOT NULL
           AND c.wallet_address IS NOT NULL
+          AND c.wallet_binding_sig IS NOT NULL
         ORDER BY es.contributor_id
       `
-      return rows.map(r => ({
-        contributor_id: r.contributor_id as string,
-        wallet_address: r.wallet_address as string,
-        score: r.score as string,
-      }))
+      const eligible: EligibleScore[] = []
+      for (const row of rows) {
+        const contributorId = row.contributor_id as string
+        const walletAddress = row.wallet_address as string
+        const signature = row.wallet_binding_sig as Hex
+        if (!await hasValidWalletBinding(contributorId, walletAddress, signature)) continue
+        eligible.push({
+          contributor_id: contributorId,
+          wallet_address: walletAddress,
+          score: row.score as string,
+        })
+      }
+      return eligible
     },
 
     async fetchPayouts(epoch: number): Promise<ExistingPayout[]> {

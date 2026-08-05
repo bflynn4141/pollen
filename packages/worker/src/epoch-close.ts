@@ -72,7 +72,8 @@ export async function getEpochHealth(epoch = currentEpoch() - 1): Promise<EpochH
     SELECT
       (SELECT COUNT(*)::int FROM contributors) AS contributors,
       (SELECT COUNT(*)::int FROM contributors
-        WHERE world_id_nullifier IS NOT NULL AND verified_at IS NOT NULL AND wallet_address IS NOT NULL
+        WHERE world_id_nullifier IS NOT NULL AND verified_at IS NOT NULL
+          AND wallet_address IS NOT NULL AND wallet_binding_sig IS NOT NULL
       ) AS payout_eligible_contributors,
       (SELECT COUNT(*)::int FROM tool_events
         WHERE timestamp >= ${startsAt} AND timestamp < ${endsAt}

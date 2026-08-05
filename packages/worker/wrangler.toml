@@ -34,11 +34,15 @@ new_sqlite_classes = ["X402SettlementRelayer"]
 X402_PAY_TO = "0x4548475CA9EE1BEff99fFfa3b691815388B1E139"
 POLLEN_TOKEN_ADDRESS = "0x8ED2E55875Bf4C3082364441FfD314Ec6E228318"
 BASE_RPC_URL = "https://base-rpc.publicnode.com"
+WORLD_ID_APP_ID = "app_7cdc85dd761e248a8019248907de5d51"
+WORLD_ID_RP_ID = "rp_68c58523c1d0cb19"
+WORLD_ID_ACTION = "pollen-verify-v2"
 
 # Secrets — set via `wrangler secret put <NAME>`:
 #   NEON_DATABASE_URL   Neon Postgres connection string
 #   ADMIN_SECRET        Bearer token for POST /admin/run/{rollups,epoch-close}
 #   X402_RELAYER_KEY     Gas-funded EOA that submits PollenSettlementV2.settle
+#   RP_SIGNING_KEY        World ID relying-party request signing key
 
 [observability]
 enabled = true

@@ -7,7 +7,7 @@
  *      other closed epoch is dry-run-only.
  *   2. Assert epoch_scores rows exist (else: run the epoch-close cron first).
  *   3. Eligibility: World ID-verified contributors with a bound wallet
- *      (world_id_nullifier, verified_at, wallet_address all non-NULL).
+ *      (World ID verified and an EIP-191 binding that recovers to wallet_address).
  *   4. amount_i = floor(epochPool(epoch) * score_i / total_score); zeros dropped.
  *   5. Idempotency: existing payouts rows for the epoch abort the run unless
  *      --resume, which skips confirmed rows and reconciles any durable Splits
@@ -91,7 +91,7 @@ export async function runPayout(deps: PayoutDeps, opts: PayoutOptions = {}): Pro
 
   // 3-4. Eligible contributors + pro-rata amounts
   const eligible = await store.fetchEligibleScores(epoch)
-  log(`Epoch ${epoch}: ${scoreCount} scored contributors, ${eligible.length} eligible (World ID verified + wallet bound).`)
+  log(`Epoch ${epoch}: ${scoreCount} scored contributors, ${eligible.length} eligible (World ID verified + cryptographic wallet binding).`)
   const pool = epochPool(epoch)
   const payoutsAll = computePayouts(eligible, pool)
 

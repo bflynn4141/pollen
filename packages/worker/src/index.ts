@@ -15,6 +15,11 @@ import {
 } from '@pollen/data'
 import { getEpochHealth, runEpochClose } from './epoch-close'
 import { createPollenPaymentMiddleware, getRelayerHealth, type X402RelayEnv } from './x402-relay'
+import {
+  handleRpSignature,
+  handleWorldIdVerify,
+  type WorldIdEnv,
+} from './worldid'
 export { X402SettlementRelayer } from './x402-relay'
 
 /**
@@ -32,7 +37,7 @@ export { X402SettlementRelayer } from './x402-relay'
  * endpoints send `no-store`.
  */
 
-export interface Env extends X402RelayEnv {
+export interface Env extends X402RelayEnv, WorldIdEnv {
   // Secrets (wrangler secret put):
   NEON_DATABASE_URL: string
   ADMIN_SECRET: string
@@ -52,6 +57,11 @@ app.use('*', createPollenPaymentMiddleware())
 // ── API endpoints (mounted at both / and /api/v1) ──
 
 const api = new Hono<{ Bindings: Env }>()
+
+// Identity endpoints are uncached and never x402-gated. The signing key stays
+// in the Worker; clients receive only a short-lived request signature.
+api.post('/worldid/rp-signature', c => handleRpSignature(c.env))
+api.post('/worldid/verify', c => handleWorldIdVerify(c.req.raw, c.env))
 
 // Free: latest two published weeks, k-anonymized rollup cells only.
 api.get('/trending/tools', async c => {

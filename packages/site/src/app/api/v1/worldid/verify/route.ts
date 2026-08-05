@@ -1,140 +1,124 @@
 import { NextResponse } from 'next/server'
+import { hashSignal } from '@worldcoin/idkit-core/hashing'
 import { getDb } from '@/lib/neon'
-
-/**
- * POST /api/v1/worldid/verify
- *
- * Server-side World ID proof verification. The CLI (`pollen verify`) posts the
- * proof it received from the World App bridge; this route forwards it to
- * Worldcoin's cloud verifier and, on success, marks the contributor verified.
- *
- * This is an identity route, not a public data route — it talks to Neon
- * directly (never through rollup-queries).
- *
- * Responses:
- * - 200 { success: true, nullifier }
- * - 400 invalid body or proof rejected by Worldcoin
- * - 409 nullifier already bound to a different contributor (sybil attempt)
- * - 500 WORLD_ID_APP_ID not configured
- */
 
 export const dynamic = 'force-dynamic'
 
-interface VerifyRequestBody {
-  contributor_id?: string
-  proof?: string
-  merkle_root?: string
-  nullifier_hash?: string
-  verification_level?: string
+type IdKitResult = {
+  protocol_version: '4.0'
+  nonce: string
+  action: string
+  environment: 'production'
+  responses: Array<{
+    identifier: 'proof_of_human'
+    signal_hash: string
+    proof: string[]
+    nullifier: string
+  }>
+  user_presence_completed: boolean
 }
 
-interface WorldcoinVerifyResponse {
-  success?: boolean
-  action?: string
-  nullifier_hash?: string
-  code?: string
-  detail?: string
-  attribute?: string | null
+function fail(code: string, status: number, detail?: string) {
+  return NextResponse.json({ success: false, code, detail }, { status })
+}
+
+function validContributorId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value)
+}
+
+function validResult(value: unknown, action: string, contributorId: string): value is IdKitResult {
+  if (!value || typeof value !== 'object') return false
+  const result = value as Partial<IdKitResult>
+  if (
+    result.protocol_version !== '4.0'
+    || result.action !== action
+    || result.environment !== 'production'
+    || typeof result.nonce !== 'string'
+    || !Array.isArray(result.responses)
+    || result.responses.length !== 1
+  ) return false
+
+  const [response] = result.responses
+  return Boolean(
+    response
+      && response.identifier === 'proof_of_human'
+      && Array.isArray(response.proof)
+      && /^0x[0-9a-fA-F]{64}$/.test(response.nullifier)
+      && response.signal_hash.toLowerCase() === hashSignal(contributorId).toLowerCase(),
+  )
 }
 
 export async function POST(request: Request) {
-  const appId = process.env.WORLD_ID_APP_ID
-  if (!appId) {
-    return NextResponse.json(
-      { success: false, code: 'not_configured', detail: 'WORLD_ID_APP_ID is not set' },
-      { status: 500 },
-    )
-  }
-  const action = process.env.WORLD_ID_ACTION ?? 'pollen-verify'
+  const rpId = process.env.WORLD_ID_RP_ID
+  const action = process.env.WORLD_ID_ACTION ?? 'pollen-verify-v2'
+  if (!rpId) return fail('not_configured', 500, 'WORLD_ID_RP_ID is not set')
 
-  let body: VerifyRequestBody
+  let body: { contributor_id?: unknown; idkit_result?: unknown }
   try {
-    body = await request.json() as VerifyRequestBody
+    body = await request.json() as typeof body
   } catch {
-    return NextResponse.json({ success: false, code: 'invalid_json' }, { status: 400 })
+    return fail('invalid_json', 400)
+  }
+  if (!validContributorId(body.contributor_id)) return fail('invalid_contributor_id', 400)
+  if (!validResult(body.idkit_result, action, body.contributor_id)) {
+    return fail('invalid_idkit_result', 400)
   }
 
-  const { contributor_id, proof, merkle_root, nullifier_hash, verification_level } = body
-  if (!contributor_id || !proof || !merkle_root || !nullifier_hash || !verification_level) {
-    return NextResponse.json(
-      {
-        success: false,
-        code: 'missing_fields',
-        detail: 'contributor_id, proof, merkle_root, nullifier_hash, verification_level are required',
-      },
-      { status: 400 },
-    )
-  }
-
-  // 1. Verify the proof against Worldcoin's cloud verifier
-  const wcRes = await fetch(`https://developer.worldcoin.org/api/v2/verify/${appId}`, {
+  const verifier = await fetch(`https://developer.world.org/api/v4/verify/${encodeURIComponent(rpId)}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nullifier_hash, merkle_root, proof, verification_level, action }),
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body.idkit_result),
   })
-
-  let wcData: WorldcoinVerifyResponse = {}
+  const verifierBody = await verifier.text()
+  let verified: { success?: boolean; code?: string; detail?: string; message?: string }
   try {
-    wcData = await wcRes.json() as WorldcoinVerifyResponse
+    verified = JSON.parse(verifierBody) as typeof verified
   } catch {
-    // fall through — treated as failure below
+    return fail(
+      'invalid_verifier_response',
+      502,
+      `status=${verifier.status}; content-type=${verifier.headers.get('content-type') ?? 'missing'}; bytes=${verifierBody.length}`,
+    )
   }
-
-  if (!wcRes.ok || wcData.success !== true) {
-    return NextResponse.json(
-      {
-        success: false,
-        code: wcData.code ?? 'verification_failed',
-        detail: wcData.detail ?? `Worldcoin verify returned ${wcRes.status}`,
-      },
-      { status: 400 },
+  if (!verifier.ok || verified.success !== true) {
+    return fail(
+      verified.code ?? 'verification_failed',
+      400,
+      verified.detail ?? verified.message ?? `World ID verifier returned ${verifier.status}`,
     )
   }
 
+  const nullifier = body.idkit_result.responses[0].nullifier.toLowerCase()
   const sql = getDb()
-
-  // 2. A nullifier may only ever bind to one contributor (sybil resistance)
-  const existing = await sql`
-    SELECT contributor_id FROM contributors WHERE world_id_nullifier = ${nullifier_hash}
-  `
-  if (existing.length > 0 && existing[0].contributor_id !== contributor_id) {
-    return NextResponse.json(
-      {
-        success: false,
-        code: 'nullifier_already_bound',
-        detail: 'This World ID is already linked to a different contributor',
-      },
-      { status: 409 },
-    )
-  }
-
-  // 3. Upsert verification fields onto the contributor
   try {
-    await sql`
-      INSERT INTO contributors (contributor_id, world_id_nullifier, verification_level, verified_at, updated_at)
-      VALUES (${contributor_id}, ${nullifier_hash}, ${verification_level}, NOW(), NOW())
+    const rows = await sql`
+      INSERT INTO contributors (
+        contributor_id, world_id_nullifier, verification_level, verified_at, updated_at
+      )
+      VALUES (${body.contributor_id}, ${nullifier}, ${'proof_of_human'}, NOW(), NOW())
       ON CONFLICT (contributor_id) DO UPDATE SET
         world_id_nullifier = EXCLUDED.world_id_nullifier,
         verification_level = EXCLUDED.verification_level,
         verified_at = EXCLUDED.verified_at,
         updated_at = NOW()
+      WHERE contributors.world_id_nullifier IS NULL
+         OR contributors.world_id_nullifier = EXCLUDED.world_id_nullifier
+      RETURNING contributor_id
     `
-  } catch (err) {
-    // Unique-violation race: another contributor bound this nullifier between
-    // the check above and the upsert.
-    const message = (err as Error).message ?? ''
-    if (message.includes('world_id_nullifier') || message.includes('duplicate key')) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: 'nullifier_already_bound',
-          detail: 'This World ID is already linked to a different contributor',
-        },
-        { status: 409 },
-      )
+    if (rows.length === 0) {
+      return fail('contributor_already_bound', 409, 'Contributor has a different World ID')
     }
-    throw err
+  } catch (error) {
+    const dbError = error as Error & { code?: string }
+    if (dbError.code === '23505' || dbError.message.includes('world_id_nullifier')) {
+      return fail('nullifier_already_bound', 409, 'World ID belongs to a different contributor')
+    }
+    throw error
   }
 
-  return NextResponse.json({ success: true, nullifier: nullifier_hash })
+  return NextResponse.json({
+    success: true,
+    nullifier,
+    verification_level: 'proof_of_human',
+  })
 }
