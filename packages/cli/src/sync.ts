@@ -51,7 +51,7 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           taxonomy_version, confidence, action, topic,
           contributor_id, permission_mode
         ) VALUES (
-          ${row.id}, ${row.timestamp}, ${row.session_id},
+          ${row.id}, ${toInt(row.timestamp)}, ${row.session_id},
           ${safeJsonb(row.keywords)}, ${safeJsonb(row.tools_chain)},
           ${safeJsonb(row.language_signals)}, ${safeJsonb(row.frameworks)},
           ${row.prompt_length}, ${row.code_ratio}, ${row.structure_type}, ${row.session_depth},
@@ -95,11 +95,11 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           contributor_id, response_type, response_size,
           response_file_paths, response_has_code, response_has_error, response_summary
         ) VALUES (
-          ${row.id}, ${row.session_id}, ${row.timestamp},
+          ${row.id}, ${row.session_id}, ${toInt(row.timestamp)},
           ${row.tool_name}, ${row.tool_category},
           ${toBool(row.success)}, ${row.error_category}, ${row.file_extension},
-          ${row.command_category}, ${row.sequence_number}, ${row.mcp_server}, ${row.duration_ms},
-          ${row.contributor_id ?? contributorId}, ${row.response_type}, ${row.response_size},
+          ${row.command_category}, ${toInt(row.sequence_number)}, ${row.mcp_server}, ${toInt(row.duration_ms)},
+          ${row.contributor_id ?? contributorId}, ${row.response_type}, ${toInt(row.response_size)},
           ${row.response_file_paths}, ${toBoolNullable(row.response_has_code)},
           ${toBoolNullable(row.response_has_error)}, ${row.response_summary}
         )
@@ -142,7 +142,7 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions
         ) VALUES (
           ${row.session_id}, ${row.model}, ${row.source},
-          ${row.started_at}, ${row.ended_at},
+          ${toInt(row.started_at)}, ${toInt(row.ended_at)},
           ${row.duration_bucket}, ${row.prompt_count}, ${row.tool_use_count}, ${row.tool_failure_count},
           ${safeJsonb(row.intent_sequence)}, ${row.dominant_intent}, ${row.dominant_domain},
           ${safeJsonb(row.unique_tools)}, ${safeJsonb(row.languages_used)}, ${row.outcome},
@@ -203,7 +203,7 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           INSERT INTO lifecycle_events (
             id, session_id, timestamp, event_type, parent_event_id, metadata, contributor_id
           ) VALUES (
-            ${row.id}, ${row.session_id}, ${row.timestamp},
+            ${row.id}, ${row.session_id}, ${toInt(row.timestamp)},
             ${row.event_type}, ${row.parent_event_id},
             ${safeJsonb(row.metadata)}, ${row.contributor_id ?? contributorId}
           )
@@ -236,7 +236,7 @@ export async function syncToNeon(db: Database.Database, connectionString: string
             id, session_id, timestamp, tool_name, mcp_server,
             service_url, service_name, success, contributor_id
           ) VALUES (
-            ${row.id}, ${row.session_id}, ${row.timestamp},
+            ${row.id}, ${row.session_id}, ${toInt(row.timestamp)},
             ${row.tool_name}, ${row.mcp_server},
             ${row.service_url}, ${row.service_name},
             ${toBool(row.success)}, ${row.contributor_id ?? contributorId}
@@ -316,6 +316,19 @@ async function syncContributorIdentity(
       console.warn(`  (contributor identity not synced: ${msg} — run migration 003_contributors.sql)`)
     }
   }
+}
+
+/**
+ * Coerce a numeric value to a whole number for Postgres BIGINT/INT columns.
+ * Some historical local rows carry fractional ms timestamps (e.g.
+ * 1772833589456.4397), which SQLite stores fine as REAL but Postgres rejects
+ * with "invalid input syntax for type bigint" — killing the sync at that row
+ * forever, since watermarks only advance after a table completes.
+ */
+function toInt(val: unknown): number | null {
+  if (val == null) return null
+  const n = Number(val)
+  return Number.isFinite(n) ? Math.trunc(n) : null
 }
 
 /** Convert SQLite 0/1 to Postgres boolean */
