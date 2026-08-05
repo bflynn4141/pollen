@@ -5,17 +5,25 @@ import { finalizeStaleSessions } from '../finalize.js'
 import { insertSession } from '../store.js'
 import type { HookInput } from '../types.js'
 
-export function handleSessionStart(db: Database.Database, input: HookInput): void {
+export function handleSessionStart(
+  db: Database.Database,
+  input: HookInput,
+  toolSource: string = 'claude-code',
+): void {
   if (!input.session_id) return
 
   // Opportunistically close out sessions that never got a SessionEnd
   // (killed terminal, crash) so outcomes materialize without one.
   finalizeStaleSessions(db, { excludeSessionId: input.session_id })
 
+  // `source` is the agent CLI identity (claude-code | codex); the hook
+  // payload's own `source` field is the start TRIGGER (startup | clear |
+  // resume | compact) and goes to start_source.
   insertSession(db, {
     session_id: input.session_id,
     model: input.model ?? null,
-    source: input.source ?? null,
+    source: toolSource,
+    start_source: input.source ?? null,
     started_at: Date.now(),
     ended_at: null,
     duration_bucket: null,

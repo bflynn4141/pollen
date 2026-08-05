@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   session_id TEXT PRIMARY KEY,
   model TEXT,
   source TEXT,
+  start_source TEXT,
   started_at INTEGER NOT NULL,
   ended_at INTEGER,
   duration_bucket TEXT,
@@ -469,7 +470,7 @@ export function queryToolFailures(db: Database.Database): ToolFailureRow[] {
 export function insertSession(db: Database.Database, session: SessionRecord): void {
   db.prepare(`
     INSERT OR IGNORE INTO sessions (
-      session_id, model, source, started_at, ended_at,
+      session_id, model, source, start_source, started_at, ended_at,
       duration_bucket, prompt_count, tool_use_count, tool_failure_count,
       intent_sequence, dominant_intent, dominant_domain,
       unique_tools, languages_used, outcome,
@@ -479,11 +480,12 @@ export function insertSession(db: Database.Database, session: SessionRecord): vo
       edit_count, read_count, search_to_edit_ratio, error_recovery_rate,
       mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions,
       transcript_path, input_tokens, output_tokens, cached_input_tokens
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     session.session_id,
     session.model,
     session.source,
+    session.start_source ?? null,
     session.started_at,
     session.ended_at,
     session.duration_bucket,

@@ -28,6 +28,7 @@ import { classifyError, classifyToolCategory, detectProjectType, extractMcpServe
 import { MS_PER_DAY, getOrCreateContributorId } from './config.js'
 import { computeSessionArc } from './session-arc.js'
 import { insertLifecycleEvent, insertSession, insertToolEvent, updateSession } from './store.js'
+import { lowerNeonWatermarks } from './sync.js'
 
 export const MAX_ROLLOUT_FILE_BYTES = 50 * 1024 * 1024
 
@@ -108,6 +109,7 @@ export async function backfillCodex(
   const result: CodexBackfillResult = {
     files: 0, skippedFiles: 0, sessions: 0, toolEvents: 0, warnings: [],
   }
+  let earliestTs = 0
 
   if (!existsSync(sessionsDir)) {
     result.warnings.push(`No Codex sessions directory at ${sessionsDir}`)
@@ -136,10 +138,31 @@ export async function backfillCodex(
       if (state.sessionId) {
         result.sessions++
         result.toolEvents += state.toolEvents
+        if (state.startedAt > 0) {
+          earliestTs = earliestTs === 0 ? state.startedAt : Math.min(earliestTs, state.startedAt)
+        }
       }
     } catch (err) {
       result.skippedFiles++
       result.warnings.push(`Failed to parse ${file}: ${(err as Error).message}`)
+    }
+  }
+
+  // Backfilled rows sit BEHIND the sync watermarks; lower them so the next
+  // `pollen sync` picks the rows up instead of silently stranding them.
+  if (result.sessions > 0 && earliestTs > 0) {
+    const neonUrl = process.env.NEON_DATABASE_URL
+    if (neonUrl) {
+      try {
+        const lowered = await lowerNeonWatermarks(neonUrl, earliestTs)
+        if (lowered.length > 0) {
+          result.warnings.push(`Lowered sync watermarks (${lowered.join(', ')}) — run \`pollen sync\` to push backfilled data`)
+        }
+      } catch (err) {
+        result.warnings.push(`Could not lower sync watermarks: ${(err as Error).message}`)
+      }
+    } else {
+      result.warnings.push('NEON_DATABASE_URL not set — backfilled rows predate the sync watermarks and will NOT sync until they are lowered; rerun backfill with it set, or reset sync_meta manually')
     }
   }
 

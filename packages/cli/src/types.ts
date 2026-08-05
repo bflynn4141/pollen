@@ -222,6 +222,7 @@ export interface SessionRecord {
   session_id: string
   model: string | null
   source: string | null
+  start_source?: string | null
   started_at: number
   ended_at: number | null
   duration_bucket: DurationBucket | null

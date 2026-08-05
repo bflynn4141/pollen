@@ -215,7 +215,12 @@ try {
       break
     }
     case 'wallet': {
-      await runInteractiveWallet()
+      if (process.argv[3] === 'bind') {
+        const { runWalletBind } = await import('./wallet-bind.js')
+        await runWalletBind()
+      } else {
+        await runInteractiveWallet()
+      }
       break
     }
     case 'claim': {

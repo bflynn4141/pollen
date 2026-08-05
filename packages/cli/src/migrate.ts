@@ -166,6 +166,19 @@ export function migrateSchema(db: Database.Database): void {
     db.prepare('ALTER TABLE sessions ADD COLUMN stop_tool_use_count INTEGER').run()
   }
 
+  // --- v5: source taxonomy — source is CLI identity, start_source the trigger ---
+  if (!hasColumn(db, 'sessions', 'start_source')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN start_source TEXT').run()
+    // Repair rows written before the split: hook-payload trigger values were
+    // stored in source; every non-codex row is Claude Code.
+    db.prepare(
+      "UPDATE sessions SET start_source = source WHERE source IN ('startup','clear','resume','compact')"
+    ).run()
+    db.prepare(
+      "UPDATE sessions SET source = 'claude-code' WHERE source IS NULL OR source NOT IN ('claude-code','codex')"
+    ).run()
+  }
+
   // --- v5: Codex backfill token totals ---
   if (!hasColumn(db, 'sessions', 'input_tokens')) {
     db.prepare('ALTER TABLE sessions ADD COLUMN input_tokens INTEGER').run()

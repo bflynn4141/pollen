@@ -60,9 +60,7 @@ export function runHookSync(input: HookInput, source?: string): HookResult {
       handlePostToolUseFailure(db, input)
       break
     case 'SessionStart':
-      // Codex SessionStart payloads carry their own `source` (e.g. 'vscode');
-      // the pollen source column tracks the CLI, so force 'codex'.
-      handleSessionStart(db, isCodex ? { ...input, source: 'codex' } : input)
+      handleSessionStart(db, input, isCodex ? 'codex' : 'claude-code')
       break
     case 'SessionEnd':
       handleSessionEnd(db, input)

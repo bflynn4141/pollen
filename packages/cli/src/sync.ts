@@ -137,7 +137,7 @@ export async function syncToNeon(db: Database.Database, connectionString: string
     for (const row of batch) {
       await sql`
         INSERT INTO sessions (
-          session_id, model, source, started_at, ended_at,
+          session_id, model, source, start_source, started_at, ended_at,
           duration_bucket, prompt_count, tool_use_count, tool_failure_count,
           intent_sequence, dominant_intent, dominant_domain,
           unique_tools, languages_used, outcome,
@@ -150,7 +150,7 @@ export async function syncToNeon(db: Database.Database, connectionString: string
           transcript_path, stop_tool_use_count,
           input_tokens, output_tokens, cached_input_tokens
         ) VALUES (
-          ${row.session_id}, ${row.model}, ${row.source},
+          ${row.session_id}, ${row.model}, ${row.source}, ${row.start_source},
           ${toInt(row.started_at)}, ${toInt(row.ended_at)},
           ${row.duration_bucket}, ${row.prompt_count}, ${row.tool_use_count}, ${row.tool_failure_count},
           ${safeJsonb(row.intent_sequence)}, ${row.dominant_intent}, ${row.dominant_domain},
@@ -336,6 +336,26 @@ async function syncContributorIdentity(
       console.warn(`  (contributor identity not synced: ${msg} — run migration 003_contributors.sql)`)
     }
   }
+}
+
+/**
+ * Lower the Neon sync watermarks so rows inserted by a backfill (which carry
+ * historical timestamps BEHIND the current watermark) become visible to the
+ * next `pollen sync`. No-op for watermarks already at or below earliestTs.
+ */
+export async function lowerNeonWatermarks(connectionString: string, earliestTs: number): Promise<string[]> {
+  const sql = neon(connectionString)
+  const floor = String(Math.max(0, Math.trunc(earliestTs) - 1))
+  const lowered: string[] = []
+  for (const key of ['last_sync_tool_events', 'last_sync_sessions', 'last_sync_lifecycle_events']) {
+    const res = await sql`
+      UPDATE sync_meta SET value = ${floor}
+      WHERE key = ${key} AND value::numeric > ${floor}::numeric
+      RETURNING key
+    `
+    if (res.length > 0) lowered.push(key)
+  }
+  return lowered
 }
 
 /**
