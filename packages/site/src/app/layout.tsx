@@ -54,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${playfair.variable} ${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} light`} style={{ colorScheme: 'light' }}>
       <body>
-        <RootProvider forcedTheme="light">{children}</RootProvider>
+        <RootProvider theme={{ forcedTheme: "light" }}>{children}</RootProvider>
       </body>
     </html>
   );
