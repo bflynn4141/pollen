@@ -52,6 +52,9 @@ export interface Contribution {
   // v3: topic extraction (stored as direct columns, not in features JSON)
   action: string | null      // "fix", "create", "explain", etc.
   topic: string | null        // "auth", "database", "api", etc.
+  // v4: cross-user analytics
+  contributor_id?: string | null
+  permission_mode?: string | null
 }
 
 // Hook event types
@@ -62,6 +65,11 @@ export type HookEventName =
   | 'SessionStart'
   | 'SessionEnd'
   | 'Stop'
+  | 'PreToolUse'
+  | 'SubagentStart'
+  | 'SubagentStop'
+  | 'Notification'
+  | 'PreCompact'
 
 export interface HookInput {
   session_id?: string
@@ -73,6 +81,7 @@ export interface HookInput {
   // PostToolUse / PostToolUseFailure fields
   tool_name?: string
   tool_input?: Record<string, unknown>
+  tool_response?: string   // future: tool response content
   error?: string           // Claude Code sends 'error', not 'tool_error'
   tool_error?: string      // deprecated: kept for backward compat
   // Model info (SessionStart)
@@ -82,6 +91,16 @@ export interface HookInput {
   last_assistant_message?: string
   // SessionEnd fields
   reason?: string
+  // SubagentStart/Stop fields
+  agent_name?: string
+  agent_type?: string
+  task_description?: string
+  // Notification fields
+  notification_type?: string
+  notification_content?: string
+  // PreCompact fields
+  context_size?: number
+  conversation_length?: number
 }
 
 // Tool usage coarsening types
@@ -114,6 +133,18 @@ export type CommandCategory =
   | 'read'
   | 'other'
 
+// v4: tool response coarsening types
+export type ResponseType =
+  | 'file_content'
+  | 'search_results'
+  | 'code_generated'
+  | 'command_output'
+  | 'error_output'
+  | 'web_content'
+  | 'confirmation'
+  | 'empty'
+  | 'unknown'
+
 export interface CoarsenedToolEvent {
   id: string
   session_id: string
@@ -127,6 +158,14 @@ export interface CoarsenedToolEvent {
   sequence_number: number
   mcp_server: string | null
   duration_ms: number | null
+  contributor_id?: string | null
+  // v4: response coarsening
+  response_type?: ResponseType | null
+  response_size?: number | null
+  response_file_paths?: number | null
+  response_has_code?: boolean | null
+  response_has_error?: boolean | null
+  response_summary?: string | null
 }
 
 // Session tracking types
@@ -157,6 +196,18 @@ export interface SessionRecord {
   satisfaction_score: number | null
   satisfaction_signals: string | null  // JSON of signal flags
   subject: string | null               // LLM-extracted session subject (3-5 words)
+  // v4: cross-user analytics
+  contributor_id?: string | null
+  // v4: session aggregates
+  edit_count?: number
+  read_count?: number
+  search_to_edit_ratio?: number | null
+  error_recovery_rate?: number | null
+  mcp_tool_count?: number
+  unique_mcp_servers?: number
+  permission_mode?: string | null
+  subagent_count?: number
+  context_compactions?: number
 }
 
 export interface SatisfactionSignals {
@@ -176,6 +227,17 @@ export interface ResponseMeta {
   length_bucket: ResponseLengthBucket
   code_block_count: number
   has_error_mention: boolean
+}
+
+export interface IVSBreakdown {
+  subject: number
+  topicAction: number
+  tools: number
+  commands: number
+  freshness: number
+  depth: number
+  sequenceEntropy: number
+  authenticityMultiplier: number
 }
 
 export interface TermDictionary {

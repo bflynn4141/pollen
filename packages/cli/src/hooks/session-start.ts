@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { detectProjectType } from '../coarsen.js'
+import { getOrCreateContributorId } from '../config.js'
 import { insertSession } from '../store.js'
 import type { HookInput } from '../types.js'
 
@@ -30,5 +31,7 @@ export function handleSessionStart(db: Database.Database, input: HookInput): voi
     satisfaction_score: null,
     satisfaction_signals: null,
     subject: null,
+    contributor_id: getOrCreateContributorId(),
+    permission_mode: input.permission_mode ?? null,
   })
 }

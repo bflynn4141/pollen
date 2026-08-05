@@ -8,6 +8,10 @@ import { handlePostToolUseFailure } from './hooks/tool-failure.js'
 import { handleSessionStart } from './hooks/session-start.js'
 import { handleSessionEnd } from './hooks/session-end.js'
 import { handleStop } from './hooks/stop.js'
+import { handleSubagentStart, handleSubagentStop } from './hooks/subagent.js'
+import { handlePreToolUse } from './hooks/pre-tool-use.js'
+import { handleNotification } from './hooks/notification.js'
+import { handlePreCompact } from './hooks/context-compact.js'
 import { DB_PATH } from './config.js'
 
 function ensureDir(filepath: string): void {
@@ -48,6 +52,21 @@ export function runHookSync(input: HookInput): HookResult {
       break
     case 'Stop':
       handleStop(db, input)
+      break
+    case 'SubagentStart':
+      handleSubagentStart(db, input)
+      break
+    case 'SubagentStop':
+      handleSubagentStop(db, input)
+      break
+    case 'PreToolUse':
+      handlePreToolUse(db, input)
+      break
+    case 'Notification':
+      handleNotification(db, input)
+      break
+    case 'PreCompact':
+      handlePreCompact(db, input)
       break
   }
 

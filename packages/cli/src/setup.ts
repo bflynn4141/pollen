@@ -24,6 +24,11 @@ const POLLEN_HOOK_EVENTS = [
   'Stop',
   'SessionStart',
   'SessionEnd',
+  'PreToolUse',
+  'SubagentStart',
+  'SubagentStop',
+  'Notification',
+  'PreCompact',
 ] as const
 
 /** The hook entry installed for new users (published npm package) */
@@ -138,6 +143,11 @@ export async function runSetup(demo = false): Promise<void> {
   } else {
     verifyOk = await promptVerify(demo)
   }
+
+  // ── Eligibility ────────────────────────────────────────────
+
+  console.log('  Verified + registered wallets earn weekly POLLEN payouts (epochs close Tuesdays 00:00 UTC).')
+  console.log('')
 
   // ── Summary ────────────────────────────────────────────────
 

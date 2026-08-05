@@ -1,0 +1,35 @@
+# pollen-api — public trending API + crons on Cloudflare Workers.
+# Deploy runbook: see README.md in this package.
+name = "pollen-api"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# api.pollen.id must be a zone in this Cloudflare account; the custom domain
+# route provisions DNS + cert automatically on deploy.
+# DISABLED 2026-08-05: the pollen.id zone lives in a different Cloudflare
+# account than this wrangler login — deploy failed with "Could not find zone".
+# Re-enable after moving the zone into this account (or deploy from the
+# account that owns pollen.id). Until then the worker serves on workers.dev.
+# routes = [
+#   { pattern = "api.pollen.id", custom_domain = true }
+# ]
+
+[triggers]
+# 1) rollups: recompute k-anonymized rollup cells every 6 hours
+# 2) epoch-close: score the just-closed epoch, Tuesdays 00:10 UTC
+crons = ["0 */6 * * *", "10 0 * * 2"]
+
+[vars]
+# Base-mainnet x402 payments settle atomically through PollenSettlementV2;
+# PollenTokenV2 then holds the USDC until each POLLEN holder claims on-chain.
+X402_PAY_TO = "0x4548475CA9EE1BEff99fFfa3b691815388B1E139"
+BASE_RPC_URL = "https://mainnet.base.org"
+
+# Secrets — set via `wrangler secret put <NAME>`:
+#   NEON_DATABASE_URL   Neon Postgres connection string
+#   ADMIN_SECRET        Bearer token for POST /admin/run/{rollups,epoch-close}
+#   X402_RELAYER_KEY     Gas-funded EOA that submits PollenSettlementV2.settle
+
+[observability]
+enabled = true

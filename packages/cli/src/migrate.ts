@@ -75,4 +75,72 @@ export function migrateSchema(db: Database.Database): void {
   if (!hasColumn(db, 'sessions', 'subject')) {
     db.prepare('ALTER TABLE sessions ADD COLUMN subject TEXT').run()
   }
+
+  // --- v4: contributor_id across all tables ---
+  if (!hasColumn(db, 'sessions', 'contributor_id')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN contributor_id TEXT').run()
+  }
+  if (!hasColumn(db, 'contributions', 'contributor_id')) {
+    db.prepare('ALTER TABLE contributions ADD COLUMN contributor_id TEXT').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'contributor_id')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN contributor_id TEXT').run()
+  }
+  if (!hasColumn(db, 'x402_events', 'contributor_id')) {
+    db.prepare('ALTER TABLE x402_events ADD COLUMN contributor_id TEXT').run()
+  }
+
+  // --- v4: tool response coarsening ---
+  if (!hasColumn(db, 'tool_events', 'response_type')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN response_type TEXT').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'response_size')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN response_size INTEGER').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'response_file_paths')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN response_file_paths INTEGER').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'response_has_code')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN response_has_code INTEGER').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'response_has_error')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN response_has_error INTEGER').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'response_summary')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN response_summary TEXT').run()
+  }
+
+  // --- v4: session aggregates ---
+  if (!hasColumn(db, 'sessions', 'edit_count')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN edit_count INTEGER DEFAULT 0').run()
+  }
+  if (!hasColumn(db, 'sessions', 'read_count')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN read_count INTEGER DEFAULT 0').run()
+  }
+  if (!hasColumn(db, 'sessions', 'search_to_edit_ratio')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN search_to_edit_ratio REAL').run()
+  }
+  if (!hasColumn(db, 'sessions', 'error_recovery_rate')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN error_recovery_rate REAL').run()
+  }
+  if (!hasColumn(db, 'sessions', 'mcp_tool_count')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN mcp_tool_count INTEGER DEFAULT 0').run()
+  }
+  if (!hasColumn(db, 'sessions', 'unique_mcp_servers')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN unique_mcp_servers INTEGER DEFAULT 0').run()
+  }
+  if (!hasColumn(db, 'sessions', 'permission_mode')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN permission_mode TEXT').run()
+  }
+  if (!hasColumn(db, 'sessions', 'subagent_count')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN subagent_count INTEGER DEFAULT 0').run()
+  }
+  if (!hasColumn(db, 'sessions', 'context_compactions')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN context_compactions INTEGER DEFAULT 0').run()
+  }
+
+  // --- v4: permission_mode on contributions ---
+  if (!hasColumn(db, 'contributions', 'permission_mode')) {
+    db.prepare('ALTER TABLE contributions ADD COLUMN permission_mode TEXT').run()
+  }
 }

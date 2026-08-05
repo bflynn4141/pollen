@@ -145,3 +145,88 @@ export interface SubjectTrendingItem {
   count: number
   growth: number | null
 }
+
+// ── MCP Ecosystem types ──
+
+export interface McpAdoptionItem {
+  server: string
+  session_count: number
+}
+
+export interface McpCoUsageItem {
+  server_a: string
+  server_b: string
+  co_count: number
+}
+
+export interface McpSatisfactionDelta {
+  group_name: 'mcp' | 'no_mcp'
+  avg_satisfaction: number
+  session_count: number
+}
+
+// ── Developer Behavior types ──
+
+export interface PermissionModeItem {
+  permission_mode: string
+  session_count: number
+  avg_satisfaction: number | null
+}
+
+export interface PermissionModeTrendPoint {
+  permission_mode: string
+  date: string
+  count: number
+}
+
+export interface SubagentTrendPoint {
+  date: string
+  with_subagents: number
+  total: number
+  adoption_pct: number
+}
+
+export interface CompactionTrendPoint {
+  date: string
+  avg_compactions: number
+  sessions_with_compactions: number
+  total_sessions: number
+}
+
+export interface SubagentStats {
+  sessions_with_subagents: number
+  total_sessions: number
+  avg_subagents_when_used: number
+  max_subagents: number
+  avg_compactions: number
+}
+
+// ── Derived Metrics types ──
+
+export interface McpGrowthItem {
+  server: string
+  current_count: number
+  previous_count: number
+  growth_pct: number | null
+}
+
+export interface ReadWriteRatio {
+  reads: number
+  edits: number
+  ratio: number | null
+}
+
+export interface SessionDepthBucket {
+  bucket: 'quick' | 'focused' | 'deep' | 'marathon'
+  label: string
+  min_prompts: number
+  max_prompts: number | null
+  count: number
+  pct: number
+}
+
+export interface McpServerSuccessItem {
+  mcp_server: string
+  total_calls: number
+  success_rate: number
+}

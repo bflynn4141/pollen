@@ -1,9 +1,13 @@
 import { getDb } from './neon'
 import type {
   Period, TimePoint, OverviewResponse, TopicTrendItem, ActionTrendItem,
-  ToolRankItem, McpRankItem, HeatmapCell, SessionArc, SessionListItem,
+  ToolRankItem, HeatmapCell, SessionArc, SessionListItem,
   CompareItem, SubjectExploreResponse, SubjectAutocompleteItem,
   SubjectTrendingItem, SubjectSessionItem, DashboardItem,
+  McpAdoptionItem, McpCoUsageItem, McpSatisfactionDelta,
+  PermissionModeItem, PermissionModeTrendPoint, SubagentTrendPoint,
+  CompactionTrendPoint, SubagentStats,
+  McpGrowthItem, ReadWriteRatio, SessionDepthBucket,
 } from './trends'
 import { periodToMs, bucketInterval } from './parse-period'
 
@@ -148,27 +152,6 @@ export async function queryToolRanking(period: Period): Promise<ToolRankItem[]> 
     }
     return { tool_name: name, count, success_rate: Number(r.success_rate), trend }
   })
-}
-
-export async function queryMcpRanking(period: Period): Promise<McpRankItem[]> {
-  const sql = getDb()
-  const cutoff = periodToMs(period)
-
-  const rows = await sql`
-    SELECT mcp_server,
-      COUNT(*) as count,
-      ROUND(100.0 * SUM(CASE WHEN success THEN 1 ELSE 0 END) / COUNT(*)) as success_rate
-    FROM tool_events
-    WHERE mcp_server IS NOT NULL ${cutoff ? sql`AND timestamp > ${cutoff}` : sql``}
-    GROUP BY mcp_server
-    ORDER BY count DESC
-  `
-
-  return rows.map(r => ({
-    mcp_server: r.mcp_server as string,
-    count: Number(r.count),
-    success_rate: Number(r.success_rate),
-  }))
 }
 
 export async function queryTopToolSeries(period: Period, limit = 5): Promise<{ tool_name: string; series: TimePoint[] }[]> {
@@ -694,6 +677,307 @@ export async function queryCommandRanking(period: Period): Promise<(DashboardIte
   } catch {
     return []
   }
+}
+
+// ── MCP Ecosystem ──
+
+export async function queryMcpAdoption(period: Period): Promise<McpAdoptionItem[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT server, COUNT(*) as session_count
+    FROM sessions, jsonb_array_elements_text(mcp_servers_used::jsonb) AS server
+    WHERE mcp_servers_used IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY server ORDER BY session_count DESC
+  `
+
+  return rows.map(r => ({
+    server: r.server as string,
+    session_count: Number(r.session_count),
+  }))
+}
+
+export async function queryMcpCoUsage(period: Period): Promise<McpCoUsageItem[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    WITH servers AS (
+      SELECT session_id, server FROM sessions,
+        jsonb_array_elements_text(mcp_servers_used::jsonb) AS server
+      WHERE mcp_servers_used IS NOT NULL
+        ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    )
+    SELECT a.server AS server_a, b.server AS server_b, COUNT(DISTINCT a.session_id) AS co_count
+    FROM servers a JOIN servers b ON a.session_id = b.session_id AND a.server < b.server
+    GROUP BY a.server, b.server ORDER BY co_count DESC LIMIT 50
+  `
+
+  return rows.map(r => ({
+    server_a: r.server_a as string,
+    server_b: r.server_b as string,
+    co_count: Number(r.co_count),
+  }))
+}
+
+export async function queryMcpSatisfactionDelta(period: Period): Promise<McpSatisfactionDelta[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT CASE WHEN unique_mcp_servers > 0 THEN 'mcp' ELSE 'no_mcp' END AS group_name,
+      ROUND(AVG(satisfaction_score)) AS avg_satisfaction, COUNT(*) AS session_count
+    FROM sessions
+    WHERE satisfaction_score IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY group_name
+  `
+
+  return rows.map(r => ({
+    group_name: r.group_name as 'mcp' | 'no_mcp',
+    avg_satisfaction: Number(r.avg_satisfaction),
+    session_count: Number(r.session_count),
+  }))
+}
+
+// ── Developer Behavior ──
+
+export async function queryPermissionModeDistribution(period: Period): Promise<PermissionModeItem[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT permission_mode, COUNT(*) AS session_count,
+      ROUND(AVG(satisfaction_score)) AS avg_satisfaction
+    FROM sessions
+    WHERE permission_mode IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY permission_mode ORDER BY session_count DESC
+  `
+
+  return rows.map(r => ({
+    permission_mode: r.permission_mode as string,
+    session_count: Number(r.session_count),
+    avg_satisfaction: r.avg_satisfaction != null ? Number(r.avg_satisfaction) : null,
+  }))
+}
+
+export async function queryPermissionModeTrend(period: Period): Promise<PermissionModeTrendPoint[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+  const interval = bucketInterval(period)
+
+  const rows = await sql`
+    SELECT permission_mode,
+      to_char(date_trunc(${interval}, to_timestamp(started_at / 1000)), 'YYYY-MM-DD') as date,
+      COUNT(*) as count
+    FROM sessions
+    WHERE permission_mode IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY permission_mode, date ORDER BY permission_mode, date
+  `
+
+  return rows.map(r => ({
+    permission_mode: r.permission_mode as string,
+    date: r.date as string,
+    count: Number(r.count),
+  }))
+}
+
+export async function querySubagentTrend(period: Period): Promise<SubagentTrendPoint[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+  const interval = bucketInterval(period)
+
+  const rows = await sql`
+    SELECT to_char(date_trunc(${interval}, to_timestamp(started_at / 1000)), 'YYYY-MM-DD') as date,
+      COUNT(*) FILTER (WHERE subagent_count > 0) AS with_subagents,
+      COUNT(*) AS total,
+      ROUND(100.0 * COUNT(*) FILTER (WHERE subagent_count > 0) / NULLIF(COUNT(*), 0)) AS adoption_pct
+    FROM sessions
+    WHERE started_at IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY date ORDER BY date
+  `
+
+  return rows.map(r => ({
+    date: r.date as string,
+    with_subagents: Number(r.with_subagents),
+    total: Number(r.total),
+    adoption_pct: Number(r.adoption_pct ?? 0),
+  }))
+}
+
+export async function queryCompactionTrend(period: Period): Promise<CompactionTrendPoint[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+  const interval = bucketInterval(period)
+
+  const rows = await sql`
+    SELECT to_char(date_trunc(${interval}, to_timestamp(started_at / 1000)), 'YYYY-MM-DD') as date,
+      ROUND(AVG(context_compactions)::numeric, 2) AS avg_compactions,
+      COUNT(*) FILTER (WHERE context_compactions > 0) AS sessions_with_compactions,
+      COUNT(*) AS total_sessions
+    FROM sessions
+    WHERE started_at IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY date ORDER BY date
+  `
+
+  return rows.map(r => ({
+    date: r.date as string,
+    avg_compactions: Number(r.avg_compactions ?? 0),
+    sessions_with_compactions: Number(r.sessions_with_compactions),
+    total_sessions: Number(r.total_sessions),
+  }))
+}
+
+export async function querySubagentStats(period: Period): Promise<SubagentStats> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT COUNT(*) FILTER (WHERE subagent_count > 0) AS sessions_with_subagents,
+      COUNT(*) AS total_sessions,
+      ROUND(AVG(subagent_count) FILTER (WHERE subagent_count > 0)::numeric, 1) AS avg_subagents_when_used,
+      MAX(subagent_count) AS max_subagents,
+      ROUND(AVG(context_compactions)::numeric, 1) AS avg_compactions
+    FROM sessions
+    WHERE started_at IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+  `
+
+  const r = rows[0]
+  return {
+    sessions_with_subagents: Number(r.sessions_with_subagents ?? 0),
+    total_sessions: Number(r.total_sessions ?? 0),
+    avg_subagents_when_used: Number(r.avg_subagents_when_used ?? 0),
+    max_subagents: Number(r.max_subagents ?? 0),
+    avg_compactions: Number(r.avg_compactions ?? 0),
+  }
+}
+
+// ── Derived Metrics ──
+
+export async function queryMcpGrowthRate(period: Period): Promise<McpGrowthItem[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  // Current period: count sessions per MCP server
+  const currentRows = await sql`
+    SELECT server, COUNT(*) as session_count
+    FROM sessions, jsonb_array_elements_text(mcp_servers_used::jsonb) AS server
+    WHERE mcp_servers_used IS NOT NULL
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY server ORDER BY session_count DESC
+  `
+
+  // Previous period: same-length window before the cutoff
+  let prevMap = new Map<string, number>()
+  if (cutoff) {
+    const prevCutoff = cutoff - (Date.now() - cutoff)
+    const prevRows = await sql`
+      SELECT server, COUNT(*) as session_count
+      FROM sessions, jsonb_array_elements_text(mcp_servers_used::jsonb) AS server
+      WHERE mcp_servers_used IS NOT NULL
+        AND started_at > ${prevCutoff} AND started_at <= ${cutoff}
+      GROUP BY server
+    `
+    for (const r of prevRows) {
+      prevMap.set(r.server as string, Number(r.session_count))
+    }
+  }
+
+  return currentRows
+    .map(r => {
+      const server = r.server as string
+      const current_count = Number(r.session_count)
+      const previous_count = prevMap.get(server) ?? 0
+      const growth_pct = previous_count > 0
+        ? Math.round(((current_count - previous_count) / previous_count) * 100)
+        : null
+      return { server, current_count, previous_count, growth_pct }
+    })
+    .sort((a, b) => {
+      // Sort by growth_pct DESC, with null (brand new servers) at the top
+      if (a.growth_pct === null && b.growth_pct === null) return b.current_count - a.current_count
+      if (a.growth_pct === null) return -1
+      if (b.growth_pct === null) return 1
+      return b.growth_pct - a.growth_pct
+    })
+}
+
+export async function queryReadWriteRatio(period: Period): Promise<ReadWriteRatio> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT
+      COUNT(*) FILTER (WHERE tool_name = 'Read') AS reads,
+      COUNT(*) FILTER (WHERE tool_name IN ('Edit', 'Write')) AS edits
+    FROM tool_events
+    WHERE tool_name IN ('Read', 'Edit', 'Write')
+      ${cutoff ? sql`AND timestamp > ${cutoff}` : sql``}
+  `
+
+  const reads = Number(rows[0].reads ?? 0)
+  const edits = Number(rows[0].edits ?? 0)
+
+  return {
+    reads,
+    edits,
+    ratio: edits > 0 ? Math.round((reads / edits) * 100) / 100 : null,
+  }
+}
+
+export async function querySessionDepthDistribution(period: Period): Promise<SessionDepthBucket[]> {
+  const sql = getDb()
+  const cutoff = periodToMs(period)
+
+  const rows = await sql`
+    SELECT
+      CASE
+        WHEN prompt_count BETWEEN 1 AND 5 THEN 'quick'
+        WHEN prompt_count BETWEEN 6 AND 20 THEN 'focused'
+        WHEN prompt_count BETWEEN 21 AND 50 THEN 'deep'
+        WHEN prompt_count > 50 THEN 'marathon'
+      END AS bucket,
+      COUNT(*) AS count
+    FROM sessions
+    WHERE prompt_count > 0
+      ${cutoff ? sql`AND started_at > ${cutoff}` : sql``}
+    GROUP BY bucket
+  `
+
+  const total = rows.reduce((sum, r) => sum + Number(r.count), 0)
+
+  const bucketMeta: Record<string, { label: string; min: number; max: number | null }> = {
+    quick:    { label: '1-5 prompts',  min: 1,  max: 5 },
+    focused:  { label: '6-20 prompts', min: 6,  max: 20 },
+    deep:     { label: '21-50 prompts', min: 21, max: 50 },
+    marathon: { label: '51+ prompts',  min: 51, max: null },
+  }
+
+  const bucketOrder = ['quick', 'focused', 'deep', 'marathon'] as const
+  const countMap = new Map<string, number>()
+  for (const r of rows) {
+    countMap.set(r.bucket as string, Number(r.count))
+  }
+
+  return bucketOrder.map(key => {
+    const count = countMap.get(key) ?? 0
+    const meta = bucketMeta[key]
+    return {
+      bucket: key,
+      label: meta.label,
+      min_prompts: meta.min,
+      max_prompts: meta.max,
+      count,
+      pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0,
+    }
+  })
 }
 
 function aggregateCompareSeries(rows: Record<string, unknown>[], items: string[]): CompareItem[] {
