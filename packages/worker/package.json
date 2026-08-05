@@ -7,17 +7,19 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "wrangler deploy --dry-run --outdir dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@coinbase/x402": "1.0.1",
     "@pollen/data": "workspace:*",
     "hono": "^4.7.1",
-    "x402-hono": "^1.2.0"
+    "viem": "^2.47.0",
+    "x402": "1.2.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250405.0",
     "typescript": "^5",
+    "vitest": "^3.2.4",
     "wrangler": "^4.14.1"
   }
 }

@@ -21,19 +21,15 @@ compatibility_flags = ["nodejs_compat"]
 crons = ["0 */6 * * *", "10 0 * * 2"]
 
 [vars]
-# 'base' (mainnet, needs CDP_API_KEY_ID/SECRET secrets) or 'base-sepolia'
-# (testnet, settles via the public x402.org facilitator — no CDP keys).
-X402_NETWORK = "base-sepolia"
-# Receiving address for x402 payments. Interim: Brian's wallet; swap to the
-# Splits contract address once provided (revenue then splits onchain).
-# IMPORTANT: if unset/empty, paid endpoints are served UNPAID (dev only).
-X402_PAY_TO = "0x9C87d52543A57B1a02eeD0497D43bDb87D0B175c"
+# Base-mainnet x402 payments settle atomically through PollenSettlementV2;
+# PollenTokenV2 then holds the USDC until each POLLEN holder claims on-chain.
+X402_PAY_TO = "0x4548475CA9EE1BEff99fFfa3b691815388B1E139"
+BASE_RPC_URL = "https://mainnet.base.org"
 
 # Secrets — set via `wrangler secret put <NAME>`:
 #   NEON_DATABASE_URL   Neon Postgres connection string
 #   ADMIN_SECRET        Bearer token for POST /admin/run/{rollups,epoch-close}
-#   CDP_API_KEY_ID      Coinbase CDP key (mainnet x402 settlement only)
-#   CDP_API_KEY_SECRET  Coinbase CDP secret (mainnet x402 settlement only)
+#   X402_RELAYER_KEY     Gas-funded EOA that submits PollenSettlementV2.settle
 
 [observability]
 enabled = true

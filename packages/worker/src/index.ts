@@ -1,8 +1,5 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import { paymentMiddleware } from 'x402-hono'
-import type { Network, RoutesConfig } from 'x402-hono'
-import { createFacilitatorConfig } from '@coinbase/x402'
 import {
   K_ANONYMITY,
   computeRollups,
@@ -17,6 +14,7 @@ import {
   readTrendingTools,
 } from '@pollen/data'
 import { runEpochClose } from './epoch-close'
+import { createPollenPaymentMiddleware, type X402RelayEnv } from './x402-relay'
 
 /**
  * pollen-api — Cloudflare Worker serving the public /api/v1 endpoints at
@@ -28,74 +26,27 @@ import { runEpochClose } from './epoch-close'
  * admin only) is the single raw-table path and suppresses cells below K=5 at
  * write time.
  *
- * Paid endpoints are gated by x402 (USDC on Base) via x402-hono. Free
- * endpoints send `public, max-age=300`; paid endpoints send `no-store`.
+ * Paid endpoints are gated by x402 (USDC on Base) and relayed through
+ * PollenSettlementV2. Free endpoints send `public, max-age=300`; paid
+ * endpoints send `no-store`.
  */
 
-export interface Env {
+export interface Env extends X402RelayEnv {
   // Secrets (wrangler secret put):
   NEON_DATABASE_URL: string
   ADMIN_SECRET: string
-  CDP_API_KEY_ID?: string
-  CDP_API_KEY_SECRET?: string
-  // Vars (wrangler.toml [vars]):
-  X402_PAY_TO?: string
-  X402_NETWORK?: string
 }
 
 const FREE_CACHE = { 'Cache-Control': 'public, max-age=300' }
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-const PRICES: Record<string, string> = {
-  '/tools/history': '$0.01',
-  '/mcp/history': '$0.01',
-  '/grid': '$0.05',
-  '/export': '$0.25',
-}
-
-const DESCRIPTIONS: Record<string, string> = {
-  '/tools/history': 'Full weekly history for one tool (k-anonymized, >=5 contributors per cell)',
-  '/mcp/history': 'Full weekly history for one MCP server (k-anonymized, >=5 contributors per cell)',
-  '/grid': 'Full tool x week and MCP-server x week grid, all published history',
-  '/export': 'Full dump of every published rollup cell',
-}
-
-/**
- * Build the x402 middleware for this env. Canonical paths are the bare ones
- * (api.pollen.id/tools/history); the /api/v1-prefixed aliases are gated too.
- * Returns null when X402_PAY_TO is unset — paid routes are then served
- * unpaid (dev only; always set X402_PAY_TO in production).
- */
-function buildX402(env: Env) {
-  if (!env.X402_PAY_TO) return null
-  const network: Network = env.X402_NETWORK === 'base' ? 'base' : 'base-sepolia'
-  const routes: RoutesConfig = {}
-  for (const [path, price] of Object.entries(PRICES)) {
-    const config = { description: DESCRIPTIONS[path], mimeType: 'application/json' }
-    routes[path] = { price, network, config }
-    routes[`/api/v1${path}`] = { price, network, config }
-  }
-  // Mainnet settles through the Coinbase CDP facilitator (explicit keys, no
-  // process.env reliance); base-sepolia uses x402-hono's default
-  // https://x402.org/facilitator, which needs no credentials.
-  const facilitator =
-    network === 'base'
-      ? createFacilitatorConfig(env.CDP_API_KEY_ID, env.CDP_API_KEY_SECRET)
-      : undefined
-  return paymentMiddleware(env.X402_PAY_TO as `0x${string}`, routes, facilitator)
-}
-
 const app = new Hono<{ Bindings: Env }>()
 
-// Wire the shared data layer to this request's env, then apply the x402 gate
-// (built lazily because env bindings aren't available at module scope).
-let x402: ReturnType<typeof buildX402> | undefined
 app.use('*', async (c, next) => {
   configureDb(c.env.NEON_DATABASE_URL)
-  if (x402 === undefined) x402 = buildX402(c.env)
-  if (x402) return x402(c, next)
   return next()
 })
+app.use('*', createPollenPaymentMiddleware())
 
 // ── API endpoints (mounted at both / and /api/v1) ──
 

@@ -5,8 +5,9 @@
 # this job mints the pro-rata payout at 00:30 UTC by proposing mintBatch on
 # the Splits subaccount (which holds MINTER_ROLE) and headless-signing it.
 #
-# x402 revenue does NOT flow through this job: X402_PAY_TO points at the
-# existing Split contract, which distributes it directly.
+# x402 revenue does NOT flow through this job: the Worker relays each signed
+# USDC payment through PollenSettlementV2, which deposits it into
+# PollenTokenV2 for holders to claim on-chain.
 #
 # Required repo secrets:
 #   SPLITS_API_KEY        — write-scoped Splits API key (Settings -> API Keys)

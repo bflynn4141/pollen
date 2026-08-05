@@ -30,14 +30,13 @@ cd packages/worker
 # 1. secrets (prompted for each value)
 npx wrangler secret put NEON_DATABASE_URL
 npx wrangler secret put ADMIN_SECRET
-# mainnet x402 settlement only (skip while X402_NETWORK=base-sepolia):
-npx wrangler secret put CDP_API_KEY_ID
-npx wrangler secret put CDP_API_KEY_SECRET
+# Gas-funded EOA used only to relay signed USDC authorizations through
+# PollenSettlementV2. The buyer supplies the USDC; this key pays Base gas.
+npx wrangler secret put X402_RELAYER_KEY
 
 # 2. vars: edit wrangler.toml
-#    - X402_PAY_TO   = AgentKit wallet address (REQUIRED in prod; empty
-#                      string serves paid endpoints unpaid)
-#    - X402_NETWORK  = "base-sepolia" first, flip to "base" for mainnet
+#    - X402_PAY_TO   = PollenSettlementV2 on Base mainnet (required)
+#    - BASE_RPC_URL  = Base mainnet RPC
 
 # 3. deploy (also provisions the api.pollen.id custom domain + crons)
 npx wrangler deploy
@@ -64,5 +63,6 @@ curl "http://localhost:8787/__scheduled?cron=0+*/6+*+*+*"
 
 ```bash
 pnpm --filter @pollen/worker typecheck
+pnpm --filter @pollen/worker test
 pnpm --filter @pollen/worker check   # wrangler deploy --dry-run
 ```
