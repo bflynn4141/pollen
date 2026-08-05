@@ -33,7 +33,7 @@ new_sqlite_classes = ["X402SettlementRelayer"]
 # PollenTokenV2 then holds the USDC until each POLLEN holder claims on-chain.
 X402_PAY_TO = "0x4548475CA9EE1BEff99fFfa3b691815388B1E139"
 POLLEN_TOKEN_ADDRESS = "0x8ED2E55875Bf4C3082364441FfD314Ec6E228318"
-BASE_RPC_URL = "https://mainnet.base.org"
+BASE_RPC_URL = "https://base-rpc.publicnode.com"
 
 # Secrets — set via `wrangler secret put <NAME>`:
 #   NEON_DATABASE_URL   Neon Postgres connection string

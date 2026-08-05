@@ -94,6 +94,22 @@ function clients(env: X402RelayEnv) {
   return { publicClient, walletClient }
 }
 
+export async function getRelayerHealth(env: X402RelayEnv): Promise<{
+  address: string
+  balance_wei: string
+  healthy: boolean
+}> {
+  const { publicClient, walletClient } = clients(env)
+  const address = walletClient.account.address
+  const balance = await publicClient.getBalance({ address })
+  return {
+    address,
+    balance_wei: balance.toString(),
+    // Keep enough headroom for several Base settlement transactions.
+    healthy: balance >= 500_000_000_000_000n,
+  }
+}
+
 async function durableRequest<T>(
   env: X402RelayEnv,
   action: 'reserve' | 'settle' | 'release',

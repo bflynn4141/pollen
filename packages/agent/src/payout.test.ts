@@ -30,24 +30,49 @@ interface MockStoreState {
 
 function mockStore(state: MockStoreState = {}) {
   const inserted: Array<{ epoch: number; rows: PayoutAmount[] }> = []
+  const saved: Array<{ epoch: number; ids: string[]; transactionId: string }> = []
   const marked: Array<{ epoch: number; ids: string[]; status: string; txHash: string | null }> = []
   const store: PayoutStore = {
     countEpochScores: vi.fn(async () => state.scoreCount ?? (state.eligible ?? scores()).length),
     fetchEligibleScores: vi.fn(async () => state.eligible ?? scores()),
     fetchPayouts: vi.fn(async () => state.existing ?? []),
     insertPendingPayouts: vi.fn(async (epoch, rows) => { inserted.push({ epoch, rows }) }),
+    savePendingTransaction: vi.fn(async (epoch, ids, transactionId) => {
+      saved.push({ epoch, ids, transactionId })
+      for (const row of (state.existing ?? []).filter(row => ids.includes(row.contributor_id))) {
+        row.status = 'pending'
+        row.tx_hash = transactionId
+      }
+    }),
     markPayouts: vi.fn(async (epoch, ids, status, txHash) => { marked.push({ epoch, ids, status, txHash }) }),
   }
-  return { store, inserted, marked }
+  return { store, inserted, saved, marked }
 }
 
 function mockChain(behavior: 'ok' | 'revert' | 'throw' = 'ok') {
   const calls: Array<{ recipients: Address[]; amounts: bigint[]; epoch: number }> = []
+  const proposals = new Map<string, { recipients: Address[]; amounts: bigint[]; epoch: number; result?: { txHash: string; ok: boolean } }>()
+  const prepareMintBatch = vi.fn(async (recipients: Address[], amounts: bigint[], epoch: number) => {
+    if (behavior === 'throw') throw new Error('rpc unreachable')
+    const transactionId = `proposal-${proposals.size + 1}`
+    proposals.set(transactionId, { recipients, amounts, epoch })
+    return transactionId
+  })
+  const executeMintBatch = vi.fn(async (transactionId: string) => {
+    const proposal = proposals.get(transactionId)
+    if (!proposal) throw new Error(`unknown proposal ${transactionId}`)
+    if (proposal.result) return proposal.result
+    const { recipients, amounts, epoch } = proposal
+    calls.push({ recipients, amounts, epoch })
+    proposal.result = { txHash: `0xtx${calls.length}`, ok: behavior === 'ok' }
+    return proposal.result
+  })
   const chain: MintChain = {
+    prepareMintBatch,
+    executeMintBatch,
     mintBatch: vi.fn(async (recipients, amounts, epoch) => {
-      calls.push({ recipients, amounts, epoch })
-      if (behavior === 'throw') throw new Error('rpc unreachable')
-      return { txHash: `0xtx${calls.length}`, ok: behavior === 'ok' }
+      const transactionId = await prepareMintBatch(recipients, amounts, epoch)
+      return executeMintBatch(transactionId)
     }),
   }
   return { chain, calls }
@@ -115,16 +140,20 @@ describe('runPayout pro-rata + minting', () => {
     ])
   })
 
-  it('writes pending rows before minting', async () => {
+  it('persists the proposal identity before signing or execution', async () => {
     const order: string[] = []
     const { store } = mockStore()
     const insertSpy = store.insertPendingPayouts as ReturnType<typeof vi.fn>
     insertSpy.mockImplementation(async () => { order.push('insert') })
+    const saveSpy = store.savePendingTransaction as ReturnType<typeof vi.fn>
+    saveSpy.mockImplementation(async () => { order.push('save') })
     const chain: MintChain = {
-      mintBatch: vi.fn(async () => { order.push('mint'); return { txHash: '0xtx1', ok: true } }),
+      prepareMintBatch: vi.fn(async () => { order.push('prepare'); return 'proposal-1' }),
+      executeMintBatch: vi.fn(async () => { order.push('execute'); return { txHash: '0xtx1', ok: true } }),
+      mintBatch: vi.fn(async () => { throw new Error('unused') }),
     }
     await runPayout({ store, chain, log: silent }, { nowMs: NOW_EPOCH_3 })
-    expect(order).toEqual(['insert', 'mint'])
+    expect(order).toEqual(['insert', 'prepare', 'save', 'execute'])
   })
 
   it('chunks mintBatch at 100 recipients per tx', async () => {
@@ -211,6 +240,42 @@ describe('runPayout idempotency', () => {
     expect(inserted).toHaveLength(0)
     expect(result.minted).toBe(0)
     expect(result.skipped).toBe(3)
+  })
+
+  it('does not mint a chunk twice when confirmation persistence crashes after execution', async () => {
+    const existing: ExistingPayout[] = []
+    let failConfirmationWrite = true
+    const { store } = mockStore({ existing })
+    ;(store.insertPendingPayouts as ReturnType<typeof vi.fn>).mockImplementation(async (epoch, rows) => {
+      for (const row of rows) {
+        existing.push({
+          contributor_id: row.contributor_id,
+          wallet_address: row.wallet_address,
+          amount: '0',
+          tx_hash: null,
+          status: 'pending',
+        })
+      }
+    })
+    ;(store.markPayouts as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_epoch, ids, status, txHash) => {
+        if (status === 'confirmed' && failConfirmationWrite) {
+          failConfirmationWrite = false
+          throw new Error('database unavailable after receipt')
+        }
+        for (const row of existing.filter(row => ids.includes(row.contributor_id))) {
+          row.status = status
+          row.tx_hash = txHash
+        }
+      },
+    )
+    const { chain, calls } = mockChain()
+
+    await expect(runPayout({ store, chain, log: silent }, { nowMs: NOW_EPOCH_3 }))
+      .rejects.toThrow(/database unavailable/)
+    await runPayout({ store, chain, log: silent }, { nowMs: NOW_EPOCH_3, resume: true })
+
+    expect(calls).toHaveLength(1)
   })
 })
 

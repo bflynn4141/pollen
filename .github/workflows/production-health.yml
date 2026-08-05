@@ -1,0 +1,43 @@
+name: Production health
+
+on:
+  schedule:
+    - cron: '25 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check public API
+        run: curl --fail --silent --show-error https://pollen-api.bflynn4141.workers.dev/overview >/dev/null
+
+      - name: Check scoring pipeline and x402 relayer
+        env:
+          WORKER_ADMIN_SECRET: ${{ secrets.WORKER_ADMIN_SECRET }}
+        run: |
+          body=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${WORKER_ADMIN_SECRET}" \
+            https://pollen-api.bflynn4141.workers.dev/admin/health)
+          jq -e '.ok == true and .epoch.epoch_scores > 0 and .relayer.healthy == true' <<<"${body}" >/dev/null
+          if ! jq -e '.epoch.payout_ready == true' <<<"${body}" >/dev/null; then
+            echo '::warning::The scoring pipeline is healthy, but no contributor is payout-eligible (World ID plus bound wallet required).'
+          fi
+
+      - name: Check Base contract bytecode
+        env:
+          BASE_RPC_URL: https://base-rpc.publicnode.com
+          POLLEN_TOKEN: '0x8ED2E55875Bf4C3082364441FfD314Ec6E228318'
+          POLLEN_SETTLEMENT: '0x4548475CA9EE1BEff99fFfa3b691815388B1E139'
+        run: |
+          rpc_code() {
+            curl --fail --silent --show-error "${BASE_RPC_URL}" \
+              -H 'content-type: application/json' \
+              --data "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getCode\",\"params\":[\"$1\",\"latest\"]}" \
+              | jq -er '.result | select(. != "0x")' >/dev/null
+          }
+          rpc_code "${POLLEN_TOKEN}"
+          rpc_code "${POLLEN_SETTLEMENT}"

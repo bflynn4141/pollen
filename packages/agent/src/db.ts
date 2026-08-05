@@ -9,8 +9,8 @@
  *           tx_hash, status, created_at, PK(epoch, contributor_id))
  *
  * payouts.amount stores whole POLLEN tokens (formatUnits(wei, 18)) per the
- * migration's column comment. Status lifecycle here: 'pending' -> 'confirmed'
- * (receipt landed, tx_hash recorded) or 'failed' (tx reverted / send error).
+ * migration's column comment. While status='pending', tx_hash stores the
+ * durable Splits proposal ID; confirmation replaces it with the chain hash.
  */
 import { neon } from '@neondatabase/serverless'
 import { formatUnits } from 'viem'
@@ -33,6 +33,8 @@ export interface PayoutStore {
   fetchPayouts(epoch: number): Promise<ExistingPayout[]>
   /** Insert status='pending' rows; existing rows (resume) are left untouched. */
   insertPendingPayouts(epoch: number, rows: PayoutAmount[]): Promise<void>
+  /** Atomically bind every row in a chunk to its unsigned Splits proposal. */
+  savePendingTransaction(epoch: number, contributorIds: string[], transactionId: string): Promise<void>
   markPayouts(epoch: number, contributorIds: string[], status: 'confirmed' | 'failed', txHash: string | null): Promise<void>
 }
 
@@ -92,19 +94,29 @@ export function createNeonStore(connectionString: string): PayoutStore {
       }
     },
 
+    async savePendingTransaction(
+      epoch: number,
+      contributorIds: string[],
+      transactionId: string,
+    ): Promise<void> {
+      await sql`
+        UPDATE payouts
+        SET status = 'pending', tx_hash = ${transactionId}
+        WHERE epoch = ${epoch} AND contributor_id = ANY(${contributorIds}::text[])
+      `
+    },
+
     async markPayouts(
       epoch: number,
       contributorIds: string[],
       status: 'confirmed' | 'failed',
       txHash: string | null,
     ): Promise<void> {
-      for (const contributorId of contributorIds) {
-        await sql`
-          UPDATE payouts
-          SET status = ${status}, tx_hash = ${txHash}
-          WHERE epoch = ${epoch} AND contributor_id = ${contributorId}
-        `
-      }
+      await sql`
+        UPDATE payouts
+        SET status = ${status}, tx_hash = ${txHash}
+        WHERE epoch = ${epoch} AND contributor_id = ANY(${contributorIds}::text[])
+      `
     },
   }
 }

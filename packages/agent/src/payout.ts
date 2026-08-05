@@ -10,14 +10,12 @@
  *      (world_id_nullifier, verified_at, wallet_address all non-NULL).
  *   4. amount_i = floor(epochPool(epoch) * score_i / total_score); zeros dropped.
  *   5. Idempotency: existing payouts rows for the epoch abort the run unless
- *      --resume, which skips rows already status='confirmed'. Rows left
- *      'pending' by a crash are retried; the on-chain mintedInEpoch cap is the
- *      backstop against double-minting.
+ *      --resume, which skips confirmed rows and reconciles any durable Splits
+ *      proposal IDs left pending by a crash.
  *   6. --dry-run prints the payout table and exits before any DB write or tx.
- *   7. Write payouts rows status='pending', then chunked mintBatch (<=100
- *      recipients/tx). Each confirmed receipt marks its chunk 'confirmed'
- *      with the tx hash; a revert/send failure marks the chunk 'failed' and
- *      stops the run (rerun with --resume after diagnosing).
+ *   7. Write payouts rows status='pending', create each chunk proposal, persist
+ *      its ID before signing, then execute it. A confirmed receipt replaces
+ *      the proposal ID with the chain tx hash.
  */
 import { formatUnits, type Address } from 'viem'
 import { chunk, MAX_RECIPIENTS_PER_TX } from './chunk.js'
@@ -106,42 +104,97 @@ export async function runPayout(deps: PayoutDeps, opts: PayoutOptions = {}): Pro
       'This epoch appears to be paid or in flight — pass --resume to retry unconfirmed rows.',
     )
   }
-  const toMint = payoutsAll.filter(p => existingByContributor.get(p.contributor_id)?.status !== 'confirmed')
-  const skipped = payoutsAll.length - toMint.length
+  const skipped = payoutsAll.filter(p => existingByContributor.get(p.contributor_id)?.status === 'confirmed').length
+
+  const pendingTransactions = new Map<string, string[]>()
+  for (const payout of existing) {
+    if (payout.status !== 'pending' || !payout.tx_hash) continue
+    const ids = pendingTransactions.get(payout.tx_hash) ?? []
+    ids.push(payout.contributor_id)
+    pendingTransactions.set(payout.tx_hash, ids)
+  }
+  const freshToMint = payoutsAll.filter(p => {
+    const prior = existingByContributor.get(p.contributor_id)
+    return prior?.status !== 'confirmed' && !(prior?.status === 'pending' && prior.tx_hash)
+  })
 
   // 6. Dry run: print and exit before any write or tx
   printTable(log, epoch, pool, payoutsAll, existingByContributor)
   if (dryRun) {
     log('')
-    log(`--dry-run: no payouts written, no transactions sent. Would mint to ${toMint.length} wallets` +
-      ` in ${chunk(toMint).length} tx (${skipped} already confirmed).`)
+    log(`--dry-run: no payouts written, no transactions sent. Would mint to ${freshToMint.length} wallets` +
+      ` in ${chunk(freshToMint).length} new tx and reconcile ${pendingTransactions.size} pending tx (${skipped} already confirmed).`)
     return { epoch, dryRun: true, planned: payoutsAll.length, minted: 0, skipped, txHashes: [] }
   }
 
-  if (toMint.length === 0) {
+  if (freshToMint.length === 0 && pendingTransactions.size === 0) {
     log('Nothing to mint — every eligible payout is already confirmed.')
     return { epoch, dryRun: false, planned: payoutsAll.length, minted: 0, skipped, txHashes: [] }
   }
 
+  const prepareMintBatch = chain.prepareMintBatch
+  const executeMintBatch = chain.executeMintBatch
+  if (!prepareMintBatch || !executeMintBatch) {
+    throw new PayoutAbort('Mint chain does not support crash-safe proposal persistence; refusing to execute payouts.')
+  }
+
   // 7. Write pending rows, then mint in chunks
-  await store.insertPendingPayouts(epoch, toMint)
+  await store.insertPendingPayouts(epoch, freshToMint)
 
   const txHashes: string[] = []
   let minted = 0
-  for (const [i, batch] of chunk(toMint, MAX_RECIPIENTS_PER_TX).entries()) {
+  for (const [transactionId, ids] of pendingTransactions) {
+    log(`Reconciling pending Splits proposal ${transactionId} (${ids.length} recipients)...`)
+    let result
+    try {
+      result = await executeMintBatch(transactionId)
+    } catch (err) {
+      throw new PayoutAbort(
+        `Splits proposal ${transactionId} is still pending or could not be reconciled: ${(err as Error).message}. ` +
+        'Its identity remains stored; re-run with --resume rather than creating a replacement.',
+      )
+    }
+    if (!result.ok) {
+      await store.markPayouts(epoch, ids, 'failed', result.txHash)
+      throw new PayoutAbort(
+        `Pending Splits proposal ${transactionId} failed (tx ${result.txHash}); ${ids.length} rows marked failed. ` +
+        'Fix the cause and re-run with --resume.',
+      )
+    }
+    await store.markPayouts(epoch, ids, 'confirmed', result.txHash)
+    txHashes.push(result.txHash)
+    minted += ids.length
+    log(`  confirmed: ${result.txHash}`)
+  }
+
+  for (const [i, batch] of chunk(freshToMint, MAX_RECIPIENTS_PER_TX).entries()) {
     const recipients = batch.map(p => p.wallet_address as Address)
     const amounts = batch.map(p => p.amountWei)
     const ids = batch.map(p => p.contributor_id)
     log(`Minting chunk ${i + 1}: ${batch.length} recipients, ${formatUnits(sum(amounts), 18)} POLLEN...`)
 
-    let result
+    let transactionId: string
     try {
-      result = await chain.mintBatch(recipients, amounts, epoch)
+      transactionId = await prepareMintBatch(recipients, amounts, epoch)
     } catch (err) {
       await store.markPayouts(epoch, ids, 'failed', null)
       throw new PayoutAbort(
-        `mintBatch send failed for chunk ${i + 1} (${ids.length} rows marked failed): ${(err as Error).message}. ` +
+        `mintBatch proposal failed for chunk ${i + 1} (${ids.length} rows marked failed): ${(err as Error).message}. ` +
         'Fix the cause and re-run with --resume.',
+      )
+    }
+
+    // This is the crash-safety boundary. The proposal has not been signed, and
+    // all chunk rows receive its identity atomically before execution starts.
+    await store.savePendingTransaction(epoch, ids, transactionId)
+
+    let result
+    try {
+      result = await executeMintBatch(transactionId)
+    } catch (err) {
+      throw new PayoutAbort(
+        `Splits proposal ${transactionId} may still execute: ${(err as Error).message}. ` +
+        'Its identity remains stored; re-run with --resume to reconcile it.',
       )
     }
     if (!result.ok) {
