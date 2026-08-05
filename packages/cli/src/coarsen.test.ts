@@ -262,6 +262,20 @@ describe('extractMcpServer', () => {
     expect(extractMcpServer('Bash')).toBeNull()
     expect(extractMcpServer('Edit')).toBeNull()
   })
+
+  it('extracts server names containing underscores', () => {
+    expect(extractMcpServer('mcp__ccd_session__spawn_task')).toBe('ccd_session')
+    expect(extractMcpServer('mcp__a_b__c')).toBe('a_b')
+  })
+
+  it('extracts server names containing hyphens', () => {
+    expect(extractMcpServer('mcp__claude-in-chrome__navigate')).toBe('claude-in-chrome')
+  })
+
+  it('returns null for malformed MCP names', () => {
+    expect(extractMcpServer('mcp____tool')).toBeNull()
+    expect(extractMcpServer('mcp__')).toBeNull()
+  })
 })
 
 describe('extractResponseMeta', () => {

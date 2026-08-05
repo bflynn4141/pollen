@@ -10,13 +10,21 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
+    "@nivo/bar": "^0.99.0",
+    "@nivo/chord": "^0.99.0",
+    "@nivo/core": "^0.99.0",
+    "@nivo/heatmap": "^0.99.0",
+    "@nivo/line": "^0.99.0",
+    "@nivo/pie": "^0.99.0",
+    "@nivo/sankey": "^0.99.0",
+    "@nivo/stream": "^0.99.0",
+    "@pollen/data": "workspace:*",
     "fumadocs-core": "15",
     "fumadocs-mdx": "14",
     "fumadocs-ui": "15",
     "next": "^15",
     "react": "^19",
-    "react-dom": "^19",
-    "recharts": "^3.7.0"
+    "react-dom": "^19"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

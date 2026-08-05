@@ -1,9 +1,15 @@
 // ── Colors ──
 
 export const COPPER = '#C45D3E'
+export const GOLD = '#D4A843'
 export const MUTED = '#8A8580'
 export const SUCCESS = '#4CAF50'
 export const TEXT_DIM = '#6B6560'
+
+// ── Tab bar ──
+
+export const ACTIVE_TAB = COPPER
+export const INACTIVE_TAB = MUTED
 
 // ── Sync indicators ──
 // All captured fields currently sync to Neon. The hook only captures

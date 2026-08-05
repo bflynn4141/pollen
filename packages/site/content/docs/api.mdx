@@ -1,0 +1,134 @@
+---
+title: Trending Tool Calls API
+description: Free weekly trending tool-call data plus paid x402 endpoints for full history. Every cell is k-anonymized across at least 5 contributors.
+---
+
+# Trending Tool Calls API
+
+Pollen publishes **telemetry-based trending tool-call data** for Claude Code:
+which tools and MCP servers coding agents actually invoke, week by week.
+The latest weeks are free; full history is paid per-request via
+[x402](https://x402.org) micropayments — USDC on Base, no API keys, no accounts.
+
+Base URL: `https://api.pollen.id` (a Cloudflare Worker; an `/api/v1` path
+prefix is also accepted). The free endpoints are additionally mirrored at
+`https://pollen.id/api/v1/*`.
+
+## The k-anonymity guarantee
+
+**Every number this API returns aggregates at least 5 distinct contributors.**
+
+This is enforced structurally, not by filtering at read time:
+
+- All public data is served from a precomputed rollup table. The rollup job
+  suppresses any cell with fewer than 5 distinct contributors *before it is
+  written* (`HAVING COUNT(DISTINCT contributor_id) >= 5`), and aborts if a
+  below-threshold cell ever appears.
+- The API and the [/trending](/trending) pages can only read that rollup
+  table — they have no code path to the raw event tables.
+- There is no free-form query endpoint. Arbitrary SQL would defeat
+  k-anonymity by differencing two nearly-identical queries, so it is
+  deliberately not offered.
+- Every response row includes its `contributors` count so you can see the
+  cell's support.
+
+Periods are UTC ISO weeks (`2026-W32`) or UTC days (`2026-08-05`). Rollups
+recompute every 6 hours over a rolling 8-week window; weeks older than that
+are **frozen** — their numbers never change, so `/trending/2026-W32` and the
+history endpoints are stable citations.
+
+## Free endpoints
+
+Latest two published weeks. Cached 5 minutes (`Cache-Control: public, max-age=300`).
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /trending/tools` | Trending tools: calls, sessions, success rate, week-over-week change, `new` flags |
+| `GET /trending/mcp` | MCP server ranking: calls, sessions, success rate |
+| `GET /overview` | Network totals: tool calls, sessions, distinct tools/servers, contributors |
+
+```bash
+curl https://api.pollen.id/trending/tools
+```
+
+```json
+{
+  "k_anonymity": 5,
+  "weeks": [
+    {
+      "week": "2026-W32",
+      "tools": [
+        {
+          "tool": "Bash",
+          "kind": "builtin",
+          "calls": 18423,
+          "sessions": 1201,
+          "successRate": 0.941,
+          "changePct": 12,
+          "trend": "up",
+          "isNew": false,
+          "contributors": 87
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Paid endpoints (x402)
+
+Full published history, paid per request in USDC on Base. Responses are never
+cached (`Cache-Control: no-store`).
+
+| Endpoint | Price | Returns |
+|----------|-------|---------|
+| `GET /tools/history?tool=<name>` | $0.01 | Weekly history for one tool |
+| `GET /mcp/history?server=<name>` | $0.01 | Weekly history for one MCP server |
+| `GET /grid` | $0.05 | Full tool × week and server × week grid |
+| `GET /export` | $0.25 | Every published rollup cell, all rollups |
+
+### How x402 payment works
+
+1. Call the endpoint. Unpaid requests get **HTTP 402** with a JSON body
+   describing the payment requirements (amount, asset, receiving address).
+2. Sign the payment with any x402-capable client and retry with the
+   `X-PAYMENT` header. The server verifies and settles via an x402
+   facilitator, then returns the data.
+
+The easiest client is [`x402-fetch`](https://www.npmjs.com/package/x402-fetch):
+
+```ts
+import { wrapFetchWithPayment } from 'x402-fetch'
+import { privateKeyToAccount } from 'viem/accounts'
+
+const account = privateKeyToAccount(process.env.PRIVATE_KEY)
+const fetchWithPay = wrapFetchWithPayment(fetch, account)
+
+const res = await fetchWithPay(
+  'https://api.pollen.id/tools/history?tool=Bash',
+)
+const data = await res.json()
+```
+
+Or inspect the challenge by hand:
+
+```bash
+curl -i "https://api.pollen.id/tools/history?tool=Bash"
+# HTTP/1.1 402 Payment Required
+# { "x402Version": 1, "accepts": [ { "scheme": "exact", "network": "base", ... } ] }
+```
+
+## Weekly permalinks
+
+Human-readable weekly snapshots live at
+[`/trending`](/trending) (latest week) and `/trending/<week>`
+(e.g. `/trending/2026-W32`). Weeks outside the recompute window are frozen and
+safe to cite in posts, papers, and changelogs.
+
+## Where the data comes from
+
+Contributors run the [Pollen CLI hook](/docs/quickstart), which captures
+coarse, anonymized tool-call events from their own Claude Code sessions
+(tool name, MCP server, success — never prompts, paths, or code) and syncs
+them to the shared network. Contributors earn POLLEN for the data that powers
+these endpoints.

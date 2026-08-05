@@ -52,9 +52,9 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
   // 5. Poll for proof
   const proof = await pollForProof(session)
 
-  // 6. Verify server-side
+  // 6. Verify server-side (pollen site route -> Worldcoin cloud verifier)
   console.log('Verifying proof...')
-  const result = await verifyProof(proof)
+  const result = await verifyProof(proof, contributorId)
 
   if (!result.success) {
     console.error(`✗ Verification failed: ${result.code ?? result.detail ?? 'unknown error'}`)

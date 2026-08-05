@@ -4,6 +4,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import type { Period } from '@/lib/trends'
 
 const PERIODS: { value: Period; label: string }[] = [
+  { value: '24h', label: '24h' },
   { value: '7d', label: '7d' },
   { value: '30d', label: '30d' },
   { value: '90d', label: '90d' },
@@ -23,16 +24,21 @@ export default function PeriodSelector() {
   }
 
   return (
-    <div className="flex gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+    <div className="flex gap-1 rounded-lg p-1" style={{ background: 'var(--t-bar-track, #F0EBE6)' }}>
       {PERIODS.map(p => (
         <button
           key={p.value}
           onClick={() => select(p.value)}
           className={`rounded-md px-3 py-1 text-sm transition-colors ${
             current === p.value
-              ? 'bg-[#C8B6FF] text-[#0d0d1a] font-medium'
-              : 'text-gray-400 hover:text-white'
+              ? 'font-medium'
+              : ''
           }`}
+          style={
+            current === p.value
+              ? { background: 'var(--t-text, #1A1A1A)', color: '#FFFFFF' }
+              : { color: 'var(--t-text-muted, #8A8A82)' }
+          }
         >
           {p.label}
         </button>

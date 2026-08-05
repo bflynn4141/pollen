@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ToolCategory, ErrorCategory, CommandCategory, ResponseMeta, ResponseLengthBucket } from './types.js'
+import type { ToolCategory, ErrorCategory, CommandCategory, ResponseMeta, ResponseLengthBucket, ResponseType } from './types.js'
 
 const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   Read: 'read',
@@ -121,6 +121,8 @@ const ACTION_PATTERNS: Array<[RegExp, string]> = [
   [/\b(optimize|improve|speed|perf|cache|faster)\b/i, 'optimize'],
   [/\b(review|audit|inspect|analyze|evaluate|look at)\b/i, 'review'],
   [/\b(integrate|connect|hook|wire|link|plug)\b/i, 'integrate'],
+  [/\b(design|prototype|mock|wireframe|layout)\b/i, 'design'],
+  [/\b(monitor|observe|alert|trace|instrument)\b/i, 'monitor'],
 ]
 
 // Match action from the beginning of the prompt (strongest signal)
@@ -195,6 +197,16 @@ const TOPIC_PATTERNS: Array<[RegExp, string]> = [
   [/\b(data|csv|json|parse|transform|aggregate|analytics|chart|graph|visualization|dune)\b/i, 'data'],
   // CLI / Tooling
   [/\b(cli|command|terminal|shell|script|bash|zsh|tool|binary|executable)\b/i, 'cli'],
+  // Payments / Billing
+  [/\b(payment|stripe|billing|invoice|subscription|checkout|pricing)\b/i, 'payments'],
+  // Email
+  [/\b(email|smtp|sendgrid|resend|mailgun|newsletter|inbox)\b/i, 'email'],
+  // Scheduling
+  [/\b(calendar|schedule|cron|recurring|booking|appointment)\b/i, 'scheduling'],
+  // Mobile
+  [/\b(mobile|ios|android|react.?native|flutter|swift|kotlin|expo)\b/i, 'mobile'],
+  // Design
+  [/\b(design|figma|icon|image|asset|svg|font|color|theme|dark.?mode)\b/i, 'design'],
 ]
 
 export function extractTopic(text: string): string | null {
@@ -212,9 +224,12 @@ export function extractTopic(text: string): string | null {
 }
 
 // Extract MCP server name from tool name: mcp__<server>__<tool> → server
+// Server names may themselves contain underscores (mcp__ccd_session__spawn_task),
+// so split on the "__" separator instead of matching [^_]+.
 export function extractMcpServer(toolName: string): string | null {
-  const match = toolName.match(/^mcp__([^_]+)__/)
-  return match ? match[1] : null
+  if (!toolName.startsWith('mcp__')) return null
+  const server = toolName.slice(5).split('__')[0]
+  return server.length > 0 ? server : null
 }
 
 // Detect project type from cwd by checking for marker files
@@ -277,5 +292,94 @@ export function extractResponseMeta(message: string | undefined): ResponseMeta |
     length_bucket: lengthBucket,
     code_block_count: codeBlockCount,
     has_error_mention: hasErrorMention,
+  }
+}
+
+// --- v4: Tool Response Coarsening ---
+
+// Infer response type from tool name when no response body is available
+const TOOL_RESPONSE_MAP: Record<string, ResponseType> = {
+  Read: 'file_content',
+  Glob: 'search_results',
+  Grep: 'search_results',
+  Edit: 'code_generated',
+  Write: 'code_generated',
+  NotebookEdit: 'code_generated',
+  Bash: 'command_output',
+  WebFetch: 'web_content',
+  WebSearch: 'web_content',
+  AskUserQuestion: 'confirmation',
+  EnterPlanMode: 'confirmation',
+  ExitPlanMode: 'confirmation',
+  ToolSearch: 'search_results',
+}
+
+export function inferResponseType(toolName: string): ResponseType {
+  if (toolName in TOOL_RESPONSE_MAP) return TOOL_RESPONSE_MAP[toolName]
+  if (toolName.startsWith('mcp__')) return 'unknown'
+  return 'unknown'
+}
+
+export interface CoarsenedResponse {
+  response_type: ResponseType
+  response_size: number
+  file_paths_mentioned: number
+  has_code_blocks: boolean
+  has_error: boolean
+  line_count: number
+  truncated_summary: string
+}
+
+/** Classify a tool response body into coarsened metadata */
+export function classifyToolResponse(toolName: string, responseText: string): CoarsenedResponse {
+  if (!responseText || responseText.length === 0) {
+    return {
+      response_type: 'empty',
+      response_size: 0,
+      file_paths_mentioned: 0,
+      has_code_blocks: false,
+      has_error: false,
+      line_count: 0,
+      truncated_summary: '',
+    }
+  }
+
+  // Determine base response type from tool name
+  let responseType = inferResponseType(toolName)
+
+  // Override with content-based detection
+  const hasError = /error|Error|ENOENT|EACCES|fail|exception|panic/i.test(responseText)
+  if (hasError && responseText.length < 500) {
+    responseType = 'error_output'
+  }
+
+  // Short successful output → confirmation
+  if (responseText.length < 100 && /success|done|ok|created|updated|✓|✔/i.test(responseText)) {
+    responseType = 'confirmation'
+  }
+
+  // Count file paths (lines starting with / or containing common extensions)
+  const filePathMatches = responseText.match(/(?:^|\s)(\/[\w/.-]+\.\w+)/gm)
+  const filePaths = filePathMatches ? filePathMatches.length : 0
+
+  // Count code blocks
+  const codeBlockMatches = responseText.match(/```/g)
+  const hasCodeBlocks = codeBlockMatches ? codeBlockMatches.length >= 2 : false
+
+  const lines = responseText.split('\n').length
+
+  // Truncate for summary — strip potential PII (emails, paths with usernames)
+  let summary = responseText.slice(0, 200)
+  summary = summary.replace(/\/Users\/\w+/g, '/Users/***')
+  summary = summary.replace(/[\w.-]+@[\w.-]+/g, '***@***')
+
+  return {
+    response_type: responseType,
+    response_size: responseText.length,
+    file_paths_mentioned: filePaths,
+    has_code_blocks: hasCodeBlocks,
+    has_error: hasError,
+    line_count: lines,
+    truncated_summary: summary,
   }
 }

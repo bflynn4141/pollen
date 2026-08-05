@@ -1,0 +1,81 @@
+# Weekly POLLEN payout, signed by a Splits subaccount.
+#
+# Epochs close Tuesdays 00:00 UTC (PollenTokenV2 EPOCH_ZERO = 2026-02-24, a
+# Tuesday). The site's epoch-close cron scores the closed epoch at 00:10 UTC;
+# this job mints the pro-rata payout at 00:30 UTC by proposing mintBatch on
+# the Splits subaccount (which holds MINTER_ROLE) and headless-signing it.
+#
+# x402 revenue does NOT flow through this job: X402_PAY_TO points at the
+# existing Split contract, which distributes it directly.
+#
+# Required repo secrets:
+#   SPLITS_API_KEY        — write-scoped Splits API key (Settings -> API Keys)
+#   SPLITS_SIGNER_KEY     — EOA private key registered as a signer on the
+#                           subaccount (imported into the runner's local
+#                           keystore for `splits transactions sign`)
+#   NEON_DATABASE_URL     — epoch_scores/contributors/payouts
+#   POLLEN_TOKEN_ADDRESS  — PollenTokenV2 on Base
+name: Weekly payout
+
+on:
+  schedule:
+    - cron: '30 0 * * 2' # Tuesdays 00:30 UTC
+  workflow_dispatch:
+    inputs:
+      epoch:
+        description: 'Epoch to pay (default: the just-closed epoch)'
+        required: false
+        type: string
+      resume:
+        description: 'Resume a partially-paid epoch (skips confirmed rows)'
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Print the payout table without writing or minting'
+        required: false
+        type: boolean
+        default: false
+
+# Never let two payout runs overlap (double-mint guard; on-chain epoch cap is
+# the backstop). Queued runs wait instead of cancelling an in-flight mint.
+concurrency:
+  group: pollen-payout
+  cancel-in-progress: false
+
+jobs:
+  payout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SPLITS_API_KEY: ${{ secrets.SPLITS_API_KEY }}
+      SPLITS_SIGNER_KEY: ${{ secrets.SPLITS_SIGNER_KEY }}
+      SPLITS_SUBACCOUNT: pollen-payout
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      POLLEN_TOKEN_ADDRESS: ${{ secrets.POLLEN_TOKEN_ADDRESS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version pinned by "packageManager" in package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies # includes the pinned @splits/splits-cli devDep
+        run: pnpm install --frozen-lockfile
+
+      - name: Build payout agent
+        run: pnpm --filter @pollen/agent build
+
+      - name: Preflight (auth, subaccount, MINTER_ROLE)
+        if: ${{ !inputs.dry_run }}
+        run: node packages/agent/dist/main.js payout --preflight
+
+      - name: Run weekly payout
+        run: >
+          node packages/agent/dist/main.js payout
+          ${{ inputs.epoch && format('--epoch {0}', inputs.epoch) || '' }}
+          ${{ inputs.resume && '--resume' || '' }}
+          ${{ inputs.dry_run && '--dry-run' || '' }}

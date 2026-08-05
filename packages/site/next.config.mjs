@@ -8,6 +8,8 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // @pollen/data ships TypeScript source (shared with the pollen-api worker).
+  transpilePackages: ['@pollen/data'],
 }
 
 export default withMDX(nextConfig)

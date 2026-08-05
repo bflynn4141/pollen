@@ -9,6 +9,9 @@
  */
 import { createInterface } from 'node:readline'
 import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
 import { createWalletClient, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -29,15 +32,53 @@ const W = '\x1b[37m'              // white
 
 // ── x402 Constants ──────────────────────────────────────
 const POLLEN_API = process.env.POLLEN_API_URL || 'https://clara-proxy.bflynn4141.workers.dev'
-const POLLEN_SETTLEMENT = '0x3ECa3185dE4622b65B2EF4dDc2dB6E7d0cB1B672' as const
 const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const
+
+// Contract addresses: env-first, falling back to the v2 keys in
+// contracts/deployments/base-mainnet.json (populated by the v2 deploy).
+const DEPLOYMENTS_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../contracts/deployments/base-mainnet.json',
+)
+
+function deploymentAddress(key: 'pollenTokenV2' | 'pollenSettlementV2'): string | null {
+  try {
+    const json = JSON.parse(readFileSync(DEPLOYMENTS_PATH, 'utf-8')) as Record<string, unknown>
+    const contracts = (json.contracts ?? {}) as Record<string, unknown>
+    const entry = contracts[key] ?? json[key]
+    const addr = typeof entry === 'string' ? entry : (entry as { address?: unknown } | undefined)?.address
+    return typeof addr === 'string' && /^0x[0-9a-fA-F]{40}$/.test(addr) ? addr : null
+  } catch {
+    return null
+  }
+}
+
+function resolveAddress(envVar: 'POLLEN_TOKEN_ADDRESS' | 'POLLEN_SETTLEMENT_ADDRESS', deploymentKey: 'pollenTokenV2' | 'pollenSettlementV2'): `0x${string}` {
+  const fromEnv = process.env[envVar]
+  if (fromEnv) return fromEnv as `0x${string}`
+  const fromFile = deploymentAddress(deploymentKey)
+  if (fromFile) return fromFile as `0x${string}`
+  throw new Error(
+    `${envVar} is not set and contracts/deployments/base-mainnet.json has no "${deploymentKey}" entry. ` +
+    `Deploy the v2 contracts (which writes that key) or export ${envVar}=0x...`,
+  )
+}
 
 // ── x402 Wallet Setup ───────────────────────────────────
 const demoKey = process.env.POLLEN_DEMO_KEY
 let account: ReturnType<typeof privateKeyToAccount> | null = null
 let walletClient: ReturnType<typeof createWalletClient> | null = null
+let POLLEN_SETTLEMENT: `0x${string}` | null = null
 
 if (demoKey) {
+  // x402 payments settle against PollenSettlementV2 — resolve it up front so a
+  // missing address fails loudly instead of at payment time.
+  try {
+    POLLEN_SETTLEMENT = resolveAddress('POLLEN_SETTLEMENT_ADDRESS', 'pollenSettlementV2')
+  } catch (err) {
+    console.error((err as Error).message)
+    process.exit(1)
+  }
   account = privateKeyToAccount(demoKey as `0x${string}`)
   walletClient = createWalletClient({
     account,
@@ -60,10 +101,11 @@ One row per prompt submitted by a developer.
 - id TEXT PRIMARY KEY
 - timestamp INTEGER (unix ms)
 - session_id TEXT
+- contributor_id TEXT (anonymized user ID — enables cross-session analytics)
 - keywords TEXT (JSON array of extracted keywords)
 - tools_chain TEXT (JSON array)
 - language_signals TEXT (JSON array, e.g. ["typescript", "python"])
-- frameworks TEXT (JSON array, e.g. ["react", "nextjs", "prisma"])
+- frameworks TEXT (JSON array, e.g. ["react", "nextjs", "prisma", "hono", "trpc", "astro"])
 - prompt_length TEXT (bucket: "tiny", "short", "medium", "long", "huge")
 - code_ratio TEXT ("none", "low", "medium", "high")
 - structure_type TEXT ("imperative", "question", "error_paste", "code_heavy", "mixed")
@@ -72,31 +114,68 @@ One row per prompt submitted by a developer.
 - has_code_block INTEGER (0 or 1)
 - day_of_week TEXT (e.g. "Monday")
 - hour_bucket TEXT (e.g. "morning", "afternoon", "evening", "night")
-- intent TEXT ("debugging", "code-generation", "refactoring", "exploration", "learning", "devops", "testing", "documentation", "code-review")
+- intent TEXT ("debugging", "feature_build", "refactoring", "exploration", "learning", "devops", "testing", "documentation", "code_review")
 - complexity TEXT ("simple", "moderate", "complex")
 - prompt_style TEXT
-- domain TEXT ("web_frontend", "backend", "devops", "data", "systems", "mobile")
-- action TEXT ("fix", "create", "explain", "deploy", "test", "refactor", "configure", "investigate", "optimize", "migrate")
-- topic TEXT ("auth", "database", "api", "deployment", "frontend", "styling", "testing", "performance", "security", "ai", "cli", "middleware", "animation", "canvas", etc.)
+- domain TEXT ("web_frontend", "web_backend", "devops", "data", "systems", "general")
+- permission_mode TEXT (e.g. "default", "plan", "bypassPermissions" — vibecoders love "bypassPermissions")
+- action TEXT ("fix", "create", "update", "deploy", "test", "refactor", "setup", "understand", "review", "optimize", "migrate", "integrate", "design", "monitor", "remove")
+- topic TEXT ("auth", "database", "api", "infra", "ui", "testing", "performance", "security", "ai", "cli", "web3", "payments", "email", "scheduling", "mobile", "design", "docs", "git", etc.)
 
 ### tool_events
 One row per tool call made by Claude Code during a session.
 - id TEXT PRIMARY KEY
 - session_id TEXT
 - timestamp INTEGER (unix ms)
-- tool_name TEXT (e.g. "Read", "Edit", "Bash", "Grep", "Write", "Glob", "Task", "AskUserQuestion", or MCP tools like "mcp__clara__wallet_send")
-- tool_category TEXT ("read", "write", "execute", "search", "interact", "meta")
+- contributor_id TEXT
+- tool_name TEXT (e.g. "Read", "Edit", "Bash", or MCP tools like "mcp__clara__wallet_send")
+- tool_category TEXT ("read", "write", "execute", "search", "interact", "unknown")
 - success INTEGER (0 or 1)
-- error_category TEXT (null if success)
+- error_category TEXT (null if success, e.g. "syntax", "runtime", "permission", "not_found", "timeout", "test_failure", "build_failure")
 - file_extension TEXT (e.g. ".ts", ".py")
 - command_category TEXT (for Bash: "git", "npm", "test", "build", etc.)
 - sequence_number INTEGER
 - mcp_server TEXT (extracted server name if MCP tool, else null)
-- duration_ms INTEGER
+- duration_ms INTEGER (reserved — not populated yet)
+- response_type TEXT ("file_content", "search_results", "code_generated", "command_output", "error_output", "web_content", "confirmation", "empty", "unknown")
+- response_size INTEGER (bytes of response, nullable)
+- response_file_paths INTEGER (count of file paths in response)
+- response_has_code INTEGER (0 or 1, response contains code blocks)
+- response_has_error INTEGER (0 or 1, response contains error text)
+- response_summary TEXT (first 200 chars of response, PII-stripped)
+
+IMPORTANT — Tool categories:
+- Built-in tools (Read, Write, Edit, Bash, Grep, Glob, Task, ToolSearch, WebFetch, WebSearch, Skill, AskUserQuestion, EnterPlanMode, ExitPlanMode, NotebookEdit) are standard Claude Code tools — boring and generic.
+- MCP tools (where mcp_server IS NOT NULL) are the INTERESTING ones — they represent external integrations like wallets, design tools, social platforms, etc.
+- When asked about "interesting" or "unique" tools, ALWAYS filter to mcp_server IS NOT NULL.
+- Known MCP servers: clara (wallet), paper (design), figma (design), herd (portfolio), signal402 (x402 payments), vibe (social), glorp (messaging), conway-terminal (sandboxes), typefully (social publishing), paymodel (AI models).
+
+### x402_events
+One row per x402 payment-related tool call (subset of tool_events for payment protocol calls).
+- id TEXT PRIMARY KEY
+- session_id TEXT
+- timestamp INTEGER (unix ms)
+- contributor_id TEXT
+- tool_name TEXT
+- mcp_server TEXT (e.g. "x402", "signal402", "x402-agent", "x402-tokenization")
+- service_url TEXT (the URL/endpoint being called, nullable)
+- service_name TEXT (the service/hostname being paid, nullable)
+- success INTEGER (0 or 1)
+
+### lifecycle_events
+One row per lifecycle event (subagent orchestration, context compaction, notifications).
+- id TEXT PRIMARY KEY
+- session_id TEXT
+- timestamp INTEGER (unix ms)
+- event_type TEXT ("subagent_start", "subagent_stop", "pre_tool_use", "notification", "pre_compact")
+- parent_event_id TEXT (links stop to start events)
+- metadata TEXT (JSON with event-specific fields)
+- contributor_id TEXT
 
 ### sessions
 One row per Claude Code session.
 - session_id TEXT PRIMARY KEY
+- contributor_id TEXT
 - model TEXT
 - started_at INTEGER (unix ms)
 - ended_at INTEGER (unix ms, null if ongoing)
@@ -113,8 +192,17 @@ One row per Claude Code session.
 - project_type TEXT
 - mcp_servers_used TEXT (JSON array)
 - satisfaction_score INTEGER (0-100, behavioral signal)
-- satisfaction_signals TEXT (JSON array)
+- satisfaction_signals TEXT (JSON object)
 - subject TEXT (AI-generated session summary)
+- permission_mode TEXT (permission mode at session start)
+- edit_count INTEGER (total write tool calls)
+- read_count INTEGER (total read/search tool calls)
+- search_to_edit_ratio REAL (read_count / (edit_count + 1))
+- error_recovery_rate REAL (0.0-1.0, ratio of failure runs followed by success)
+- mcp_tool_count INTEGER (total MCP tool calls in session)
+- unique_mcp_servers INTEGER (distinct MCP servers used)
+- subagent_count INTEGER (number of subagents spawned)
+- context_compactions INTEGER (number of context window compactions)
 
 ## Rules
 - ONLY generate SELECT statements. Never INSERT, UPDATE, DELETE, DROP, or ALTER.
@@ -128,6 +216,9 @@ One row per Claude Code session.
 - The FIRST column should be the label/name column (text).
 - The SECOND column should be the primary numeric value (count, score, etc.).
 - Keep to 2-4 columns. Fewer is better.
+- When asked about tools, default to showing MCP tools (interesting) not built-in tools (boring).
+- For x402 queries, join with x402_events table to see payment services.
+- For vibecoder behavior questions, use session aggregates (search_to_edit_ratio, error_recovery_rate, etc.)
 `
 
 interface QueryResult {
@@ -174,7 +265,7 @@ async function generateQuery(question: string, retryContext?: string): Promise<Q
 // ── x402 Payment ────────────────────────────────────────
 
 async function signAndVerifyPayment(costCents: number): Promise<X402Receipt | null> {
-  if (!account || !walletClient) return null
+  if (!account || !walletClient || !POLLEN_SETTLEMENT) return null
 
   try {
     const costUnits = BigInt(costCents) * 10000n // cents → USDC units (6 decimals)
@@ -351,9 +442,11 @@ if (x402Enabled) {
   console.log(`  ${D}100% of revenue → POLLEN holders  ·  x402: ${Y}simulated${R}${D}  (set POLLEN_DEMO_KEY for real payments)${R}`)
 }
 console.log('')
-console.log(`  ${D}Try:${R} ${CY}What are developers debugging most?${R}`)
-console.log(`       ${CY}Which MCP servers are used the most?${R}`)
-console.log(`       ${CY}Are developers happier refactoring or debugging?${R}`)
+console.log(`  ${D}Try:${R} ${CY}Which MCP tools are most popular?${R}`)
+console.log(`       ${CY}What's the average search-to-edit ratio by domain?${R}`)
+console.log(`       ${CY}What percentage of sessions use subagents?${R}`)
+console.log(`       ${CY}What's the error recovery rate for debugging vs feature_build?${R}`)
+console.log(`       ${CY}How many sessions hit context compaction?${R}`)
 console.log('')
 
 const rl = createInterface({ input: process.stdin, output: process.stdout })

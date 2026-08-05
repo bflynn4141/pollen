@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
+import { maybeSignWalletBinding } from './register-sign.js'
 
 // ── Time constants ──
 
@@ -70,6 +71,7 @@ export interface PollenConfig {
   contributor_id: string
   world_id?: WorldIdInfo
   wallet_address?: string   // kept for backward compat, auto-populated from Para
+  wallet_binding_sig?: string // EIP-191 sig of `pollen:register:<contributor_id>` (BYO wallets with POLLEN_PRIVATE_KEY)
   para_wallet?: ParaWallet
 }
 
@@ -145,6 +147,9 @@ export async function runInteractiveWallet(argv: string[] = process.argv): Promi
     }
     registerWallet(addr)
     console.log(`\u2713 Wallet registered: ${addr}`)
+    if (await maybeSignWalletBinding(addr)) {
+      console.log('  \u2713 Wallet binding signed with POLLEN_PRIVATE_KEY (uploads on next sync).')
+    }
     console.log('  Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
     return { address: addr, type: 'existing' }
   }
@@ -202,6 +207,9 @@ export async function runInteractiveWallet(argv: string[] = process.argv): Promi
     registerWallet(addr.trim())
     console.log('')
     console.log(`\u2713 Wallet registered: ${addr.trim()}`)
+    if (await maybeSignWalletBinding(addr.trim())) {
+      console.log('  \u2713 Wallet binding signed with POLLEN_PRIVATE_KEY (uploads on next sync).')
+    }
     console.log('  Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
     return { address: addr.trim(), type: 'existing' }
   }

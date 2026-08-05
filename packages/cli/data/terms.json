@@ -63,6 +63,13 @@
     "cloudflare": ["workers", "wrangler", "durable objects", "kv", "d1", "r2"],
     "vite": ["vite", "vite.config"],
     "tailwind": ["tailwind", "tw-", "className"],
-    "prisma": ["prisma", "schema.prisma", "prisma.schema"]
+    "prisma": ["prisma", "schema.prisma", "prisma.schema"],
+    "hono": ["hono", "hono.dev", "hono/"],
+    "trpc": ["trpc", "tRPC", "createTRPCRouter", "trpc.router"],
+    "astro": ["astro", ".astro", "astro.config"],
+    "tauri": ["tauri", "tauri.conf"],
+    "expo": ["expo", "expo-router", "expo-", "eas"],
+    "solid": ["solid", "solidjs", "createSignal"],
+    "qwik": ["qwik", "qwik city", "qwikloader"]
   }
 }

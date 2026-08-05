@@ -1,0 +1,39 @@
+# pollen-api — public trending API + crons on Cloudflare Workers.
+# Deploy runbook: see README.md in this package.
+name = "pollen-api"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# api.pollen.id must be a zone in this Cloudflare account; the custom domain
+# route provisions DNS + cert automatically on deploy.
+# DISABLED 2026-08-05: the pollen.id zone lives in a different Cloudflare
+# account than this wrangler login — deploy failed with "Could not find zone".
+# Re-enable after moving the zone into this account (or deploy from the
+# account that owns pollen.id). Until then the worker serves on workers.dev.
+# routes = [
+#   { pattern = "api.pollen.id", custom_domain = true }
+# ]
+
+[triggers]
+# 1) rollups: recompute k-anonymized rollup cells every 6 hours
+# 2) epoch-close: score the just-closed epoch, Tuesdays 00:10 UTC
+crons = ["0 */6 * * *", "10 0 * * 2"]
+
+[vars]
+# 'base' (mainnet, needs CDP_API_KEY_ID/SECRET secrets) or 'base-sepolia'
+# (testnet, settles via the public x402.org facilitator — no CDP keys).
+X402_NETWORK = "base-sepolia"
+# Receiving address for x402 payments. Interim: Brian's wallet; swap to the
+# Splits contract address once provided (revenue then splits onchain).
+# IMPORTANT: if unset/empty, paid endpoints are served UNPAID (dev only).
+X402_PAY_TO = "0x9C87d52543A57B1a02eeD0497D43bDb87D0B175c"
+
+# Secrets — set via `wrangler secret put <NAME>`:
+#   NEON_DATABASE_URL   Neon Postgres connection string
+#   ADMIN_SECRET        Bearer token for POST /admin/run/{rollups,epoch-close}
+#   CDP_API_KEY_ID      Coinbase CDP key (mainnet x402 settlement only)
+#   CDP_API_KEY_SECRET  Coinbase CDP secret (mainnet x402 settlement only)
+
+[observability]
+enabled = true

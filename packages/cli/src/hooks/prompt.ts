@@ -6,6 +6,7 @@ import type Database from 'better-sqlite3'
 import { extractFeatures } from '../features.js'
 import { classify } from '../classify.js'
 import { extractAction, extractTopic } from '../coarsen.js'
+import { getOrCreateContributorId } from '../config.js'
 import { coarsenDepth } from '../session.js'
 import { insertContribution, getSessionPromptCount, updateSession } from '../store.js'
 import { extractSubject } from '../extract-subject.js'
@@ -51,6 +52,8 @@ export function handlePromptSubmit(db: Database.Database, input: HookInput): Pro
     labels,
     action: extractAction(text),
     topic: extractTopic(text),
+    contributor_id: getOrCreateContributorId(),
+    permission_mode: input.permission_mode ?? null,
   })
 
   // Fire-and-forget subject extraction on first prompt of a session

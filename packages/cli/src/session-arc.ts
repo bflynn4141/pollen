@@ -42,6 +42,14 @@ interface ArcData {
   mcp_servers: string[]
   has_git_activity: boolean
   has_retry_storm: boolean
+  // v4: session aggregates
+  edit_count: number
+  read_count: number
+  mcp_tool_count: number
+  unique_mcp_servers_count: number
+  subagent_count: number
+  context_compactions: number
+  error_recovery_rate: number | null
 }
 
 export function gatherSessionArcData(db: Database.Database, sessionId: string): ArcData {
@@ -95,17 +103,60 @@ export function gatherSessionArcData(db: Database.Database, sessionId: string): 
   let hasRetryStorm = false
   let consecutiveFails = 0
   let lastFailTool = ''
+  // v4: also compute error recovery rate from the same sequence
+  let recoveries = 0
+  let failureRuns = 0
+  let inFailureRun = false
   for (const row of failureSeq) {
     if (row.success === 0 && row.tool_name === lastFailTool) {
       consecutiveFails++
-      if (consecutiveFails >= 3) { hasRetryStorm = true; break }
+      if (consecutiveFails >= 3) { hasRetryStorm = true }
     } else if (row.success === 0) {
       lastFailTool = row.tool_name
       consecutiveFails = 1
+      if (!inFailureRun) {
+        failureRuns++
+        inFailureRun = true
+      }
     } else {
+      if (inFailureRun) {
+        recoveries++
+        inFailureRun = false
+      }
       consecutiveFails = 0
       lastFailTool = ''
     }
+  }
+  const errorRecoveryRate = failureRuns > 0 ? recoveries / failureRuns : null
+
+  // v4: count edits and reads
+  const editRow = db.prepare(
+    "SELECT COUNT(*) as c FROM tool_events WHERE session_id = ? AND tool_category = 'write'"
+  ).get(sessionId) as { c: number }
+  const readRow = db.prepare(
+    "SELECT COUNT(*) as c FROM tool_events WHERE session_id = ? AND tool_category IN ('read', 'search')"
+  ).get(sessionId) as { c: number }
+
+  // v4: count MCP tool usage
+  const mcpToolRow = db.prepare(
+    "SELECT COUNT(*) as c FROM tool_events WHERE session_id = ? AND mcp_server IS NOT NULL"
+  ).get(sessionId) as { c: number }
+
+  // v4: count subagents and context compactions from lifecycle_events (if table exists)
+  let subagentCount = 0
+  let contextCompactions = 0
+  try {
+    const subRow = db.prepare(
+      "SELECT COUNT(*) as c FROM lifecycle_events WHERE session_id = ? AND event_type = 'subagent_start'"
+    ).get(sessionId) as { c: number }
+    subagentCount = subRow.c
+
+    const compactRow = db.prepare(
+      "SELECT COUNT(*) as c FROM lifecycle_events WHERE session_id = ? AND event_type = 'pre_compact'"
+    ).get(sessionId) as { c: number }
+    contextCompactions = compactRow.c
+  } catch {
+    // lifecycle_events table may not exist yet
   }
 
   return {
@@ -119,6 +170,13 @@ export function gatherSessionArcData(db: Database.Database, sessionId: string): 
     mcp_servers: mcpRows.map(r => r.mcp_server),
     has_git_activity: gitRow.c > 0,
     has_retry_storm: hasRetryStorm,
+    edit_count: editRow.c,
+    read_count: readRow.c,
+    mcp_tool_count: mcpToolRow.c,
+    unique_mcp_servers_count: mcpRows.length,
+    subagent_count: subagentCount,
+    context_compactions: contextCompactions,
+    error_recovery_rate: errorRecoveryRate,
   }
 }
 
@@ -196,6 +254,15 @@ export function computeSessionArc(
   outcome: SessionOutcome
   satisfaction_score: number
   satisfaction_signals: string
+  // v4: session aggregates
+  edit_count: number
+  read_count: number
+  search_to_edit_ratio: number | null
+  error_recovery_rate: number | null
+  mcp_tool_count: number
+  unique_mcp_servers: number
+  subagent_count: number
+  context_compactions: number
 } {
   const data = gatherSessionArcData(db, sessionId)
   const outcome = computeOutcome(data.tool_failure_count, data.tool_use_count, data.prompt_count)
@@ -215,5 +282,15 @@ export function computeSessionArc(
     outcome,
     satisfaction_score: satisfaction.score,
     satisfaction_signals: JSON.stringify(satisfaction.signals),
+    edit_count: data.edit_count,
+    read_count: data.read_count,
+    search_to_edit_ratio: data.read_count > 0 || data.edit_count > 0
+      ? data.read_count / (data.edit_count + 1)
+      : null,
+    error_recovery_rate: data.error_recovery_rate,
+    mcp_tool_count: data.mcp_tool_count,
+    unique_mcp_servers: data.unique_mcp_servers_count,
+    subagent_count: data.subagent_count,
+    context_compactions: data.context_compactions,
   }
 }

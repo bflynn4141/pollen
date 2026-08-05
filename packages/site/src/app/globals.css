@@ -83,6 +83,28 @@ html {
   --text-primary: hsl(30 8% 90%);
 }
 
+/* ── Trends Theme (scoped to /trends) ── */
+.trends-warm {
+  --t-bg: #FAFAF8;
+  --t-surface: #FFFFFF;
+  --t-border: #EBEBEA;
+  --t-text: #1A1A1A;
+  --t-text-muted: #8A8A82;
+  --t-text-dim: #A09A94;
+  --t-accent: #C45D3E;
+  --t-accent-hover: #A84D32;
+  --t-card-bg: #FFFFFF;
+  --t-bar-fill: #C66A3B;
+  --t-bar-track: #F0EBE6;
+  --t-trend-up: #2D8A4E;
+  --t-trend-down: #C44A3F;
+}
+
+.trends-warm {
+  background-color: var(--t-bg);
+  color: var(--t-text);
+}
+
 /* Docs heading typography */
 [data-fumadocs] h1 {
   font-family: var(--font-playfair), serif;
