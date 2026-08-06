@@ -141,6 +141,96 @@ try {
       await app.waitUntilExit()
       break
     }
+    case 'brief': {
+      const args = process.argv.slice(3)
+      const flagValue = (name: string): string | undefined => {
+        const idx = args.indexOf(name)
+        const val = idx !== -1 ? args[idx + 1] : undefined
+        return val && !val.startsWith('--') ? val : undefined
+      }
+      const daysRaw = flagValue('--days')
+      const days = daysRaw != null ? parseInt(daysRaw, 10) : 7
+      if (!Number.isFinite(days) || days <= 0) {
+        console.error('--days must be a positive number')
+        process.exit(1)
+      }
+      const outFlag = flagValue('--out')
+      const toFlag = flagValue('--to')
+      const doSend = args.includes('--send')
+      const doOpen = args.includes('--open')
+      const quiet = args.includes('--quiet')
+
+      const { getBriefEmail, setBriefEmail } = await import('./config.js')
+      if (toFlag) {
+        if (!toFlag.includes('@')) {
+          console.error(`Invalid email address: ${toFlag}`)
+          process.exit(1)
+        }
+        setBriefEmail(toFlag)
+        if (!quiet) console.log(`✓ Brief recipient saved: ${toFlag}`)
+      }
+
+      const { generateBrief, isoWeekOf } = await import('./brief.js')
+      const { recordBrief } = await import('./store.js')
+      const result = await generateBrief(db, { days })
+
+      const { writeFileSync, mkdirSync } = await import('node:fs')
+      const { join, dirname } = await import('node:path')
+      const { homedir } = await import('node:os')
+      const week = isoWeekOf()
+      const outPath = outFlag ?? join(homedir(), '.pollen', `brief-${week}.html`)
+      mkdirSync(dirname(outPath), { recursive: true })
+      writeFileSync(outPath, result.html)
+
+      if (!quiet) {
+        console.log(result.text)
+        console.log('')
+        console.log(`Saved: ${outPath}  (polish: ${result.polish})`)
+      }
+
+      recordBrief(db, {
+        isoWeek: week,
+        findingsJson: JSON.stringify(result.findings),
+        htmlPath: outPath,
+      })
+
+      if (doOpen) {
+        const { spawn } = await import('node:child_process')
+        spawn('open', [outPath], { stdio: 'ignore', detached: true }).unref()
+      }
+
+      if (doSend) {
+        let recipient = toFlag ?? getBriefEmail()
+        if (!recipient) {
+          // First --send with no recipient configured anywhere: set the default once.
+          recipient = 'bflynn.me@gmail.com'
+          setBriefEmail(recipient)
+          if (!quiet) console.log(`No recipient configured — defaulting to ${recipient} (change with: pollen brief --to <email>)`)
+        }
+        const { sendEmail, StableEmailError } = await import('./stableemail.js')
+        try {
+          const receipt = await sendEmail({
+            to: [recipient],
+            subject: result.subject,
+            html: result.html,
+            text: result.text,
+          })
+          recordBrief(db, { isoWeek: week, sentTo: recipient })
+          if (!quiet) {
+            const paid = receipt.paidUsd && receipt.paidUsd !== '0' ? ` ($${receipt.paidUsd} USDC via x402)` : ''
+            console.log(`✓ Brief emailed to ${recipient}${paid}${receipt.id ? `  id: ${receipt.id}` : ''}`)
+          }
+        } catch (err) {
+          if (err instanceof StableEmailError) {
+            console.error(`Email not sent [${err.code}]: ${err.message}`)
+          } else {
+            console.error(`Email not sent: ${(err as Error).message}`)
+          }
+          process.exitCode = 1
+        }
+      }
+      break
+    }
     case 'verify': {
       await runVerify()
       break
@@ -335,6 +425,7 @@ try {
         '  trends [n]  Daily trends (last n days, default 7)',
         '  seed        Generate 20 realistic v4 demo sessions',
         '  my          Interactive dashboard — see exactly what you\'ve contributed',
+        '  brief       Weekly top-3 coaching digest: pollen brief [--days 7] [--out <path>] [--open] [--send] [--to <email>]',
         '  sync        Push local data to Neon (needs NEON_DATABASE_URL)',
         '  verify      Prove you are a unique human via World ID',
         '  status      Show contributor identity + verification status',

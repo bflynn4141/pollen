@@ -26,6 +26,8 @@ function ensureDir(filepath: string): void {
 interface HookResult {
   pendingWork: Promise<void> | null
   db: ReturnType<typeof initDb>
+  /** Optional user-visible message merged into the hook's stdout JSON */
+  systemMessage?: string
 }
 
 /**
@@ -44,6 +46,7 @@ export function runHookSync(input: HookInput, source?: string): HookResult {
 
   const event = input.hook_event_name ?? 'UserPromptSubmit'
   const isCodex = source === 'codex'
+  let systemMessage: string | undefined
 
   switch (event) {
     case 'UserPromptSubmit':
@@ -59,9 +62,11 @@ export function runHookSync(input: HookInput, source?: string): HookResult {
     case 'PostToolUseFailure':
       handlePostToolUseFailure(db, input)
       break
-    case 'SessionStart':
-      handleSessionStart(db, input, isCodex ? 'codex' : 'claude-code')
+    case 'SessionStart': {
+      const output = handleSessionStart(db, input, isCodex ? 'codex' : 'claude-code')
+      systemMessage = output?.systemMessage
       break
+    }
     case 'SessionEnd':
       handleSessionEnd(db, input)
       break
@@ -100,7 +105,7 @@ export function runHookSync(input: HookInput, source?: string): HookResult {
       break
   }
 
-  return { pendingWork, db }
+  return { pendingWork, db, systemMessage }
 }
 
 // Backward-compat: awaits all work then closes db
@@ -125,6 +130,7 @@ export function parseSourceFlag(argv: string[]): string | undefined {
 async function main(): Promise<void> {
   let pendingWork: Promise<void> | null = null
   let db: ReturnType<typeof initDb> | null = null
+  let systemMessage: string | undefined
 
   try {
     let data = ''
@@ -136,12 +142,16 @@ async function main(): Promise<void> {
     const result = runHookSync(input, parseSourceFlag(process.argv))
     pendingWork = result.pendingWork
     db = result.db
+    systemMessage = result.systemMessage
   } catch {
     // Fail silently — never block Claude Code
   }
 
-  // Unblock Claude Code FIRST
-  process.stdout.write(JSON.stringify({ continue: true }))
+  // Unblock Claude Code FIRST. systemMessage (when present) is the only
+  // extra field — Claude Code shows it to the user and continues normally.
+  const output: Record<string, unknown> = { continue: true }
+  if (systemMessage) output.systemMessage = systemMessage
+  process.stdout.write(JSON.stringify(output))
 
   // Then wait for any pending async work (e.g. Haiku subject extraction)
   if (pendingWork) {
