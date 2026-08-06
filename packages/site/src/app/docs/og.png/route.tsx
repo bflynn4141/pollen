@@ -43,7 +43,7 @@ export async function GET() {
               </svg>
             </div>
             <span style={{ fontSize: '18px', fontWeight: 700, color: '#1A1816', letterSpacing: '-0.02em' }}>
-              Prompt Trends
+              Pollen
             </span>
           </div>
           <div style={{ width: '1px', height: '20px', backgroundColor: '#D5D0CA' }} />

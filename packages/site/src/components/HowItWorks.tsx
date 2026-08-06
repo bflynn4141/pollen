@@ -6,7 +6,7 @@ const STEPS = [
   {
     num: 1,
     title: 'Install',
-    code: 'npx prompt-trends-mcp',
+    code: 'npx @pollen/cli setup',
     body: 'One command adds the MCP server to your Claude config. No API keys, no signup.',
   },
   {

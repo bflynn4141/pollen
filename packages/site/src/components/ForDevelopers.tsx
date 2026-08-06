@@ -25,7 +25,7 @@ const USE_CASES = [
   },
 ]
 
-const REQUEST_CODE = `curl https://api.prompttrends.dev/v1/topics \\
+const REQUEST_CODE = `curl https://api.pollen.id/v1/topics \\
   -H "X-402-Payment: <payment-proof>" \\
   -d '{"period": "7d", "limit": 10}'
 
