@@ -109,7 +109,7 @@ export function Hero() {
             }}
           >
             <span style={{ color: 'var(--text-muted)' }}>$</span>
-            npx prompt-trends-mcp
+            npx @pollen/cli setup
           </div>
         </div>
 

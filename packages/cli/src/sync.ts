@@ -13,6 +13,151 @@ interface SyncResult {
   scored: number
 }
 
+type SqliteRow = Record<string, unknown>
+
+const CONTRIBUTIONS_COLUMNS = [
+  'id', 'timestamp', 'session_id', 'keywords', 'tools_chain', 'language_signals', 'frameworks',
+  'prompt_length', 'code_ratio', 'structure_type', 'session_depth',
+  'has_error_trace', 'has_code_block', 'day_of_week', 'hour_bucket',
+  'intent', 'sub_intent', 'complexity', 'prompt_style', 'domain',
+  'taxonomy_version', 'confidence', 'action', 'topic',
+  'contributor_id', 'permission_mode',
+] as const
+
+const CONTRIBUTIONS_CONFLICT = `
+  ON CONFLICT (id) DO UPDATE SET
+    timestamp = EXCLUDED.timestamp,
+    action = EXCLUDED.action,
+    topic = EXCLUDED.topic,
+    contributor_id = EXCLUDED.contributor_id,
+    permission_mode = EXCLUDED.permission_mode`
+
+const TOOL_EVENTS_COLUMNS = [
+  'id', 'session_id', 'timestamp', 'tool_name', 'tool_category',
+  'success', 'error_category', 'file_extension', 'command_category',
+  'sequence_number', 'mcp_server', 'duration_ms',
+  'contributor_id', 'response_type', 'response_size',
+  'response_file_paths', 'response_has_code', 'response_has_error', 'response_summary',
+  'tool_use_id', 'agent_id', 'agent_type', 'effort_level',
+] as const
+
+const SESSIONS_COLUMNS = [
+  'session_id', 'model', 'source', 'start_source', 'started_at', 'ended_at',
+  'duration_bucket', 'prompt_count', 'tool_use_count', 'tool_failure_count',
+  'intent_sequence', 'dominant_intent', 'dominant_domain',
+  'unique_tools', 'languages_used', 'outcome',
+  'project_type', 'end_reason', 'mcp_servers_used',
+  'response_count', 'avg_response_length',
+  'satisfaction_score', 'satisfaction_signals', 'subject',
+  'contributor_id', 'permission_mode',
+  'edit_count', 'read_count', 'search_to_edit_ratio', 'error_recovery_rate',
+  'mcp_tool_count', 'unique_mcp_servers', 'subagent_count', 'context_compactions',
+  'transcript_path', 'stop_tool_use_count',
+  'input_tokens', 'output_tokens', 'cached_input_tokens',
+] as const
+
+const SESSIONS_CONFLICT = `
+  ON CONFLICT (session_id) DO UPDATE SET
+    ended_at = EXCLUDED.ended_at,
+    duration_bucket = EXCLUDED.duration_bucket,
+    prompt_count = EXCLUDED.prompt_count,
+    tool_use_count = EXCLUDED.tool_use_count,
+    tool_failure_count = EXCLUDED.tool_failure_count,
+    intent_sequence = EXCLUDED.intent_sequence,
+    dominant_intent = EXCLUDED.dominant_intent,
+    dominant_domain = EXCLUDED.dominant_domain,
+    unique_tools = EXCLUDED.unique_tools,
+    languages_used = EXCLUDED.languages_used,
+    outcome = EXCLUDED.outcome,
+    end_reason = EXCLUDED.end_reason,
+    mcp_servers_used = EXCLUDED.mcp_servers_used,
+    response_count = EXCLUDED.response_count,
+    avg_response_length = EXCLUDED.avg_response_length,
+    satisfaction_score = EXCLUDED.satisfaction_score,
+    satisfaction_signals = EXCLUDED.satisfaction_signals,
+    subject = EXCLUDED.subject,
+    contributor_id = EXCLUDED.contributor_id,
+    permission_mode = EXCLUDED.permission_mode,
+    edit_count = EXCLUDED.edit_count,
+    read_count = EXCLUDED.read_count,
+    search_to_edit_ratio = EXCLUDED.search_to_edit_ratio,
+    error_recovery_rate = EXCLUDED.error_recovery_rate,
+    mcp_tool_count = EXCLUDED.mcp_tool_count,
+    unique_mcp_servers = EXCLUDED.unique_mcp_servers,
+    subagent_count = EXCLUDED.subagent_count,
+    context_compactions = EXCLUDED.context_compactions,
+    transcript_path = COALESCE(EXCLUDED.transcript_path, sessions.transcript_path),
+    stop_tool_use_count = EXCLUDED.stop_tool_use_count,
+    input_tokens = EXCLUDED.input_tokens,
+    output_tokens = EXCLUDED.output_tokens,
+    cached_input_tokens = EXCLUDED.cached_input_tokens`
+
+const LIFECYCLE_COLUMNS = [
+  'id', 'session_id', 'timestamp', 'event_type', 'parent_event_id', 'metadata', 'contributor_id',
+] as const
+
+const X402_COLUMNS = [
+  'id', 'session_id', 'timestamp', 'tool_name', 'mcp_server',
+  'service_url', 'service_name', 'success', 'contributor_id',
+] as const
+
+/**
+ * Insert rows in chunks of SYNC_BATCH_SIZE via multi-row
+ * `INSERT ... VALUES ($1,...),(...)` statements. One HTTP round-trip per
+ * chunk instead of per row — the @neondatabase/serverless driver has no
+ * connection to pipeline over, so per-row inserts made big backfills take
+ * ~100ms × rows.
+ *
+ * A multi-row statement is all-or-nothing: one bad row rolls back its whole
+ * chunk. When a chunk fails, retry it row-at-a-time to land the good rows,
+ * then rethrow at the poison row — the table's watermark never advances past
+ * a failure (same stuck-at-bad-row semantics as the per-row version), and
+ * ON CONFLICT makes the re-sync of already-landed rows idempotent.
+ */
+async function insertBatched(
+  sql: NeonQueryFunction<false, false>,
+  table: string,
+  columns: readonly string[],
+  rows: SqliteRow[],
+  toValues: (row: SqliteRow) => unknown[],
+  conflictClause: string,
+): Promise<number> {
+  const insertChunk = (chunk: SqliteRow[]) => {
+    const params: unknown[] = []
+    const tuples = chunk.map((row) => {
+      const placeholders = toValues(row).map((value) => {
+        params.push(value)
+        return `$${params.length}`
+      })
+      return `(${placeholders.join(', ')})`
+    })
+    return sql.query(
+      `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}${conflictClause}`,
+      params,
+    )
+  }
+
+  let count = 0
+  for (let i = 0; i < rows.length; i += SYNC_BATCH_SIZE) {
+    const batch = rows.slice(i, i + SYNC_BATCH_SIZE)
+    try {
+      await insertChunk(batch)
+    } catch {
+      for (const row of batch) {
+        try {
+          await insertChunk([row])
+        } catch (err) {
+          const msg = (err as Error).message?.split('\n')[0] ?? 'unknown error'
+          console.warn(`  (${table} row ${String(toValues(row)[0])} failed: ${msg})`)
+          throw err
+        }
+      }
+    }
+    count += batch.length
+  }
+  return count
+}
+
 export async function syncToNeon(db: Database.Database, connectionString: string): Promise<SyncResult> {
   const sql = neon(connectionString)
   const contributorId = getOrCreateContributorId()
@@ -41,41 +186,23 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   // Sync contributions
   const contributions = db.prepare(
     'SELECT * FROM contributions WHERE timestamp > ? ORDER BY timestamp'
-  ).all(lastContrib) as Record<string, unknown>[]
+  ).all(lastContrib) as SqliteRow[]
 
-  let contribCount = 0
-  for (let i = 0; i < contributions.length; i += SYNC_BATCH_SIZE) {
-    const batch = contributions.slice(i, i + SYNC_BATCH_SIZE)
-    for (const row of batch) {
-      await sql`
-        INSERT INTO contributions (
-          id, timestamp, session_id, keywords, tools_chain, language_signals, frameworks,
-          prompt_length, code_ratio, structure_type, session_depth,
-          has_error_trace, has_code_block, day_of_week, hour_bucket,
-          intent, sub_intent, complexity, prompt_style, domain,
-          taxonomy_version, confidence, action, topic,
-          contributor_id, permission_mode
-        ) VALUES (
-          ${row.id}, ${toInt(row.timestamp)}, ${row.session_id},
-          ${safeJsonb(row.keywords)}, ${safeJsonb(row.tools_chain)},
-          ${safeJsonb(row.language_signals)}, ${safeJsonb(row.frameworks)},
-          ${row.prompt_length}, ${row.code_ratio}, ${row.structure_type}, ${row.session_depth},
-          ${toBool(row.has_error_trace)}, ${toBool(row.has_code_block)},
-          ${row.day_of_week}, ${row.hour_bucket},
-          ${row.intent}, ${row.sub_intent}, ${row.complexity}, ${row.prompt_style}, ${row.domain},
-          ${row.taxonomy_version}, ${row.confidence}, ${row.action}, ${row.topic},
-          ${row.contributor_id ?? contributorId}, ${row.permission_mode}
-        )
-        ON CONFLICT (id) DO UPDATE SET
-          timestamp = EXCLUDED.timestamp,
-          action = EXCLUDED.action,
-          topic = EXCLUDED.topic,
-          contributor_id = EXCLUDED.contributor_id,
-          permission_mode = EXCLUDED.permission_mode
-      `
-    }
-    contribCount += batch.length
-  }
+  const contribCount = await insertBatched(
+    sql, 'contributions', CONTRIBUTIONS_COLUMNS, contributions,
+    (row) => [
+      row.id, toInt(row.timestamp), row.session_id,
+      safeJsonb(row.keywords), safeJsonb(row.tools_chain),
+      safeJsonb(row.language_signals), safeJsonb(row.frameworks),
+      row.prompt_length, row.code_ratio, row.structure_type, row.session_depth,
+      toBool(row.has_error_trace), toBool(row.has_code_block),
+      row.day_of_week, row.hour_bucket,
+      row.intent, row.sub_intent, row.complexity, row.prompt_style, row.domain,
+      row.taxonomy_version, row.confidence, row.action, row.topic,
+      row.contributor_id ?? contributorId, row.permission_mode,
+    ],
+    CONTRIBUTIONS_CONFLICT,
+  )
 
   // Update watermark for contributions
   if (contributions.length > 0) {
@@ -86,35 +213,22 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   // Sync tool_events
   const toolEvents = db.prepare(
     'SELECT * FROM tool_events WHERE timestamp > ? ORDER BY timestamp'
-  ).all(lastTool) as Record<string, unknown>[]
+  ).all(lastTool) as SqliteRow[]
 
-  let toolCount = 0
-  for (let i = 0; i < toolEvents.length; i += SYNC_BATCH_SIZE) {
-    const batch = toolEvents.slice(i, i + SYNC_BATCH_SIZE)
-    for (const row of batch) {
-      await sql`
-        INSERT INTO tool_events (
-          id, session_id, timestamp, tool_name, tool_category,
-          success, error_category, file_extension, command_category,
-          sequence_number, mcp_server, duration_ms,
-          contributor_id, response_type, response_size,
-          response_file_paths, response_has_code, response_has_error, response_summary,
-          tool_use_id, agent_id, agent_type, effort_level
-        ) VALUES (
-          ${row.id}, ${row.session_id}, ${toInt(row.timestamp)},
-          ${row.tool_name}, ${row.tool_category},
-          ${toBool(row.success)}, ${row.error_category}, ${row.file_extension},
-          ${row.command_category}, ${toInt(row.sequence_number)}, ${row.mcp_server}, ${toInt(row.duration_ms)},
-          ${row.contributor_id ?? contributorId}, ${row.response_type}, ${toInt(row.response_size)},
-          ${row.response_file_paths}, ${toBoolNullable(row.response_has_code)},
-          ${toBoolNullable(row.response_has_error)}, ${row.response_summary},
-          ${row.tool_use_id}, ${row.agent_id}, ${row.agent_type}, ${row.effort_level}
-        )
-        ON CONFLICT (id) DO NOTHING
-      `
-    }
-    toolCount += batch.length
-  }
+  const toolCount = await insertBatched(
+    sql, 'tool_events', TOOL_EVENTS_COLUMNS, toolEvents,
+    (row) => [
+      row.id, row.session_id, toInt(row.timestamp),
+      row.tool_name, row.tool_category,
+      toBool(row.success), row.error_category, row.file_extension,
+      row.command_category, toInt(row.sequence_number), row.mcp_server, toInt(row.duration_ms),
+      row.contributor_id ?? contributorId, row.response_type, toInt(row.response_size),
+      row.response_file_paths, toBoolNullable(row.response_has_code),
+      toBoolNullable(row.response_has_error), row.response_summary,
+      row.tool_use_id, row.agent_id, row.agent_type, row.effort_level,
+    ],
+    '\n  ON CONFLICT (id) DO NOTHING',
+  )
 
   if (toolEvents.length > 0) {
     const maxTs = toolEvents[toolEvents.length - 1].timestamp as number
@@ -129,80 +243,28 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   const SESSION_RESYNC_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
   const sessions = db.prepare(
     'SELECT * FROM sessions WHERE started_at > ? ORDER BY started_at'
-  ).all(Math.max(0, lastSession - SESSION_RESYNC_WINDOW_MS)) as Record<string, unknown>[]
+  ).all(Math.max(0, lastSession - SESSION_RESYNC_WINDOW_MS)) as SqliteRow[]
 
-  let sessionCount = 0
-  for (let i = 0; i < sessions.length; i += SYNC_BATCH_SIZE) {
-    const batch = sessions.slice(i, i + SYNC_BATCH_SIZE)
-    for (const row of batch) {
-      await sql`
-        INSERT INTO sessions (
-          session_id, model, source, start_source, started_at, ended_at,
-          duration_bucket, prompt_count, tool_use_count, tool_failure_count,
-          intent_sequence, dominant_intent, dominant_domain,
-          unique_tools, languages_used, outcome,
-          project_type, end_reason, mcp_servers_used,
-          response_count, avg_response_length,
-          satisfaction_score, satisfaction_signals, subject,
-          contributor_id, permission_mode,
-          edit_count, read_count, search_to_edit_ratio, error_recovery_rate,
-          mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions,
-          transcript_path, stop_tool_use_count,
-          input_tokens, output_tokens, cached_input_tokens
-        ) VALUES (
-          ${row.session_id}, ${row.model}, ${row.source}, ${row.start_source},
-          ${toInt(row.started_at)}, ${toInt(row.ended_at)},
-          ${row.duration_bucket}, ${row.prompt_count}, ${row.tool_use_count}, ${row.tool_failure_count},
-          ${safeJsonb(row.intent_sequence)}, ${row.dominant_intent}, ${row.dominant_domain},
-          ${safeJsonb(row.unique_tools)}, ${safeJsonb(row.languages_used)}, ${row.outcome},
-          ${row.project_type}, ${row.end_reason}, ${safeJsonb(row.mcp_servers_used)},
-          ${row.response_count}, ${row.avg_response_length},
-          ${row.satisfaction_score}, ${safeJsonb(row.satisfaction_signals)},
-          ${row.subject},
-          ${row.contributor_id ?? contributorId}, ${row.permission_mode},
-          ${row.edit_count}, ${row.read_count}, ${row.search_to_edit_ratio}, ${row.error_recovery_rate},
-          ${row.mcp_tool_count}, ${row.unique_mcp_servers}, ${row.subagent_count}, ${row.context_compactions},
-          ${row.transcript_path}, ${toInt(row.stop_tool_use_count)},
-          ${toInt(row.input_tokens)}, ${toInt(row.output_tokens)}, ${toInt(row.cached_input_tokens)}
-        )
-        ON CONFLICT (session_id) DO UPDATE SET
-          ended_at = EXCLUDED.ended_at,
-          duration_bucket = EXCLUDED.duration_bucket,
-          prompt_count = EXCLUDED.prompt_count,
-          tool_use_count = EXCLUDED.tool_use_count,
-          tool_failure_count = EXCLUDED.tool_failure_count,
-          intent_sequence = EXCLUDED.intent_sequence,
-          dominant_intent = EXCLUDED.dominant_intent,
-          dominant_domain = EXCLUDED.dominant_domain,
-          unique_tools = EXCLUDED.unique_tools,
-          languages_used = EXCLUDED.languages_used,
-          outcome = EXCLUDED.outcome,
-          end_reason = EXCLUDED.end_reason,
-          mcp_servers_used = EXCLUDED.mcp_servers_used,
-          response_count = EXCLUDED.response_count,
-          avg_response_length = EXCLUDED.avg_response_length,
-          satisfaction_score = EXCLUDED.satisfaction_score,
-          satisfaction_signals = EXCLUDED.satisfaction_signals,
-          subject = EXCLUDED.subject,
-          contributor_id = EXCLUDED.contributor_id,
-          permission_mode = EXCLUDED.permission_mode,
-          edit_count = EXCLUDED.edit_count,
-          read_count = EXCLUDED.read_count,
-          search_to_edit_ratio = EXCLUDED.search_to_edit_ratio,
-          error_recovery_rate = EXCLUDED.error_recovery_rate,
-          mcp_tool_count = EXCLUDED.mcp_tool_count,
-          unique_mcp_servers = EXCLUDED.unique_mcp_servers,
-          subagent_count = EXCLUDED.subagent_count,
-          context_compactions = EXCLUDED.context_compactions,
-          transcript_path = COALESCE(EXCLUDED.transcript_path, sessions.transcript_path),
-          stop_tool_use_count = EXCLUDED.stop_tool_use_count,
-          input_tokens = EXCLUDED.input_tokens,
-          output_tokens = EXCLUDED.output_tokens,
-          cached_input_tokens = EXCLUDED.cached_input_tokens
-      `
-    }
-    sessionCount += batch.length
-  }
+  const sessionCount = await insertBatched(
+    sql, 'sessions', SESSIONS_COLUMNS, sessions,
+    (row) => [
+      row.session_id, row.model, row.source, row.start_source,
+      toInt(row.started_at), toInt(row.ended_at),
+      row.duration_bucket, row.prompt_count, row.tool_use_count, row.tool_failure_count,
+      safeJsonb(row.intent_sequence), row.dominant_intent, row.dominant_domain,
+      safeJsonb(row.unique_tools), safeJsonb(row.languages_used), row.outcome,
+      row.project_type, row.end_reason, safeJsonb(row.mcp_servers_used),
+      row.response_count, row.avg_response_length,
+      row.satisfaction_score, safeJsonb(row.satisfaction_signals),
+      row.subject,
+      row.contributor_id ?? contributorId, row.permission_mode,
+      row.edit_count, row.read_count, row.search_to_edit_ratio, row.error_recovery_rate,
+      row.mcp_tool_count, row.unique_mcp_servers, row.subagent_count, row.context_compactions,
+      row.transcript_path, toInt(row.stop_tool_use_count),
+      toInt(row.input_tokens), toInt(row.output_tokens), toInt(row.cached_input_tokens),
+    ],
+    SESSIONS_CONFLICT,
+  )
 
   if (sessions.length > 0) {
     const maxTs = sessions[sessions.length - 1].started_at as number
@@ -214,24 +276,17 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   try {
     const lifecycleEvents = db.prepare(
       'SELECT * FROM lifecycle_events WHERE timestamp > ? ORDER BY timestamp'
-    ).all(lastLifecycle) as Record<string, unknown>[]
+    ).all(lastLifecycle) as SqliteRow[]
 
-    for (let i = 0; i < lifecycleEvents.length; i += SYNC_BATCH_SIZE) {
-      const batch = lifecycleEvents.slice(i, i + SYNC_BATCH_SIZE)
-      for (const row of batch) {
-        await sql`
-          INSERT INTO lifecycle_events (
-            id, session_id, timestamp, event_type, parent_event_id, metadata, contributor_id
-          ) VALUES (
-            ${row.id}, ${row.session_id}, ${toInt(row.timestamp)},
-            ${row.event_type}, ${row.parent_event_id},
-            ${safeJsonb(row.metadata)}, ${row.contributor_id ?? contributorId}
-          )
-          ON CONFLICT (id) DO NOTHING
-        `
-      }
-      lifecycleCount += batch.length
-    }
+    lifecycleCount = await insertBatched(
+      sql, 'lifecycle_events', LIFECYCLE_COLUMNS, lifecycleEvents,
+      (row) => [
+        row.id, row.session_id, toInt(row.timestamp),
+        row.event_type, row.parent_event_id,
+        safeJsonb(row.metadata), row.contributor_id ?? contributorId,
+      ],
+      '\n  ON CONFLICT (id) DO NOTHING',
+    )
 
     if (lifecycleEvents.length > 0) {
       const maxTs = lifecycleEvents[lifecycleEvents.length - 1].timestamp as number
@@ -246,26 +301,18 @@ export async function syncToNeon(db: Database.Database, connectionString: string
   try {
     const x402Events = db.prepare(
       'SELECT * FROM x402_events WHERE timestamp > ? ORDER BY timestamp'
-    ).all(lastX402) as Record<string, unknown>[]
+    ).all(lastX402) as SqliteRow[]
 
-    for (let i = 0; i < x402Events.length; i += SYNC_BATCH_SIZE) {
-      const batch = x402Events.slice(i, i + SYNC_BATCH_SIZE)
-      for (const row of batch) {
-        await sql`
-          INSERT INTO x402_events (
-            id, session_id, timestamp, tool_name, mcp_server,
-            service_url, service_name, success, contributor_id
-          ) VALUES (
-            ${row.id}, ${row.session_id}, ${toInt(row.timestamp)},
-            ${row.tool_name}, ${row.mcp_server},
-            ${row.service_url}, ${row.service_name},
-            ${toBool(row.success)}, ${row.contributor_id ?? contributorId}
-          )
-          ON CONFLICT (id) DO NOTHING
-        `
-      }
-      x402Count += batch.length
-    }
+    x402Count = await insertBatched(
+      sql, 'x402_events', X402_COLUMNS, x402Events,
+      (row) => [
+        row.id, row.session_id, toInt(row.timestamp),
+        row.tool_name, row.mcp_server,
+        row.service_url, row.service_name,
+        toBool(row.success), row.contributor_id ?? contributorId,
+      ],
+      '\n  ON CONFLICT (id) DO NOTHING',
+    )
 
     if (x402Events.length > 0) {
       const maxTs = x402Events[x402Events.length - 1].timestamp as number

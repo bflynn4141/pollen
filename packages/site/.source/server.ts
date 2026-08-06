@@ -2,13 +2,13 @@
 import * as __fd_glob_19 from "../content/docs/wallet/managed.mdx?collection=docs"
 import * as __fd_glob_18 from "../content/docs/wallet/index.mdx?collection=docs"
 import * as __fd_glob_17 from "../content/docs/wallet/bring-your-own.mdx?collection=docs"
-import * as __fd_glob_16 from "../content/docs/earning/index.mdx?collection=docs"
-import * as __fd_glob_15 from "../content/docs/earning/epochs.mdx?collection=docs"
-import * as __fd_glob_14 from "../content/docs/earning/claiming.mdx?collection=docs"
-import * as __fd_glob_13 from "../content/docs/developers/x402.mdx?collection=docs"
-import * as __fd_glob_12 from "../content/docs/developers/use-cases.mdx?collection=docs"
-import * as __fd_glob_11 from "../content/docs/developers/trends-api.mdx?collection=docs"
-import * as __fd_glob_10 from "../content/docs/developers/index.mdx?collection=docs"
+import * as __fd_glob_16 from "../content/docs/developers/x402.mdx?collection=docs"
+import * as __fd_glob_15 from "../content/docs/developers/use-cases.mdx?collection=docs"
+import * as __fd_glob_14 from "../content/docs/developers/trends-api.mdx?collection=docs"
+import * as __fd_glob_13 from "../content/docs/developers/index.mdx?collection=docs"
+import * as __fd_glob_12 from "../content/docs/earning/index.mdx?collection=docs"
+import * as __fd_glob_11 from "../content/docs/earning/epochs.mdx?collection=docs"
+import * as __fd_glob_10 from "../content/docs/earning/claiming.mdx?collection=docs"
 import * as __fd_glob_9 from "../content/docs/cli/index.mdx?collection=docs"
 import * as __fd_glob_8 from "../content/docs/cli/hooks.mdx?collection=docs"
 import * as __fd_glob_7 from "../content/docs/quickstart.mdx?collection=docs"
@@ -27,4 +27,4 @@ const create = server<typeof Config, import("fumadocs-mdx/runtime/types").Intern
   }
 }>({"doc":{"passthroughs":["extractedReferences"]}});
 
-export const docs = await create.docs("docs", "content/docs", {"meta.json": __fd_glob_0, "cli/meta.json": __fd_glob_1, "developers/meta.json": __fd_glob_2, "earning/meta.json": __fd_glob_3, "wallet/meta.json": __fd_glob_4, }, {"api.mdx": __fd_glob_5, "index.mdx": __fd_glob_6, "quickstart.mdx": __fd_glob_7, "cli/hooks.mdx": __fd_glob_8, "cli/index.mdx": __fd_glob_9, "developers/index.mdx": __fd_glob_10, "developers/trends-api.mdx": __fd_glob_11, "developers/use-cases.mdx": __fd_glob_12, "developers/x402.mdx": __fd_glob_13, "earning/claiming.mdx": __fd_glob_14, "earning/epochs.mdx": __fd_glob_15, "earning/index.mdx": __fd_glob_16, "wallet/bring-your-own.mdx": __fd_glob_17, "wallet/index.mdx": __fd_glob_18, "wallet/managed.mdx": __fd_glob_19, });
+export const docs = await create.docs("docs", "content/docs", {"meta.json": __fd_glob_0, "cli/meta.json": __fd_glob_1, "developers/meta.json": __fd_glob_2, "earning/meta.json": __fd_glob_3, "wallet/meta.json": __fd_glob_4, }, {"api.mdx": __fd_glob_5, "index.mdx": __fd_glob_6, "quickstart.mdx": __fd_glob_7, "cli/hooks.mdx": __fd_glob_8, "cli/index.mdx": __fd_glob_9, "earning/claiming.mdx": __fd_glob_10, "earning/epochs.mdx": __fd_glob_11, "earning/index.mdx": __fd_glob_12, "developers/index.mdx": __fd_glob_13, "developers/trends-api.mdx": __fd_glob_14, "developers/use-cases.mdx": __fd_glob_15, "developers/x402.mdx": __fd_glob_16, "wallet/bring-your-own.mdx": __fd_glob_17, "wallet/index.mdx": __fd_glob_18, "wallet/managed.mdx": __fd_glob_19, });
