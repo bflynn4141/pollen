@@ -30,7 +30,7 @@ export function NavBar() {
           textDecoration: 'none',
         }}
       >
-        Prompt Trends
+        Pollen
       </a>
 
       {isMobile ? (
