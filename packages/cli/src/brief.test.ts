@@ -189,8 +189,8 @@ describe('generateBrief', () => {
     const result = await generateBrief(db, { days: 7 })
     expect(result.polish).toBe('template')
     expect(result.findings.length).toBeLessThanOrEqual(3)
-    expect(result.html).toContain('Pollen Brief')
-    expect(result.text).toContain('POLLEN BRIEF')
+    expect(result.html).toContain('Pollen brief')
+    expect(result.text).toContain('Pollen brief')
     db.close()
   })
 
@@ -208,5 +208,37 @@ describe('isoWeekOf', () => {
     expect(isoWeekOf(new Date(2026, 7, 6))).toBe('2026-W32')   // Thu Aug 6 2026
     expect(isoWeekOf(new Date(2026, 0, 1))).toBe('2026-W01')   // Thu Jan 1 2026
     expect(isoWeekOf(new Date(2027, 0, 1))).toBe('2026-W53')   // Fri Jan 1 2027 → ISO year 2026
+  })
+})
+
+describe('renderBrief design guards', () => {
+  it('uses the neutral GitHub-style palette: no warm accents, no uppercase styling', () => {
+    const summary = buildBriefSummary(gatherCoachInputs(initDb(), { days: 7 }), [])
+    const rendered = renderBrief(summary, null)
+    expect(rendered.html).not.toMatch(/text-transform/i)
+    expect(rendered.html).not.toMatch(/letter-spacing/i)
+    for (const banned of ['#b8860b', '#f5b93c', '#faf5ea', '#eadfc8', '#8a7d5f']) {
+      expect(rendered.html.toLowerCase()).not.toContain(banned)
+    }
+  })
+
+  it('renders the activity heatmap grid, streak tiles, and legend when activity is provided', () => {
+    const summary = buildBriefSummary(gatherCoachInputs(initDb(), { days: 7 }), [])
+    const day = (date: string, prompts: number, level: 0 | 1 | 2 | 3 | 4) => ({ date, prompts, level })
+    const rendered = renderBrief(summary, null, {
+      weeks: [[day('2026-08-03', 5, 2), day('2026-08-04', 0, 0), day('2026-08-05', 12, 4), null, null, null, null]],
+      currentStreak: 1,
+      longestStreak: 5,
+      activeDays: 2,
+      totalDays: 3,
+    })
+    expect(rendered.html).toContain('day current streak')
+    expect(rendered.html).toContain('days longest streak')
+    expect(rendered.html).toContain('2/3')
+    expect(rendered.html).toContain('#216e39') // top heat step present via level 4
+    expect(rendered.html).toContain('2026-08-05 · 12 prompts')
+    expect(rendered.html).toContain('less')
+    expect(rendered.html).toContain('more')
+    expect(rendered.text).toContain('Current streak 1')
   })
 })

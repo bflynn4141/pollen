@@ -11,6 +11,8 @@
  */
 import Anthropic from '@anthropic-ai/sdk'
 import type Database from 'better-sqlite3'
+import { HEAT_RAMP, computeActivity } from './activity.js'
+import type { ActivityDay, ActivitySummary } from './activity.js'
 import { COACH_MODEL } from './config.js'
 import {
   computeCoachFindings, type CoachFinding, type CoachInputs,
@@ -129,27 +131,65 @@ export interface RenderedBrief {
   polish: 'claude' | 'template'
 }
 
-export function renderBrief(summary: BriefSummary, polished: PolishedBrief | null): RenderedBrief {
+export function renderBrief(
+  summary: BriefSummary,
+  polished: PolishedBrief | null,
+  activity?: ActivitySummary,
+): RenderedBrief {
   const intro = polished?.intro ?? templateIntro(summary)
   const cards = summary.cards
-  const subject = `Pollen Brief ${summary.week}: ${cards[0]?.headline ?? 'your week with Claude Code'}`
+  const weekNo = summary.week.split('-W')[1] ?? summary.week
+  const subject = `Pollen brief — week ${weekNo}: ${cards[0]?.headline ?? 'your week with Claude Code'}`
 
-  // Warm pollen palette — email-safe inline CSS, self-contained one-pager.
+  // GitHub-style neutral palette: grays carry the page, one green family
+  // carries activity magnitude (sequential, lightness-monotonic ramp).
+  // Deliberately no warm accents and no uppercase anywhere.
   const c = {
-    bg: '#faf5ea', card: '#fffdf8', line: '#eadfc8', text: '#2b2415',
-    muted: '#8a7d5f', accent: '#b8860b', accentSoft: '#f5b93c',
+    bg: '#ffffff', card: '#ffffff', line: '#d0d7de', lineSoft: '#eaeef2',
+    text: '#1f2328', muted: '#59636e', green: '#1a7f37',
+  }
+
+  const statTile = (value: string, label: string) =>
+    `<td style="padding:0 28px 0 0;"><div style="font-size:22px; font-weight:600; color:${c.text}; line-height:1.2;">${escapeHtml(value)}</div><div style="font-size:13px; color:${c.muted};">${escapeHtml(label)}</div></td>`
+
+  let activityHtml = ''
+  if (activity && activity.totalDays > 0) {
+    const cell = (day: ActivityDay | null) => {
+      if (day === null) return `<td style="width:11px; height:11px;"></td>`
+      const fill = HEAT_RAMP[day.level]
+      const title = `${day.date} · ${day.prompts} prompt${day.prompts === 1 ? '' : 's'}`
+      return `<td title="${escapeHtml(title)}" style="width:11px; height:11px; background:${fill}; border-radius:2px;"></td>`
+    }
+    // weeks are columns; render 7 weekday rows, Monday first
+    const rows = Array.from({ length: 7 }, (_, dow) =>
+      `<tr>${activity.weeks.map(week => cell(week[dow])).join('')}</tr>`
+    ).join('')
+    const legendCells = HEAT_RAMP
+      .map(fill => `<td style="width:11px; height:11px; background:${fill}; border-radius:2px;"></td>`)
+      .join('')
+    activityHtml = `
+    <div style="border:1px solid ${c.line}; border-radius:8px; padding:18px 20px; margin:0 0 20px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:separate; margin-bottom:14px;"><tr>
+        ${statTile(String(activity.currentStreak), activity.currentStreak === 1 ? 'day current streak' : 'days current streak')}
+        ${statTile(String(activity.longestStreak), 'days longest streak')}
+        ${statTile(`${activity.activeDays}/${activity.totalDays}`, 'days active')}
+      </tr></table>
+      <table role="presentation" cellpadding="0" cellspacing="3" style="border-collapse:separate;">${rows}</table>
+      <table role="presentation" cellpadding="0" cellspacing="3" style="border-collapse:separate; margin-top:8px;"><tr>
+        <td style="font-size:12px; color:${c.muted}; padding-right:5px;">less</td>${legendCells}<td style="font-size:12px; color:${c.muted}; padding-left:5px;">more</td>
+      </tr></table>
+    </div>`
   }
 
   const cardHtml = cards.map((card, idx) => {
-    const evidence = Object.entries(card.evidence)
-      .map(([k, v]) => `<span style="display:inline-block; margin:2px 10px 2px 0; color:${c.muted}; font-size:13px;">${escapeHtml(k)}: <strong style="color:${c.text};">${escapeHtml(String(v))}</strong></span>`)
+    const evidenceRows = Object.entries(card.evidence)
+      .map(([k, v]) => `<tr><td style="padding:7px 16px 7px 0; font-size:13px; color:${c.muted}; border-top:1px solid ${c.lineSoft};">${escapeHtml(k)}</td><td style="padding:7px 0; font-size:13px; font-weight:600; color:${c.text}; border-top:1px solid ${c.lineSoft}; text-align:right;">${escapeHtml(String(v))}</td></tr>`)
       .join('')
     return `
-      <div style="background:${c.card}; border:1px solid ${c.line}; border-radius:14px; padding:22px 24px; margin:0 0 16px;">
-        <div style="font-size:12px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:${c.accent};">No. ${idx + 1}</div>
-        <h2 style="margin:6px 0 10px; font-size:20px; line-height:1.3; color:${c.text};">${escapeHtml(card.headline)}</h2>
-        <p style="margin:0 0 12px; font-size:15px; line-height:1.6; color:${c.text};">${escapeHtml(cardProse(card, polished))}</p>
-        <div style="border-top:1px dashed ${c.line}; padding-top:10px;">${evidence}</div>
+      <div style="border:1px solid ${c.line}; border-radius:8px; padding:20px 22px; margin:0 0 14px;">
+        <h2 style="margin:0 0 8px; font-size:17px; line-height:1.35; color:${c.text};"><span style="color:${c.green}; padding-right:8px;">${idx + 1}.</span>${escapeHtml(card.headline)}</h2>
+        <p style="margin:0 0 12px; font-size:14px; line-height:1.6; color:${c.text};">${escapeHtml(cardProse(card, polished))}</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse; width:100%;">${evidenceRows}</table>
       </div>`
   }).join('')
 
@@ -157,17 +197,17 @@ export function renderBrief(summary: BriefSummary, polished: PolishedBrief | nul
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(subject)}</title></head>
 <body style="margin:0; padding:0; background:${c.bg}; font-family:-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;">
-  <div style="max-width:620px; margin:0 auto; padding:36px 20px;">
-    <div style="text-align:center; margin-bottom:26px;">
-      <div style="font-size:26px;">🐝</div>
-      <h1 style="margin:6px 0 2px; font-size:24px; color:${c.text};">Pollen Brief</h1>
-      <div style="font-size:13px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:${c.accent};">Week ${escapeHtml(summary.week.split('-W')[1] ?? summary.week)} · ${escapeHtml(summary.window)}</div>
+  <div style="max-width:640px; margin:0 auto; padding:32px 20px;">
+    <div style="margin-bottom:20px;">
+      <h1 style="margin:0 0 2px; font-size:21px; color:${c.text};">🐝 Pollen brief</h1>
+      <div style="font-size:14px; color:${c.muted};">Week ${escapeHtml(weekNo)} · ${escapeHtml(summary.window)}</div>
     </div>
-    <p style="font-size:16px; line-height:1.65; color:${c.text}; margin:0 0 24px;">${escapeHtml(intro)}</p>
-    ${cardHtml || `<div style="background:${c.card}; border:1px solid ${c.line}; border-radius:14px; padding:22px 24px;"><p style="margin:0; color:${c.text};">Not enough recorded sessions yet to say anything useful — keep working and next week's brief will have teeth.</p></div>`}
-    <div style="text-align:center; margin-top:26px; padding-top:16px; border-top:1px solid ${c.line}; font-size:12px; color:${c.muted}; line-height:1.7;">
+    <p style="font-size:15px; line-height:1.65; color:${c.text}; margin:0 0 20px;">${escapeHtml(intro)}</p>
+    ${activityHtml}
+    ${cardHtml || `<div style="border:1px solid ${c.line}; border-radius:8px; padding:20px 22px;"><p style="margin:0; color:${c.text};">Not enough recorded sessions yet to say anything useful — keep working and next week's brief will have teeth.</p></div>`}
+    <div style="margin-top:22px; padding-top:14px; border-top:1px solid ${c.lineSoft}; font-size:12px; color:${c.muted}; line-height:1.7;">
       Based on ${summary.sessions} sessions · ${summary.prompts.toLocaleString()} prompts · computed locally from your own usage data<br>
-      <span style="color:${c.accentSoft};">🐝</span> pollen — nothing in this brief left your machine except this email
+      🐝 pollen — nothing in this brief left your machine except this email
     </div>
   </div>
 </body>
@@ -177,9 +217,13 @@ export function renderBrief(summary: BriefSummary, polished: PolishedBrief | nul
     `${idx + 1}. ${card.headline}\n\n${cardProse(card, polished)}\n\n   ${Object.entries(card.evidence).map(([k, v]) => `${k}: ${v}`).join(' · ')}`
   ).join('\n\n')
 
+  const streakLine = activity && activity.totalDays > 0
+    ? `Current streak ${activity.currentStreak} days · longest ${activity.longestStreak} · active ${activity.activeDays}/${activity.totalDays} days\n\n`
+    : ''
   const text = [
-    `POLLEN BRIEF — ${summary.week} (${summary.window})`,
+    `Pollen brief — ${summary.week} (${summary.window})`,
     '',
+    streakLine.trimEnd(),
     intro,
     '',
     textCards || 'Not enough recorded sessions yet to say anything useful.',
@@ -205,6 +249,7 @@ export async function generateBrief(
   const top3 = findings.slice(0, 3)
   const summary = buildBriefSummary(inputs, top3)
   const polished = await polishBrief(summary, opts.polishFactory)
-  const rendered = renderBrief(summary, polished)
+  const activity = computeActivity(db)
+  const rendered = renderBrief(summary, polished, activity)
   return { ...rendered, summary, findings: top3 }
 }
