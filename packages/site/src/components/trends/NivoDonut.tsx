@@ -1,10 +1,17 @@
 'use client'
 
 import { ResponsivePie } from '@nivo/pie'
+import type { PieTooltipProps } from '@nivo/pie'
 import { pollenTheme, NIVO_COLORS } from '@/lib/nivo-theme'
 
+interface DonutDatum {
+  id: string
+  label: string
+  value: number
+}
+
 interface Props {
-  data: { id: string; label: string; value: number }[]
+  data: DonutDatum[]
   height?: number
 }
 
@@ -13,7 +20,7 @@ export default function NivoDonut({ data, height = 280 }: Props) {
 
   return (
     <div style={{ height }}>
-      <ResponsivePie
+      <ResponsivePie<DonutDatum>
         data={data}
         margin={{ top: 20, right: 80, bottom: 20, left: 80 }}
         innerRadius={0.55}
@@ -31,7 +38,7 @@ export default function NivoDonut({ data, height = 280 }: Props) {
         arcLinkLabelsStraightLength={8}
         arcLabelsSkipAngle={20}
         arcLabelsTextColor="#FFFFFF"
-        tooltip={({ datum }) => (
+        tooltip={({ datum }: PieTooltipProps<DonutDatum>) => (
           <div style={{
             background: '#FFFFFF',
             border: '1px solid #EBEBEA',

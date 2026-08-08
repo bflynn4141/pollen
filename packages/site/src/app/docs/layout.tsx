@@ -11,7 +11,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         url: '/',
       }}
       links={[
-        { text: 'Dashboard', url: '/trends/topics' },
+        { text: 'Dashboard', url: '/dashboard' },
       ]}
     >
       {children}

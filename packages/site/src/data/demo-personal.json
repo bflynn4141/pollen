@@ -1,0 +1,414 @@
+{
+  "schemaVersion": 1,
+  "provenance": "synthetic",
+  "generatedAt": "2026-08-07T12:00:00.000Z",
+  "period": {
+    "start": "2026-06-20",
+    "end": "2026-08-07",
+    "timezone": "UTC"
+  },
+  "summary": {
+    "sessions": 42,
+    "prompts": 252,
+    "toolCalls": 252,
+    "completionPct": 76.2,
+    "avgSatisfaction": 70,
+    "toolSuccessPct": 85.7
+  },
+  "activity": {
+    "weeks": [
+      [
+        {
+          "date": "2026-06-15",
+          "prompts": 0,
+          "level": 0
+        },
+        {
+          "date": "2026-06-16",
+          "prompts": 0,
+          "level": 0
+        },
+        {
+          "date": "2026-06-17",
+          "prompts": 0,
+          "level": 0
+        },
+        {
+          "date": "2026-06-18",
+          "prompts": 0,
+          "level": 0
+        },
+        {
+          "date": "2026-06-19",
+          "prompts": 0,
+          "level": 0
+        },
+        {
+          "date": "2026-06-20",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-21",
+          "prompts": 0,
+          "level": 0
+        }
+      ],
+      [
+        {
+          "date": "2026-06-22",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-23",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-24",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-25",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-26",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-27",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-28",
+          "prompts": 0,
+          "level": 0
+        }
+      ],
+      [
+        {
+          "date": "2026-06-29",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-06-30",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-01",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-02",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-03",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-04",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-05",
+          "prompts": 0,
+          "level": 0
+        }
+      ],
+      [
+        {
+          "date": "2026-07-06",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-07",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-08",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-09",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-10",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-11",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-12",
+          "prompts": 0,
+          "level": 0
+        }
+      ],
+      [
+        {
+          "date": "2026-07-13",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-14",
+          "prompts": 5,
+          "level": 3
+        },
+        {
+          "date": "2026-07-15",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-16",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-17",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-18",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-19",
+          "prompts": 0,
+          "level": 0
+        }
+      ],
+      [
+        {
+          "date": "2026-07-20",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-21",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-22",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-23",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-24",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-25",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-26",
+          "prompts": 0,
+          "level": 0
+        }
+      ],
+      [
+        {
+          "date": "2026-07-27",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-28",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-29",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-30",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-07-31",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-08-01",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-08-02",
+          "prompts": 0,
+          "level": 0
+        }
+      ],
+      [
+        {
+          "date": "2026-08-03",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-08-04",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-08-05",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-08-06",
+          "prompts": 7,
+          "level": 4
+        },
+        {
+          "date": "2026-08-07",
+          "prompts": 7,
+          "level": 4
+        },
+        null,
+        null
+      ]
+    ],
+    "currentStreak": 5,
+    "longestStreak": 6,
+    "activeDays": 42,
+    "totalDays": 54
+  },
+  "intents": [
+    {
+      "id": "feature_build",
+      "label": "Feature building",
+      "count": 84,
+      "sharePct": 33.3
+    },
+    {
+      "id": "debugging",
+      "label": "Debugging",
+      "count": 60,
+      "sharePct": 23.8
+    },
+    {
+      "id": "refactoring",
+      "label": "Refactoring",
+      "count": 36,
+      "sharePct": 14.3
+    },
+    {
+      "id": "testing",
+      "label": "Testing",
+      "count": 30,
+      "sharePct": 11.9
+    },
+    {
+      "id": "devops",
+      "label": "DevOps",
+      "count": 24,
+      "sharePct": 9.5
+    },
+    {
+      "id": "code_review",
+      "label": "Code review",
+      "count": 18,
+      "sharePct": 7.1
+    }
+  ],
+  "tools": [
+    {
+      "id": "read",
+      "label": "Read files",
+      "count": 114,
+      "successPct": 100
+    },
+    {
+      "id": "bash",
+      "label": "Run commands",
+      "count": 66,
+      "successPct": 45.5
+    },
+    {
+      "id": "edit",
+      "label": "Edit files",
+      "count": 42,
+      "successPct": 100
+    },
+    {
+      "id": "search",
+      "label": "Search code",
+      "count": 30,
+      "successPct": 100
+    }
+  ],
+  "insights": [
+    {
+      "id": "minimal-prompt-penalty",
+      "headline": "One-liner requests cost you finished work",
+      "whatYouDo": "A big slice of your sessions run mostly on very short messages — a sentence or less — and those sessions go measurably worse than the ones where you spell things out.",
+      "whatToTry": "Spend thirty extra seconds on the opening message: what you want, where it lives, and what \"done\" looks like. The rest of the session inherits that clarity.",
+      "payoff": "Your detailed sessions score 88 vs 52 for terse ones — the single biggest lever in your data.",
+      "evidence": {
+        "sessions run mostly on one-liners": 21,
+        "session quality, detailed vs terse": "88 vs 52"
+      }
+    },
+    {
+      "id": "retry-storms",
+      "headline": "After the same tool fails twice, change approach",
+      "whatYouDo": "In 29% of your working sessions, the same tool fails three or more times in a row before anything changes.",
+      "whatToTry": "Two identical failures is the signal to stop and switch: ask for a different approach, read the file yourself, or say \"that command keeps failing — try another way\".",
+      "payoff": "Breaking the loop early saves the minutes (and tokens) the third, fourth, and fifth identical failures would burn.",
+      "evidence": {
+        "sessions with a repeated-failure loop": 12,
+        "share of tool-using sessions affected": "29%"
+      }
+    },
+    {
+      "id": "evidence-gap",
+      "headline": "You describe errors instead of pasting them",
+      "whatYouDo": "A large share of your work is chasing bugs, but you almost never paste the actual error output into the conversation — you retype or summarize it instead.",
+      "whatToTry": "When something breaks, paste the full error message and stack trace verbatim. Copy-paste beats paraphrase: the exact text carries file paths, line numbers, and error codes you would otherwise drop.",
+      "payoff": "Your own sessions show it: when you give detailed context, 95.2% of sessions finish the job, vs 57.1% when you keep it brief.",
+      "evidence": {
+        "share of prompts that paste an error": "0%",
+        "share of prompts about debugging": "23.8%",
+        "finish rate with rich context vs without": "95.2% vs 57.1%"
+      }
+    }
+  ]
+}

@@ -76,4 +76,15 @@ describe('computeActivity', () => {
     expect(HEAT_RAMP).toHaveLength(5)
     expect(new Set(HEAT_RAMP).size).toBe(5)
   })
+
+  it('can bucket dates in UTC for portable snapshots', () => {
+    const utcNow = Date.UTC(2026, 7, 5, 0, 30)
+    insertPrompt(db, Date.UTC(2026, 7, 4, 23, 30))
+
+    const a = computeActivity(db, { weeks: 1, now: utcNow, timezone: 'UTC' })
+    const days = a.weeks.flat().filter(d => d !== null)
+
+    expect(days.find(d => d!.date === '2026-08-04')?.prompts).toBe(1)
+    expect(days.find(d => d!.date === '2026-08-05')?.prompts).toBe(0)
+  })
 })

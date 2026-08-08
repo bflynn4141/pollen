@@ -107,8 +107,12 @@ function rateSample(row: { sessions: number; decided: number; completed: number;
   }
 }
 
-export function gatherCoachInputs(db: Database.Database, opts: { days?: number | null } = {}): CoachInputs {
-  const since = opts.days != null ? Date.now() - opts.days * MS_PER_DAY : 0
+export function gatherCoachInputs(
+  db: Database.Database,
+  opts: { days?: number | null; now?: number } = {},
+): CoachInputs {
+  const now = opts.now ?? Date.now()
+  const since = opts.days != null ? now - opts.days * MS_PER_DAY : 0
 
   // Base filter used everywhere: prompted sessions only.
   const overall = db.prepare(`
@@ -585,11 +589,11 @@ export const MIN_WINDOW_SESSIONS = 40
  */
 export function computeCoachFindings(
   db: Database.Database,
-  opts: { days?: number } = {},
+  opts: { days?: number; now?: number } = {},
 ): { inputs: CoachInputs; findings: CoachFinding[] } {
-  let inputs = gatherCoachInputs(db, { days: opts.days ?? 7 })
+  let inputs = gatherCoachInputs(db, { days: opts.days ?? 7, now: opts.now })
   if (inputs.promptedSessions < MIN_WINDOW_SESSIONS) {
-    const allTime = gatherCoachInputs(db, { days: null })
+    const allTime = gatherCoachInputs(db, { days: null, now: opts.now })
     if (allTime.promptedSessions > inputs.promptedSessions) inputs = allTime
   }
   return { inputs, findings: evaluateCoachRules(inputs) }

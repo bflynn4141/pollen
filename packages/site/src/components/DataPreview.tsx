@@ -163,7 +163,7 @@ export function DataPreview() {
 
           {/* Dashboard link — pushed to right */}
           <a
-            href="/trends"
+            href="/dashboard"
             style={{
               marginLeft: 'auto',
               fontSize: 13,

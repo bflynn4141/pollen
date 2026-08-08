@@ -28,6 +28,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
   title: "Pollen — The Shared Intelligence Network",
   description:
     "Your prompts have value. Install one MCP server. Contribute anonymized intents, tool calls, command patterns, and model preferences. Earn tokens when the data is queried.",
