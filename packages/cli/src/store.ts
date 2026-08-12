@@ -145,6 +145,24 @@ CREATE INDEX IF NOT EXISTS idx_x402_session ON x402_events(session_id);
 CREATE INDEX IF NOT EXISTS idx_x402_timestamp ON x402_events(timestamp);
 `
 
+// LOCAL-ONLY: brief_log + brief_kv power the weekly Pollen Brief.
+// These tables must NEVER be added to sync.ts — they are device-local state.
+const BRIEF_SCHEMA = `
+CREATE TABLE IF NOT EXISTS brief_log (
+  id TEXT PRIMARY KEY,
+  iso_week TEXT NOT NULL UNIQUE,
+  generated_at INTEGER NOT NULL,
+  sent_to TEXT,
+  findings_json TEXT,
+  html_path TEXT
+);
+
+CREATE TABLE IF NOT EXISTS brief_kv (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+`
+
 export function initDb(dbPath?: string): Database.Database {
   const db = dbPath ? new Database(dbPath) : new Database(':memory:')
   db.pragma('journal_mode = WAL')
@@ -155,7 +173,73 @@ export function initDb(dbPath?: string): Database.Database {
   db.exec(SCHEMA)
   db.exec(LIFECYCLE_SCHEMA)
   db.exec(X402_SCHEMA)
+  db.exec(BRIEF_SCHEMA)
   return db
+}
+
+// --- Pollen Brief (local-only) ---
+
+/**
+ * Claim the weekly brief slot for `isoWeek` (e.g. "2026-W32").
+ * INSERT OR IGNORE on the UNIQUE iso_week means concurrent SessionStart hooks
+ * can't double-send: exactly one caller gets `true`.
+ */
+export function claimBriefWeek(db: Database.Database, isoWeek: string, now = Date.now()): boolean {
+  const result = db.prepare(`
+    INSERT OR IGNORE INTO brief_log (id, iso_week, generated_at)
+    VALUES (?, ?, ?)
+  `).run(`brief-${isoWeek}`, isoWeek, now)
+  return result.changes > 0
+}
+
+export interface BriefLogRow {
+  id: string
+  iso_week: string
+  generated_at: number
+  sent_to: string | null
+  findings_json: string | null
+  html_path: string | null
+}
+
+export function getBriefLog(db: Database.Database, isoWeek: string): BriefLogRow | undefined {
+  return db.prepare('SELECT * FROM brief_log WHERE iso_week = ?').get(isoWeek) as BriefLogRow | undefined
+}
+
+/** Upsert the brief record for a week (used by `pollen brief` after generate/send). */
+export function recordBrief(
+  db: Database.Database,
+  entry: { isoWeek: string; sentTo?: string | null; findingsJson?: string | null; htmlPath?: string | null; now?: number },
+): void {
+  db.prepare(`
+    INSERT OR IGNORE INTO brief_log (id, iso_week, generated_at)
+    VALUES (?, ?, ?)
+  `).run(`brief-${entry.isoWeek}`, entry.isoWeek, entry.now ?? Date.now())
+  db.prepare(`
+    UPDATE brief_log SET
+      generated_at = ?,
+      sent_to = COALESCE(?, sent_to),
+      findings_json = COALESCE(?, findings_json),
+      html_path = COALESCE(?, html_path)
+    WHERE iso_week = ?
+  `).run(
+    entry.now ?? Date.now(),
+    entry.sentTo ?? null,
+    entry.findingsJson ?? null,
+    entry.htmlPath ?? null,
+    entry.isoWeek,
+  )
+}
+
+export function getBriefKv(db: Database.Database, key: string): string | null {
+  const row = db.prepare('SELECT value FROM brief_kv WHERE key = ?').get(key) as { value: string } | undefined
+  return row?.value ?? null
+}
+
+export function setBriefKv(db: Database.Database, key: string, value: string): void {
+  db.prepare(`
+    INSERT INTO brief_kv (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, value)
 }
 
 // --- x402 Events ---

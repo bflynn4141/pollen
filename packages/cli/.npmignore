@@ -1,0 +1,6 @@
+dist/*.test.*
+dist/hooks/*.test.*
+src/
+.turbo/
+*.sql
+.env*

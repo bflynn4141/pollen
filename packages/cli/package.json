@@ -1,25 +1,50 @@
 {
   "name": "@pollen/cli",
-  "version": "0.0.1",
-  "private": true,
+  "version": "0.1.0-beta.1",
+  "description": "Privacy-preserving local telemetry for AI coding agents.",
+  "license": "Apache-2.0",
+  "private": false,
   "type": "module",
   "bin": {
-    "pollen": "./dist/main.js"
+    "pollen": "./dist/main.js",
+    "pollen-hook": "./dist/hook.js"
   },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "!dist/**/*.test.*",
+    "data/terms.json",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bflynn4141/pollen.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/bflynn4141/pollen#readme",
+  "bugs": "https://github.com/bflynn4141/pollen/issues",
   "scripts": {
     "build": "tsc",
+    "prepack": "pnpm build && cp ../../LICENSE LICENSE",
+    "postpack": "rm -f LICENSE",
     "test": "vitest run",
-    "dev": "vitest"
+    "dev": "vitest",
+    "demo:snapshot": "tsx src/demo-snapshot.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.116.0",
     "@neondatabase/serverless": "^1.0.2",
     "@worldcoin/idkit-core": "^4.2.2",
     "better-sqlite3": "^11.8.1",
     "ink": "^5.1.0",
     "qrcode-terminal": "^0.12.0",
     "react": "^18.3.1",
-    "viem": "^2.47.0"
+    "viem": "^2.55.13"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

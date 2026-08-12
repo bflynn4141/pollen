@@ -3,14 +3,20 @@ import { detectProjectType } from '../coarsen.js'
 import { getOrCreateContributorId } from '../config.js'
 import { finalizeStaleSessions } from '../finalize.js'
 import { insertSession } from '../store.js'
+import { maybeBuildNudge, maybeScheduleWeeklyBrief } from './brief-trigger.js'
 import type { HookInput } from '../types.js'
+
+export interface SessionStartOutput {
+  /** Shown to the user by Claude Code when present in the hook's JSON output */
+  systemMessage?: string
+}
 
 export function handleSessionStart(
   db: Database.Database,
   input: HookInput,
   toolSource: string = 'claude-code',
-): void {
-  if (!input.session_id) return
+): SessionStartOutput | undefined {
+  if (!input.session_id) return undefined
 
   // Opportunistically close out sessions that never got a SessionEnd
   // (killed terminal, crash) so outcomes materialize without one.
@@ -56,4 +62,19 @@ export function handleSessionStart(
       'UPDATE sessions SET transcript_path = ? WHERE session_id = ? AND transcript_path IS NULL'
     ).run(input.transcript_path, input.session_id)
   }
+
+  // Pollen Brief automation — best-effort by design; both helpers swallow
+  // their own errors so hooks can never block or fail the session.
+  try {
+    maybeScheduleWeeklyBrief(db)
+  } catch { /* never block a session */ }
+
+  // Daily nudge is Claude Code only (Codex has no systemMessage surface).
+  if (toolSource !== 'codex') {
+    try {
+      const nudge = maybeBuildNudge(db)
+      if (nudge) return { systemMessage: nudge }
+    } catch { /* never block a session */ }
+  }
+  return undefined
 }

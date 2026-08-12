@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { signRequest } from '@worldcoin/idkit-core/signing'
+import { signRequest } from '@worldcoin/idkit-core'
 
 export const dynamic = 'force-dynamic'
 

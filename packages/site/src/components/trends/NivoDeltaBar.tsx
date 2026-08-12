@@ -3,8 +3,14 @@
 import { ResponsiveBar } from '@nivo/bar'
 import { pollenTheme, NIVO_COLORS } from '@/lib/nivo-theme'
 
+interface DeltaDatum extends Record<string, string | number> {
+  id: string
+  value: number
+  sessions: number
+}
+
 interface Props {
-  data: { id: string; value: number; sessions: number }[]
+  data: DeltaDatum[]
   height?: number
 }
 
@@ -18,14 +24,14 @@ export default function NivoDeltaBar({ data, height = 200 }: Props) {
   return (
     <div>
       <div style={{ height }}>
-        <ResponsiveBar
+        <ResponsiveBar<DeltaDatum>
           data={data}
           keys={['value']}
           indexBy="id"
           layout="vertical"
           margin={{ top: 10, right: 20, bottom: 30, left: 20 }}
           padding={0.4}
-          colors={({ index }) => NIVO_COLORS[index % NIVO_COLORS.length]}
+          colors={({ index }: { index: number }) => NIVO_COLORS[index % NIVO_COLORS.length]}
           theme={pollenTheme}
           borderRadius={4}
           enableGridX={false}

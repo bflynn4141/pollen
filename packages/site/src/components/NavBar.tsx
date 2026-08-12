@@ -6,7 +6,7 @@ import { useIsMobile } from '@/lib/hooks'
 export function NavBar() {
   const isMobile = useIsMobile()
   const pathname = usePathname()
-  const onDashboard = pathname.startsWith('/trends/')
+  const onDashboard = pathname.startsWith('/dashboard')
 
   return (
     <nav
@@ -30,7 +30,7 @@ export function NavBar() {
           textDecoration: 'none',
         }}
       >
-        Prompt Trends
+        Pollen
       </a>
 
       {isMobile ? (
@@ -51,7 +51,7 @@ export function NavBar() {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
           <a
-            href="/trends/topics"
+            href="/dashboard"
             style={{
               ...linkStyle,
               fontWeight: onDashboard ? 600 : 500,

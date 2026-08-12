@@ -8,16 +8,14 @@
  * Run: POLLEN_DEMO_KEY=0x... node packages/cli/dist/demo-query.js
  */
 import { createInterface } from 'node:readline'
-import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Anthropic from '@anthropic-ai/sdk'
-import { createWalletClient, http } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { base } from 'viem/chains'
 import { initDb } from './store.js'
 import { DB_PATH } from './config.js'
+import { signX402Payment, USDC_BASE } from './x402.js'
 import type Database from 'better-sqlite3'
 
 // ── Colors ──────────────────────────────────────────────
@@ -32,7 +30,6 @@ const W = '\x1b[37m'              // white
 
 // ── x402 Constants ──────────────────────────────────────
 const POLLEN_API = process.env.POLLEN_API_URL || 'https://clara-proxy.bflynn4141.workers.dev'
-const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as const
 
 // Contract addresses: env-first, falling back to the v2 keys in
 // contracts/deployments/base-mainnet.json (populated by the v2 deploy).
@@ -67,7 +64,6 @@ function resolveAddress(envVar: 'POLLEN_TOKEN_ADDRESS' | 'POLLEN_SETTLEMENT_ADDR
 // ── x402 Wallet Setup ───────────────────────────────────
 const demoKey = process.env.POLLEN_DEMO_KEY
 let account: ReturnType<typeof privateKeyToAccount> | null = null
-let walletClient: ReturnType<typeof createWalletClient> | null = null
 let POLLEN_SETTLEMENT: `0x${string}` | null = null
 
 if (demoKey) {
@@ -80,14 +76,9 @@ if (demoKey) {
     process.exit(1)
   }
   account = privateKeyToAccount(demoKey as `0x${string}`)
-  walletClient = createWalletClient({
-    account,
-    chain: base,
-    transport: http(),
-  })
 }
 
-const x402Enabled = !!(account && walletClient)
+const x402Enabled = !!account
 
 // ── Schema Context ──────────────────────────────────────
 const SCHEMA_CONTEXT = `
@@ -265,62 +256,19 @@ async function generateQuery(question: string, retryContext?: string): Promise<Q
 // ── x402 Payment ────────────────────────────────────────
 
 async function signAndVerifyPayment(costCents: number): Promise<X402Receipt | null> {
-  if (!account || !walletClient || !POLLEN_SETTLEMENT) return null
+  if (!account || !demoKey || !POLLEN_SETTLEMENT) return null
 
   try {
     const costUnits = BigInt(costCents) * 10000n // cents → USDC units (6 decimals)
-    const now = Math.floor(Date.now() / 1000)
-    const nonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`
 
-    const authorization = {
-      from: account.address,
-      to: POLLEN_SETTLEMENT,
-      value: costUnits,
-      validAfter: 0n,
-      validBefore: BigInt(now + 60),
-      nonce,
-    }
-
-    const signature = await walletClient.signTypedData({
-      account,
-      domain: {
-        name: 'USD Coin',
-        version: '2',
-        chainId: 8453,
-        verifyingContract: USDC_BASE,
-      },
-      types: {
-        TransferWithAuthorization: [
-          { name: 'from', type: 'address' },
-          { name: 'to', type: 'address' },
-          { name: 'value', type: 'uint256' },
-          { name: 'validAfter', type: 'uint256' },
-          { name: 'validBefore', type: 'uint256' },
-          { name: 'nonce', type: 'bytes32' },
-        ],
-      },
-      primaryType: 'TransferWithAuthorization',
-      message: authorization,
-    })
-
-    const payment = {
-      x402Version: 1,
-      scheme: 'exact',
+    // Shared EIP-3009 signing helper (see x402.ts)
+    const { header: paymentHeader } = await signX402Payment(demoKey as `0x${string}`, {
+      payTo: POLLEN_SETTLEMENT,
+      amountUnits: costUnits,
       network: 'base-mainnet',
-      payload: {
-        signature,
-        authorization: {
-          from: authorization.from,
-          to: authorization.to,
-          value: authorization.value.toString(),
-          validAfter: authorization.validAfter.toString(),
-          validBefore: authorization.validBefore.toString(),
-          nonce: authorization.nonce,
-        },
-      },
-    }
-
-    const paymentHeader = Buffer.from(JSON.stringify(payment)).toString('base64')
+      asset: USDC_BASE,
+      validSeconds: 60,
+    })
 
     const response = await fetch(`${POLLEN_API}/pollen/query`, {
       method: 'POST',

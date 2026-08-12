@@ -92,7 +92,7 @@ export function CtaFooter() {
             }}
           >
             <span style={{ color: '#9B9590' }}>$</span>
-            npx prompt-trends-mcp
+            npx @pollen/cli setup
           </div>
         </div>
       </section>

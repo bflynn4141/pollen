@@ -16,24 +16,34 @@ import {
   renderMcpServers, renderProjects,
   renderTopics, renderSatisfaction,
 } from './query.js'
-import { syncToNeon } from './sync.js'
 import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
-import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
+import { DB_PATH, registerWallet, isValidAddress, loadConfig, saveNetworkRegistration, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
 import { maybeSignWalletBinding } from './register-sign.js'
+import { openLocalDb } from './local-db.js'
+import { buildNetworkReceipts } from './network-receipt.js'
+import { DEFAULT_NETWORK_API_URL, registerNetworkContributor, uploadNetworkReceipts } from './network-client.js'
 
-function openDb() {
+function openDb(commandName: string | undefined) {
+  // Commands that manage identity or onboarding do not need user activity data.
+  // Keeping them in memory makes `pollen setup --demo` genuinely side-effect free.
+  const databaseFreeCommands = new Set([
+    undefined, 'help', '--help', '-h', 'setup', 'join', 'verify', 'status',
+    'earnings', 'points', 'register', 'wallet', 'claim',
+  ])
+  if (databaseFreeCommands.has(commandName)) return initDb()
+
   try {
-    return initDb(DB_PATH)
+    return openLocalDb(DB_PATH)
   } catch {
-    console.error('No pollen data found. Use Claude Code with the hook active to start collecting.')
+    console.error(`Could not open Pollen's local database at ${DB_PATH}.`)
     process.exit(1)
   }
 }
 
 const command = process.argv[2]
 
-const db = openDb()
+const db = openDb(command)
 
 ;(async () => {
 try {
@@ -89,15 +99,24 @@ try {
       break
     }
     case 'sync': {
-      const connStr = process.env.NEON_DATABASE_URL
-      if (!connStr) {
-        console.error('Set NEON_DATABASE_URL to sync. Example:')
-        console.error('  export NEON_DATABASE_URL="postgresql://..."')
+      const config = loadConfig()
+      if (!config?.network) {
+        console.error('This installation is not connected to the founding panel.')
+        console.error('Run: pollen join <invite-code>')
         process.exit(1)
       }
-      console.log('Syncing to Neon...')
-      const result = await syncToNeon(db, connStr)
-      console.log(`Synced: ${result.contributions} contributions, ${result.tool_events} tool_events, ${result.sessions} sessions, ${result.lifecycle_events} lifecycle, ${result.x402_events} x402`)
+      const receipts = buildNetworkReceipts(db, config.contributor_id)
+      if (receipts.length === 0) {
+        console.log('No completed sessions are ready to sync.')
+        break
+      }
+      console.log(`Uploading ${receipts.length} privacy-safe network receipt${receipts.length === 1 ? '' : 's'}...`)
+      const result = await uploadNetworkReceipts(
+        config.network.token,
+        receipts,
+        config.network.api_url,
+      )
+      console.log(`Synced: ${result.accepted} new, ${result.received - result.accepted} already present.`)
       break
     }
     case 'backfill-subjects': {
@@ -141,6 +160,95 @@ try {
       await app.waitUntilExit()
       break
     }
+    case 'brief': {
+      const args = process.argv.slice(3)
+      const flagValue = (name: string): string | undefined => {
+        const idx = args.indexOf(name)
+        const val = idx !== -1 ? args[idx + 1] : undefined
+        return val && !val.startsWith('--') ? val : undefined
+      }
+      const daysRaw = flagValue('--days')
+      const days = daysRaw != null ? parseInt(daysRaw, 10) : 7
+      if (!Number.isFinite(days) || days <= 0) {
+        console.error('--days must be a positive number')
+        process.exit(1)
+      }
+      const outFlag = flagValue('--out')
+      const toFlag = flagValue('--to')
+      const doSend = args.includes('--send')
+      const doOpen = args.includes('--open')
+      const quiet = args.includes('--quiet')
+
+      const { getBriefEmail, setBriefEmail } = await import('./config.js')
+      if (toFlag) {
+        if (!toFlag.includes('@')) {
+          console.error(`Invalid email address: ${toFlag}`)
+          process.exit(1)
+        }
+        setBriefEmail(toFlag)
+        if (!quiet) console.log(`✓ Brief recipient saved: ${toFlag}`)
+      }
+
+      const { generateBrief, isoWeekOf } = await import('./brief.js')
+      const { recordBrief } = await import('./store.js')
+      const result = await generateBrief(db, { days })
+
+      const { writeFileSync, mkdirSync } = await import('node:fs')
+      const { join, dirname } = await import('node:path')
+      const { homedir } = await import('node:os')
+      const week = isoWeekOf()
+      const outPath = outFlag ?? join(homedir(), '.pollen', `brief-${week}.html`)
+      mkdirSync(dirname(outPath), { recursive: true })
+      writeFileSync(outPath, result.html)
+
+      if (!quiet) {
+        console.log(result.text)
+        console.log('')
+        console.log(`Saved: ${outPath}  (polish: ${result.polish})`)
+      }
+
+      recordBrief(db, {
+        isoWeek: week,
+        findingsJson: JSON.stringify(result.findings),
+        htmlPath: outPath,
+      })
+
+      if (doOpen) {
+        const { spawn } = await import('node:child_process')
+        spawn('open', [outPath], { stdio: 'ignore', detached: true }).unref()
+      }
+
+      if (doSend) {
+        const recipient = toFlag ?? getBriefEmail()
+        if (!recipient) {
+          console.error('No brief recipient configured. Use: pollen brief --send --to you@example.com')
+          process.exitCode = 1
+          break
+        }
+        const { sendEmail, StableEmailError } = await import('./stableemail.js')
+        try {
+          const receipt = await sendEmail({
+            to: [recipient],
+            subject: result.subject,
+            html: result.html,
+            text: result.text,
+          })
+          recordBrief(db, { isoWeek: week, sentTo: recipient })
+          if (!quiet) {
+            const paid = receipt.paidUsd && receipt.paidUsd !== '0' ? ` ($${receipt.paidUsd} USDC via x402)` : ''
+            console.log(`✓ Brief emailed to ${recipient}${paid}${receipt.id ? `  id: ${receipt.id}` : ''}`)
+          }
+        } catch (err) {
+          if (err instanceof StableEmailError) {
+            console.error(`Email not sent [${err.code}]: ${err.message}`)
+          } else {
+            console.error(`Email not sent: ${(err as Error).message}`)
+          }
+          process.exitCode = 1
+        }
+      }
+      break
+    }
     case 'verify': {
       await runVerify()
       break
@@ -158,6 +266,25 @@ try {
       const { runSetup } = await import('./setup.js')
       const demo = process.argv.includes('--demo')
       await runSetup(demo)
+      break
+    }
+    case 'join': {
+      const invite = process.argv[3] ?? process.env.POLLEN_INVITE_CODE
+      if (!invite) {
+        console.error('Usage: pollen join <invite-code>')
+        process.exit(1)
+      }
+      const existing = loadConfig()
+      if (existing?.world_id) {
+        console.error('This legacy profile is already World ID verified and cannot be re-keyed automatically.')
+        console.error('Contact the Pollen operator to migrate it into the founding panel.')
+        process.exit(1)
+      }
+      const registration = await registerNetworkContributor(invite, DEFAULT_NETWORK_API_URL)
+      saveNetworkRegistration(registration.contributorId, DEFAULT_NETWORK_API_URL, registration.token)
+      console.log(`✓ Joined founding panel as ${registration.contributorId}`)
+      console.log('  Your bearer token is stored locally in ~/.pollen/config.json with mode 0600.')
+      console.log('  Run `pollen setup`, then `pollen sync` after a completed session.')
       break
     }
     case 'earnings': {
@@ -317,6 +444,7 @@ try {
         'Usage: pollen <command>',
         '',
         'Commands:',
+        '  join <code>     Join the invite-only founding panel',
         '  setup           Guided onboarding — hooks, wallet, everything',
         '  setup --demo    Same flow, nothing written to disk (for demos)',
         '  setup --codex   Install pollen hooks into ~/.codex/hooks.json',
@@ -335,16 +463,14 @@ try {
         '  trends [n]  Daily trends (last n days, default 7)',
         '  seed        Generate 20 realistic v4 demo sessions',
         '  my          Interactive dashboard — see exactly what you\'ve contributed',
-        '  sync        Push local data to Neon (needs NEON_DATABASE_URL)',
+        '  brief       Weekly top-3 coaching digest: pollen brief [--days 7] [--out <path>] [--open] [--send] [--to <email>]',
+        '  sync        Upload closed, privacy-safe network receipts',
         '  verify      Prove you are a unique human via World ID',
         '  status      Show contributor identity + verification status',
-        '  earnings    Show epoch scores, score breakdowns, and weekly payouts',
-        '  points      Simulated POLLEN balance (same math as real distribution)',
         '  wallet      Set up a wallet (managed or bring-your-own)',
         '  register    Link an Ethereum wallet: pollen register <address>',
         '  claim       Payout status (POLLEN payouts are pushed automatically each week)',
         '  claim --revenue  Claim accumulated USDC revenue',
-        '  backfill-subjects  Extract subjects for existing sessions (needs ANTHROPIC_API_KEY)',
       ].join('\n'))
   }
 } finally {

@@ -7,11 +7,11 @@ export default function Layout({ children }: { children: ReactNode }) {
     <DocsLayout
       tree={source.pageTree}
       nav={{
-        title: 'Prompt Trends',
+        title: 'Pollen',
         url: '/',
       }}
       links={[
-        { text: 'Dashboard', url: '/trends/topics' },
+        { text: 'Dashboard', url: '/dashboard' },
       ]}
     >
       {children}

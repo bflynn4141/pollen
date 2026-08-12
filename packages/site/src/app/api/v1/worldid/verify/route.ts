@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { hashSignal } from '@worldcoin/idkit-core/hashing'
+import { hashSignal } from '@worldcoin/idkit-core'
 import { getDb } from '@/lib/neon'
 
 export const dynamic = 'force-dynamic'

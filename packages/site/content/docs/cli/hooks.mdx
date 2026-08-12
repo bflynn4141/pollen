@@ -22,32 +22,13 @@ The hook handles these Claude Code hook events:
 
 ## Installation
 
-Add to `~/.claude/settings.json`:
+Run the merge-safe setup command:
 
-```json title="~/.claude/settings.json"
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "type": "command", "command": "npx @pollen/cli hook" }
-    ],
-    "PostToolUse": [
-      { "type": "command", "command": "npx @pollen/cli hook" }
-    ],
-    "PostToolUseFailure": [
-      { "type": "command", "command": "npx @pollen/cli hook" }
-    ],
-    "SessionStart": [
-      { "type": "command", "command": "npx @pollen/cli hook" }
-    ],
-    "SessionEnd": [
-      { "type": "command", "command": "npx @pollen/cli hook" }
-    ],
-    "Stop": [
-      { "type": "command", "command": "npx @pollen/cli hook" }
-    ]
-  }
-}
+```bash
+pollen setup
 ```
+
+It installs the `pollen-hook` executable and preserves any existing hook entries.
 
 The hook reads the event type from the `hook_event_name` field in the JSON input that Claude Code passes via stdin.
 
@@ -55,7 +36,7 @@ The hook reads the event type from the `hook_event_name` field in the JSON input
 
 When you submit a prompt in Claude Code:
 
-1. Claude Code pipes the event JSON to `npx @pollen/cli hook`
+1. Claude Code pipes the event JSON to `pollen-hook`
 2. The hook opens `~/.pollen/local.db` (creating it if needed)
 3. For `UserPromptSubmit`: it classifies the topic and intent locally using a lightweight classifier, then inserts a row into the `contributions` table
 4. For `PostToolUse`: it records the tool name, MCP server (if applicable), and success status into `tool_events`
@@ -65,7 +46,18 @@ When you submit a prompt in Claude Code:
 
 Topic and intent classification is fully local — no API calls, no network requests. If you have `ANTHROPIC_API_KEY` set, the hook optionally uses Claude Haiku to extract a short subject summary from the first prompt of each session. You can disable this by unsetting the key.
 
-Data only leaves your machine when you explicitly run `pollen sync`.
+Data only leaves your machine when you explicitly run `pollen sync`. Sync does
+not copy local tables. It constructs a versioned receipt containing only:
+
+- intent;
+- agent and model ID;
+- tool-category sequence;
+- duration bucket;
+- terminal state; and
+- check result.
+
+The Worker independently rejects unknown fields, so raw content cannot be
+added accidentally by a future client change.
 
 ## Performance
 

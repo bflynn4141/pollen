@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { chmodSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
@@ -53,6 +53,9 @@ export const SYNC_BATCH_SIZE = 100
 
 export const SUBJECT_MODEL = 'claude-haiku-4-5-20251001'
 
+/** Model used to polish the weekly Pollen Brief into plain prose. */
+export const COACH_MODEL = 'claude-sonnet-5'
+
 // ── Wallet / Identity types ──
 
 export interface WorldIdInfo {
@@ -69,10 +72,17 @@ export interface ParaWallet {
 
 export interface PollenConfig {
   contributor_id: string
+  network?: {
+    api_url: string
+    token: string
+    registered_at: string
+  }
   world_id?: WorldIdInfo
   wallet_address?: string   // kept for backward compat, auto-populated from Para
   wallet_binding_sig?: string // EIP-191 sig of `pollen:register:<contributor_id>` (BYO wallets with POLLEN_PRIVATE_KEY)
   para_wallet?: ParaWallet
+  /** Recipient for the weekly Pollen Brief email (set via `pollen brief --to`) */
+  brief_email?: string
 }
 
 export function loadConfig(): PollenConfig | null {
@@ -86,8 +96,24 @@ export function loadConfig(): PollenConfig | null {
 
 export function saveConfig(config: PollenConfig): void {
   const dir = dirname(CONFIG_PATH)
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
+  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+  chmodSync(CONFIG_PATH, 0o600)
+}
+
+export function saveNetworkRegistration(
+  contributorId: string,
+  apiUrl: string,
+  token: string,
+): void {
+  const config = loadConfig() ?? { contributor_id: contributorId }
+  config.contributor_id = contributorId
+  config.network = {
+    api_url: apiUrl,
+    token,
+    registered_at: new Date().toISOString(),
+  }
+  saveConfig(config)
 }
 
 export function getOrCreateContributorId(): string {
@@ -97,6 +123,18 @@ export function getOrCreateContributorId(): string {
   const id = randomUUID()
   saveConfig({ contributor_id: id, ...(existing ?? {}) })
   return id
+}
+
+/** Recipient for the weekly Pollen Brief, if configured */
+export function getBriefEmail(): string | null {
+  return loadConfig()?.brief_email ?? null
+}
+
+/** Persist the weekly Pollen Brief recipient into ~/.pollen/config.json */
+export function setBriefEmail(email: string): void {
+  const config = loadConfig() ?? { contributor_id: getOrCreateContributorId() }
+  config.brief_email = email
+  saveConfig(config)
 }
 
 /** Validate an Ethereum address (basic checksum-agnostic check) */

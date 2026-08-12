@@ -26,7 +26,7 @@ export default function TrendingLayout({ children }: { children: React.ReactNode
             </h1>
           </div>
           <nav className="flex items-center gap-4 text-sm">
-            <Link href="/trends" style={{ color: 'var(--t-text-muted)' }}>Dashboard</Link>
+            <Link href="/dashboard" style={{ color: 'var(--t-text-muted)' }}>Dashboard</Link>
             <Link href="/docs/api" style={{ color: 'var(--t-text-muted)' }}>API</Link>
           </nav>
         </div>
