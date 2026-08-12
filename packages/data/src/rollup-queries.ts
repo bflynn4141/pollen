@@ -70,6 +70,56 @@ export interface NetworkOverview {
   contributors: number
 }
 
+export interface ReceiptOverview {
+  week: string
+  sessions: number
+  categoryEvents: number
+  completionRate: number
+  checkPassRate: number
+  contributors: number
+}
+
+export interface ReceiptModelRank {
+  agent: string
+  model: string
+  sessions: number
+  completionRate: number
+  checkPassRate: number
+  contributors: number
+}
+
+export interface ReceiptCategoryRank {
+  category: string
+  events: number
+  sessions: number
+  contributors: number
+}
+
+export interface ReceiptIntentRank {
+  intent: string
+  sessions: number
+  completionRate: number
+  checkPassRate: number
+  contributors: number
+}
+
+export interface ReceiptWorkflowRank {
+  sequence: string[]
+  sessions: number
+  completionRate: number
+  checkPassRate: number
+  contributors: number
+}
+
+export interface ReceiptNetworkSnapshot {
+  week: string
+  overview: ReceiptOverview
+  models: ReceiptModelRank[]
+  toolCategories: ReceiptCategoryRank[]
+  intents: ReceiptIntentRank[]
+  workflows: ReceiptWorkflowRank[]
+}
+
 export interface ToolSeries {
   tool: string
   series: { date: string; calls: number }[]
@@ -97,6 +147,16 @@ export async function listWeeks(): Promise<string[]> {
 export async function latestWeek(): Promise<string | null> {
   const weeks = await listWeeks()
   return weeks[0] ?? null
+}
+
+/** Weeks with a publishable receipt overview, newest first. */
+export async function listReceiptWeeks(): Promise<string[]> {
+  const sql = getDb()
+  const rows = await sql`
+    SELECT DISTINCT period FROM rollup_cells
+    WHERE rollup = 'receipt_overview'
+    ORDER BY period DESC`
+  return rows.map(r => String(r.period))
 }
 
 /**
@@ -215,6 +275,64 @@ export async function readOverview(week: string): Promise<NetworkOverview | null
     tools: Number(cell.value.tools),
     mcpServers: Number(cell.value.mcp_servers),
     contributors: cell.contributors,
+  }
+}
+
+/**
+ * Read the privacy-closed production network snapshot for one week. A missing
+ * overview means fewer than K distinct contributors qualified, so callers
+ * must render a warm-up state rather than inspect raw receipt counts.
+ */
+export async function readReceiptNetwork(week: string): Promise<ReceiptNetworkSnapshot | null> {
+  const [overviewCells, modelCells, categoryCells, intentCells, workflowCells] = await Promise.all([
+    readCells('receipt_overview', week),
+    readCells('receipt_models', week),
+    readCells('receipt_tool_categories', week),
+    readCells('receipt_intents', week),
+    readCells('receipt_workflows', week),
+  ])
+  const overview = overviewCells[0]
+  if (!overview) return null
+
+  const rate = (cell: CellRow, key: string) => Number(cell.value[key] ?? 0)
+  return {
+    week,
+    overview: {
+      week,
+      sessions: Number(overview.value.sessions),
+      categoryEvents: Number(overview.value.category_events),
+      completionRate: rate(overview, 'completion_rate'),
+      checkPassRate: rate(overview, 'check_pass_rate'),
+      contributors: overview.contributors,
+    },
+    models: modelCells.map(cell => ({
+      agent: cell.dims.agent,
+      model: cell.dims.model,
+      sessions: Number(cell.value.sessions),
+      completionRate: rate(cell, 'completion_rate'),
+      checkPassRate: rate(cell, 'check_pass_rate'),
+      contributors: cell.contributors,
+    })).sort((a, b) => b.sessions - a.sessions),
+    toolCategories: categoryCells.map(cell => ({
+      category: cell.dims.category,
+      events: Number(cell.value.events),
+      sessions: Number(cell.value.sessions),
+      contributors: cell.contributors,
+    })).sort((a, b) => b.events - a.events),
+    intents: intentCells.map(cell => ({
+      intent: cell.dims.intent,
+      sessions: Number(cell.value.sessions),
+      completionRate: rate(cell, 'completion_rate'),
+      checkPassRate: rate(cell, 'check_pass_rate'),
+      contributors: cell.contributors,
+    })).sort((a, b) => b.sessions - a.sessions),
+    workflows: workflowCells.map(cell => ({
+      sequence: cell.dims.sequence.split('>').filter(Boolean),
+      sessions: Number(cell.value.sessions),
+      completionRate: rate(cell, 'completion_rate'),
+      checkPassRate: rate(cell, 'check_pass_rate'),
+      contributors: cell.contributors,
+    })).sort((a, b) => b.sessions - a.sessions),
   }
 }
 

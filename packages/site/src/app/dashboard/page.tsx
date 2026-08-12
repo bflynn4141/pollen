@@ -51,6 +51,7 @@ export default function DashboardPage() {
         </Link>
 
         <nav className={styles.nav} aria-label="Dashboard sections">
+          <Link href="/network" aria-label="Live production network"><span><DashboardIcon name="market" /></span>Live network</Link>
           <Link href="/dashboard" className={styles.navActive} aria-label="Market overview"><span><DashboardIcon name="market" /></span>Overview</Link>
           <Link href="/dashboard/models" aria-label="Model rankings"><span><DashboardIcon name="models" /></span>Models</Link>
           <Link href="/dashboard/tools" aria-label="Tool rankings"><span><DashboardIcon name="tools" /></span>Tools</Link>

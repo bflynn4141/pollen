@@ -43,7 +43,7 @@ export function CtaFooter() {
             position: 'relative',
           }}
         >
-          Start earning from your sessions.
+          Help establish the founding dataset.
         </h2>
 
         <div
@@ -57,7 +57,7 @@ export function CtaFooter() {
           }}
         >
           <a
-            href="#get-started"
+            href="/docs/quickstart"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -73,7 +73,7 @@ export function CtaFooter() {
               width: isMobile ? '100%' : undefined,
             }}
           >
-            Start Contributing
+            Join the Founding Panel
           </a>
 
           <div
@@ -92,7 +92,7 @@ export function CtaFooter() {
             }}
           >
             <span style={{ color: '#9B9590' }}>$</span>
-            npx @pollen/cli setup
+            pollen setup --codex
           </div>
         </div>
       </section>

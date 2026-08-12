@@ -176,7 +176,7 @@ export function DataPreview() {
               display: isMobile ? 'none' : 'block',
             }}
           >
-            View Dashboard →
+            View Demo Dashboard →
           </a>
         </div>
 
@@ -200,7 +200,7 @@ export function DataPreview() {
                 marginBottom: isMobile ? 16 : 24,
               }}
             >
-              {HEADER_LABELS[active]}
+              ILLUSTRATIVE PREVIEW · {HEADER_LABELS[active]}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 14 : 20 }}>

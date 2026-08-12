@@ -7,6 +7,7 @@ export function NavBar() {
   const isMobile = useIsMobile()
   const pathname = usePathname()
   const onDashboard = pathname.startsWith('/dashboard')
+  const onNetwork = pathname.startsWith('/network')
 
   return (
     <nav
@@ -50,6 +51,16 @@ export function NavBar() {
         </a>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+          <a
+            href="/network"
+            style={{
+              ...linkStyle,
+              fontWeight: onNetwork ? 600 : 500,
+              color: onNetwork ? '#1A1A1A' : 'var(--text-secondary)',
+            }}
+          >
+            Live Network
+          </a>
           <a
             href="/dashboard"
             style={{

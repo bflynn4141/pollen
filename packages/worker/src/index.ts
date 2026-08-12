@@ -4,12 +4,14 @@ import {
   K_ANONYMITY,
   computeRollups,
   configureDb,
+  listReceiptWeeks,
   listWeeks,
   readExport,
   readGrid,
   readMcpHistory,
   readMcpRanking,
   readOverview,
+  readReceiptNetwork,
   readToolHistory,
   readTrendingTools,
 } from '@pollen/data'
@@ -106,6 +108,19 @@ api.get('/overview', async c => {
   return c.json({ k_anonymity: K_ANONYMITY, weeks: data.filter(Boolean) }, 200, FREE_CACHE)
 })
 
+// Free: privacy-closed production receipt snapshot. Until at least K distinct
+// contributors qualify in one week, this intentionally returns an empty list.
+api.get('/network', async c => {
+  const weeks = (await listReceiptWeeks()).slice(0, 2)
+  const data = await Promise.all(weeks.map(week => readReceiptNetwork(week)))
+  return c.json({
+    source: 'network_receipts',
+    k_anonymity: K_ANONYMITY,
+    status: data.length > 0 ? 'live' : 'warming_up',
+    weeks: data.filter(Boolean),
+  }, 200, FREE_CACHE)
+})
+
 // Paid ($0.01): full weekly history for one tool. Never cached.
 api.get('/tools/history', async c => {
   const tool = c.req.query('tool')
@@ -149,7 +164,7 @@ app.get('/', c =>
       name: 'pollen-api',
       docs: 'https://pollen.id/docs/api',
       k_anonymity: K_ANONYMITY,
-      free: ['/trending/tools', '/trending/mcp', '/overview'],
+      free: ['/trending/tools', '/trending/mcp', '/overview', '/network'],
       paid_x402: {
         '/tools/history?tool=<name>': '$0.01',
         '/mcp/history?server=<name>': '$0.01',
