@@ -48,6 +48,20 @@ function checkResult(tools: ToolRow[]): string {
   return checks.some(tool => !tool.success) ? 'failed' : 'passed'
 }
 
+function normalizeModel(model: string): string {
+  const normalized = model
+    .trim()
+    // Claude Code appends context-window metadata such as `[1m]` to the
+    // underlying model identifier. It is capture metadata, not part of the ID.
+    .replace(/(?:\[[^\]\r\n]*\])+$/, '')
+    .trim()
+    .replace(/[^A-Za-z0-9._:/+ -]+/g, '-')
+    .replace(/^[^A-Za-z0-9]+/, '')
+    .slice(0, 80)
+
+  return normalized || 'unknown'
+}
+
 /**
  * Construct the complete network payload from local data. This function is
  * the client-side privacy boundary; the server independently re-validates the
@@ -89,7 +103,7 @@ export function buildNetworkReceipts(
       observed_at: session.ended_at,
       intent: session.dominant_intent,
       agent: session.source === 'codex' ? 'codex' : 'claude-code',
-      model: session.model,
+      model: normalizeModel(session.model),
       tool_category_sequence: sessionTools.slice(0, 64).map(tool => tool.tool_category),
       duration_bucket: session.duration_bucket,
       terminal_state: session.outcome,

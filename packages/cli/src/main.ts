@@ -22,7 +22,7 @@ import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWa
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
 import { buildNetworkReceipts } from './network-receipt.js'
-import { uploadNetworkReceipts } from './network-client.js'
+import { syncNetworkReceipts } from './network-sync.js'
 import { joinFoundingPanel } from './join.js'
 
 function openDb(commandName: string | undefined) {
@@ -112,11 +112,16 @@ try {
         break
       }
       console.log(`Uploading ${receipts.length} privacy-safe network receipt${receipts.length === 1 ? '' : 's'}...`)
-      const result = await uploadNetworkReceipts(
-        config.network.token,
+      const result = await syncNetworkReceipts({
+        token: config.network.token,
         receipts,
-        config.network.api_url,
-      )
+        apiUrl: config.network.api_url,
+      })
+      if (!result.ok) {
+        console.error(result.message)
+        process.exitCode = 1
+        break
+      }
       console.log(`Synced: ${result.accepted} new, ${result.received - result.accepted} already present.`)
       break
     }

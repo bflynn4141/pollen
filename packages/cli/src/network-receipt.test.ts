@@ -47,4 +47,24 @@ describe('network receipts', () => {
     expect(serialized).not.toContain('secret excerpt')
     expect(serialized).not.toContain('Private project')
   })
+
+  it('normalizes captured model variants to the closed network schema', () => {
+    const db = initDb()
+    db.prepare(`
+      INSERT INTO sessions (
+        session_id, model, source, started_at, ended_at, duration_bucket,
+        prompt_count, tool_use_count, tool_failure_count, dominant_intent,
+        outcome
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'session-with-context-suffix', 'claude-opus-4-6[1m]', 'claude-code',
+      1_786_512_000_000, 1_786_512_600_000, 'short', 1, 0, 0,
+      'feature_build', 'completed',
+    )
+
+    const [receipt] = buildNetworkReceipts(db, 'pseudonymous-contributor')
+
+    expect(receipt.model).toBe('claude-opus-4-6')
+    expect(receipt.model).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:/+ -]{0,79}$/)
+  })
 })
