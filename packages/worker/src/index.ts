@@ -20,6 +20,11 @@ import {
   handleWorldIdVerify,
   type WorldIdEnv,
 } from './worldid'
+import {
+  createIngestDependencies,
+  handleContributorRegistration,
+  handleReceiptIngest,
+} from './ingest'
 export { X402SettlementRelayer } from './x402-relay'
 
 /**
@@ -41,6 +46,7 @@ export interface Env extends X402RelayEnv, WorldIdEnv {
   // Secrets (wrangler secret put):
   NEON_DATABASE_URL: string
   ADMIN_SECRET: string
+  FOUNDING_PANEL_INVITE_CODE: string
 }
 
 const FREE_CACHE = { 'Cache-Control': 'public, max-age=300' }
@@ -62,6 +68,20 @@ const api = new Hono<{ Bindings: Env }>()
 // in the Worker; clients receive only a short-lived request signature.
 api.post('/worldid/rp-signature', c => handleRpSignature(c.env))
 api.post('/worldid/verify', c => handleWorldIdVerify(c.req.raw, c.env))
+
+// Founding-panel write boundary. Registration is invite-gated; subsequent
+// uploads use the one-time bearer token issued to that installation. Only the
+// closed receipt schema in ingest.ts can cross this boundary.
+api.post('/contributors/register', async c => {
+  const invite = c.req.header('x-pollen-invite')
+  if (!c.env.FOUNDING_PANEL_INVITE_CODE || invite !== c.env.FOUNDING_PANEL_INVITE_CODE) {
+    return c.json({ error: 'invalid_invite' }, 403, NO_STORE)
+  }
+  return handleContributorRegistration(createIngestDependencies(c.env.NEON_DATABASE_URL))
+})
+api.post('/receipts', c =>
+  handleReceiptIngest(c.req.raw, createIngestDependencies(c.env.NEON_DATABASE_URL)),
+)
 
 // Free: latest two published weeks, k-anonymized rollup cells only.
 api.get('/trending/tools', async c => {

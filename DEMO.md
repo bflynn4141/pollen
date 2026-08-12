@@ -19,8 +19,8 @@ Open [http://localhost:3000/dashboard](http://localhost:3000/dashboard). Keep th
 ## Honest answers
 
 - **Is this live market data?** No. It is a deterministic synthetic founding-panel snapshot designed to demonstrate the approved product and privacy contract.
-- **What is real today?** Claude Code and Codex hooks, local storage/classification/coarsening, sync and rollup primitives, the contributor dashboard, the fixture assertions, and this end-to-end product experience.
-- **What still needs to be built?** Explicit network consent, the versioned egress manifest, server-side schema rejection, contributor-partitioned deletion/recomputation, composition auditing, real founding-panel ingest, and engagement measurement.
+- **What is real today?** Claude Code and Codex hooks, local storage/classification/coarsening, the versioned closed receipt, invite registration, hashed bearer authentication, production receipt ingest, k-thresholded rollup primitives, the contributor dashboard, and fixture assertions.
+- **What still needs to be built?** Contributor self-service deletion/recomputation, live receipt-backed dashboard adapters, whole-snapshot composition auditing for live data, representative panel recruitment, and engagement measurement.
 - **Why a static snapshot?** A small founding panel cannot safely support real-time slices. V0 freezes one seven-day window and suppresses cells below `k = 5` or vulnerable to composition attacks.
 - **Is this global market share?** No. It is labeled as a descriptive panel index. Representative market claims require a much larger and less biased panel.
 

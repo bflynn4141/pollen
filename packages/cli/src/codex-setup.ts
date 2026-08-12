@@ -32,7 +32,7 @@ export const CODEX_HOOK_EVENTS = [
 
 // The --source codex flag is how dist/hook.js knows to tag sessions
 // source='codex' and route errored PostToolUse payloads to the failure path.
-const DEFAULT_CODEX_HOOK_COMMAND = 'npx @anthropic/pollen-hook --source codex'
+const DEFAULT_CODEX_HOOK_COMMAND = 'pollen-hook --source codex'
 
 function makeCodexHookEntry(command: string) {
   return {

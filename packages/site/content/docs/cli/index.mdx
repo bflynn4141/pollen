@@ -1,14 +1,15 @@
 ---
 title: CLI Reference
-description: Complete reference for all pollen CLI commands — stats, queries, syncing, wallet management, and token claims.
+description: Reference for local inspection, founding-panel registration, and privacy-safe receipt sync.
 ---
 
 # CLI Reference
 
-The Pollen CLI (`@pollen/cli`) is your local interface for viewing stats, syncing data, and managing your contributor identity.
+The Pollen CLI is your local interface for viewing stats, installing hooks,
+and explicitly uploading closed network receipts.
 
 ```bash
-npx @pollen/cli <command>
+pollen <command>
 ```
 
 ## Data commands
@@ -34,10 +35,11 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 
 | Command | Description | Requires |
 |---------|-------------|----------|
-| `sync` | Push local data to Neon | `NEON_DATABASE_URL` |
+| `join <code>` | Register this installation with the founding panel | Invite code |
+| `sync` | Upload closed, versioned network receipts | Completed `join` |
 | `verify` | Prove you're a unique human via World ID | — |
 | `status` | Show contributor ID and verification status | — |
-| `earnings` | Credits, token balance, claimable revenue | `NEON_DATABASE_URL` |
+| `earnings` | Legacy operator-only earnings view | Operator database access |
 
 ## Wallet & tokens
 
@@ -60,7 +62,9 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 
 | Variable | Used by | Description |
 |----------|---------|-------------|
-| `NEON_DATABASE_URL` | `sync`, `earnings`, `claim` | Neon PostgreSQL connection string |
+| `POLLEN_API_URL` | `join`, `sync` | Override the public Pollen API URL |
+| `POLLEN_INVITE_CODE` | `join` | Alternative to passing the invite on the command line |
+| `NEON_DATABASE_URL` | Legacy operator tools | Never required for contributors |
 | `POLLEN_PRIVATE_KEY` | `claim` (BYO wallet) | Private key for signing claim transactions |
 | `POLLEN_API_KEY` | `claim` (managed wallet) | API key for proxy-based claiming |
 | `ANTHROPIC_API_KEY` | `backfill-subjects` | Anthropic API key for Haiku classification |
@@ -69,5 +73,5 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 
 | Path | Description |
 |------|-------------|
-| `~/.pollen/local.db` | Local SQLite database (all your raw data) |
-| `~/.pollen/config.json` | Contributor ID, wallet config, World ID proof |
+| `~/.pollen/local.db` | Local SQLite database (structured local observations) |
+| `~/.pollen/config.json` | Contributor identity and bearer token (mode `0600`) |

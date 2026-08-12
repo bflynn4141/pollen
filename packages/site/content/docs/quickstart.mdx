@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Get Pollen running in under 2 minutes. Install the hook, verify it works, set up a wallet, and check your earnings.
+description: Join the founding panel, install local hooks, inspect your data, and upload a privacy-safe receipt.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout'
@@ -8,111 +8,57 @@ import { Step, Steps } from 'fumadocs-ui/components/steps'
 
 # Quickstart
 
-Get contributing in four steps.
+Get contributing in four steps. You need Node.js 20+ and a founding-panel invite.
 
 <Steps>
 <Step>
-### Install the hook
+### Install the CLI
 
-Add the Pollen hook to your Claude Code settings:
+Install the beta from its public GitHub release:
 
-```json title="~/.claude/settings.json"
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "type": "command",
-        "command": "npx @pollen/cli hook"
-      }
-    ],
-    "PostToolUse": [
-      {
-        "type": "command",
-        "command": "npx @pollen/cli hook"
-      }
-    ],
-    "SessionStart": [
-      {
-        "type": "command",
-        "command": "npx @pollen/cli hook"
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "type": "command",
-        "command": "npx @pollen/cli hook"
-      }
-    ],
-    "SessionEnd": [
-      {
-        "type": "command",
-        "command": "npx @pollen/cli hook"
-      }
-    ],
-    "Stop": [
-      {
-        "type": "command",
-        "command": "npx @pollen/cli hook"
-      }
-    ]
-  }
-}
+```bash
+npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.1/pollen-cli-0.1.0-beta.1.tgz
 ```
-
-<Callout>
-  If you already have hooks in your settings, add the Pollen entries to the existing arrays. Multiple hooks can run on the same event.
-</Callout>
-
-The hook runs locally on every event. It classifies your prompt's topic and intent, records tool usage, and stores everything in a local SQLite database at `~/.pollen/local.db`.
 </Step>
 <Step>
-### Verify it works
+### Join and install hooks
 
-After a few Claude Code sessions, check your local stats:
+Join before setting up World ID so the server-issued pseudonymous identity is
+the one you later verify:
 
 ```bash
-npx @pollen/cli stats
+pollen join <invite-code>
+pollen setup
 ```
 
-You should see a summary of your contributions — total prompts, sessions, top topics, and tool usage.
+Setup preserves existing hooks. Capture stays local in `~/.pollen/local.db`.
 </Step>
 <Step>
-### Set up a wallet
+### Inspect locally
 
-You need a wallet address to receive POLLEN tokens. The easiest way:
+After a completed agent session, inspect exactly what Pollen captured:
 
 ```bash
-npx @pollen/cli wallet
+pollen my
 ```
 
-This walks you through two options:
-- **Managed wallet** (recommended) — email-based, no keys to manage
-- **Bring your own** — register an existing Ethereum address
-
-See [Wallet Setup](/docs/wallet) for details.
+This reads only your local SQLite database and performs no upload.
 </Step>
 <Step>
-### Sync and check earnings
+### Upload a network receipt
 
-Push your local data to the shared database:
-
-```bash
-export NEON_DATABASE_URL="postgresql://..."
-npx @pollen/cli sync
-```
-
-Then check your earnings:
+Sync only after inspecting your local data:
 
 ```bash
-npx @pollen/cli earnings
+pollen sync
 ```
 
-This shows your accumulated credits, current epoch progress, and claimable tokens.
+The client sends six coarsened fields. The server rejects prompts, arguments,
+source, files, shell output, transcript paths, credentials, and unknown fields.
 </Step>
 </Steps>
 
 ## Next steps
 
 - [CLI command reference](/docs/cli) — all available commands
-- [How earning works](/docs/earning) — epochs, scoring, and revenue sharing
 - [Trends API](/docs/developers/trends-api) — query the aggregated data

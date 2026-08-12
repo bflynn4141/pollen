@@ -10,6 +10,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import type { Readable, Writable } from 'node:stream'
 import { loadConfig, getWalletAddress, runInteractiveWallet } from './config.js'
 import { runVerify } from './verify.js'
 
@@ -38,13 +39,15 @@ const POLLEN_HOOK_EVENTS = [
 ] as const
 
 /** The hook entry installed for new users (published npm package) */
-function makePollenHookEntry() {
+export const POLLEN_HOOK_COMMAND = process.env.POLLEN_HOOK_COMMAND ?? 'pollen-hook'
+
+export function makePollenHookEntry() {
   return {
     matcher: '',
     hooks: [
       {
         type: 'command' as const,
-        command: 'npx @anthropic/pollen-hook',
+        command: POLLEN_HOOK_COMMAND,
         timeout: 10,
       },
     ],
@@ -73,7 +76,10 @@ function ask(rl: ReturnType<typeof createInterface>, q: string): Promise<string>
 
 const MOCK_ADDRESS = '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18'
 
-export async function runSetup(demo = false): Promise<void> {
+export async function runSetup(
+  demo = false,
+  io: { input?: Readable; output?: Writable } = {},
+): Promise<void> {
   console.log('')
   console.log('  ██████╗  ██████╗ ██╗     ██╗     ███████╗███╗   ██╗')
   console.log('  ██╔══██╗██╔═══██╗██║     ██║     ██╔════╝████╗  ██║')
@@ -85,7 +91,10 @@ export async function runSetup(demo = false): Promise<void> {
   console.log('  Guided setup for new contributors')
   console.log('')
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const rl = createInterface({
+    input: io.input ?? process.stdin,
+    output: io.output ?? process.stdout,
+  })
 
   let hooksOk = false
   let walletOk = false
@@ -94,6 +103,9 @@ export async function runSetup(demo = false): Promise<void> {
   // ── Step 1: Hooks ──────────────────────────────────────────
 
   console.log('  Step 1/3 — Claude Code hooks')
+  console.log('')
+  console.log('  Pollen classifies activity on this computer and stores only structured')
+  console.log('  features in ~/.pollen/local.db. Installing hooks does not upload data.')
   console.log('')
 
   try {
@@ -147,8 +159,10 @@ export async function runSetup(demo = false): Promise<void> {
       verifyOk = await promptVerify(demo)
     }
   } else {
-    verifyOk = await promptVerify(demo)
+    verifyOk = await promptVerify(demo, rl)
   }
+
+  if (demo) rl.close()
 
   // ── Eligibility ────────────────────────────────────────────
 
@@ -172,14 +186,17 @@ export async function runSetup(demo = false): Promise<void> {
   console.log('  └─────────────────────────────────┘')
   console.log('')
   console.log('  Next steps:')
-  console.log('    pollen sync       Push local data to Neon')
-  console.log('    pollen earnings   Check your credits and balance')
-  console.log('    pollen my         Interactive dashboard')
+  console.log('    pollen my         Inspect exactly what Pollen captured')
+  console.log('    pollen sync       Upload a closed network receipt')
+  console.log('    pollen status     Check contributor identity')
   console.log('')
 }
 
 /** Step 3 helper — prompt for World ID verification (shared by real + demo) */
-async function promptVerify(demo: boolean): Promise<boolean> {
+async function promptVerify(
+  demo: boolean,
+  existingRl?: ReturnType<typeof createInterface>,
+): Promise<boolean> {
   console.log('  ┌─────────────────────────────────────────────────┐')
   console.log('  │  ⚠  World ID Required to Claim Tokens          │')
   console.log('  │                                                 │')
@@ -191,9 +208,9 @@ async function promptVerify(demo: boolean): Promise<boolean> {
   console.log('  └─────────────────────────────────────────────────┘')
   console.log('')
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const rl = existingRl ?? createInterface({ input: process.stdin, output: process.stdout })
   const answer = await ask(rl, '  Verify now? (requires phone with World App) [y/N] ')
-  rl.close()
+  if (!existingRl) rl.close()
 
   if (answer.trim().toLowerCase() !== 'y') {
     console.log('  Skipped. You can verify later: `pollen verify`')

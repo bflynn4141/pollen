@@ -8,6 +8,12 @@
     "test": "turbo test",
     "lint": "turbo lint"
   },
+  "pnpm": {
+    "overrides": {
+      "form-data": "4.0.6",
+      "ws": "8.21.3"
+    }
+  },
   "devDependencies": {
     "turbo": "^2"
   }
