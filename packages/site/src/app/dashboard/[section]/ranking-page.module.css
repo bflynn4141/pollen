@@ -1,33 +1,33 @@
-.rankingHeader { padding: 17px 18px 0; border-bottom: 1px solid #242b31; background: #0f1317; }
+.rankingHeader { padding: 20px 20px 0; border-bottom: 1px solid #242b31; background: #0f1317; }
 .breadcrumb { display: flex; align-items: center; gap: 8px; color: #5f6964; font-size: 8px; }
 .breadcrumb a:hover { color: #edf3ee; }
 .breadcrumb strong { color: #949e99; font-weight: 600; }
 .titleRow { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 15px 0 18px; }
-.titleCopy { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
-.titleIcon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid #31402d; border-radius: 8px; background: rgba(146, 223, 98, .08); color: #92df62; }
+.titleCopy { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.titleIcon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border: 1px solid #31402d; border-radius: 8px; background: rgba(146, 223, 98, .08); color: #92df62; }
 .titleCopy > div > span { color: #69736e; font-size: 7px; font-weight: 750; letter-spacing: .12em; }
-.titleCopy h1 { margin: 4px 0 0; font-family: var(--font-space-grotesk), sans-serif; font-size: 25px; font-weight: 620; letter-spacing: -.045em; text-wrap: balance; }
+.titleCopy h1 { margin: 0; font-family: var(--font-space-grotesk), sans-serif; font-size: 28px; font-weight: 620; letter-spacing: -.045em; text-wrap: balance; }
 .titleCopy p { max-width: 650px; margin: 6px 0 0; color: #76817b; font-size: 9px; line-height: 1.5; text-wrap: pretty; }
 .windowToggle { display: flex; flex: 0 0 auto; gap: 3px; padding: 3px; border: 1px solid #293137; border-radius: 7px; background: #0b0f12; }
-.windowToggle a { display: grid; min-width: 49px; min-height: 34px; place-items: center; border-radius: 4px; color: #6b756f; font-family: var(--font-mono), monospace; font-size: 8px; font-weight: 650; }
+.windowToggle a { display: grid; min-width: 54px; min-height: 40px; place-items: center; border-radius: 4px; color: #89938e; font-family: var(--font-mono), monospace; font-size: 13px; font-weight: 650; }
 .windowToggle a:hover { background: #151b20; color: #d7dfda; }
 .windowToggle .windowActive { background: #24351f; color: #a7e983; box-shadow: inset 0 0 0 1px rgba(146, 223, 98, .16); }
 .windowToggle a:active { scale: .96; }
 .summaryStrip { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #242b31; }
-.summaryStrip > div { min-height: 70px; padding: 11px 13px; border-right: 1px solid #1b2126; }
+.summaryStrip > div { min-height: 78px; padding: 13px 14px; border-right: 1px solid #1b2126; }
 .summaryStrip > div:last-child { border-right: 0; }
 .summaryStrip small, .summaryStrip strong, .summaryStrip span { display: block; }
-.summaryStrip small { color: #5e6863; font-size: 6px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.summaryStrip strong { margin-top: 6px; font-family: var(--font-mono), monospace; font-size: 15px; }
-.summaryStrip .summaryEntity { overflow: hidden; font-family: var(--font-inter), sans-serif; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.summaryStrip span { margin-top: 4px; color: #5d6762; font-size: 7px; }
+.summaryStrip small { color: #78837d; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.summaryStrip strong { margin-top: 7px; font-family: var(--font-mono), monospace; font-size: 18px; }
+.summaryStrip .summaryEntity { overflow: hidden; font-family: var(--font-inter), sans-serif; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.summaryStrip span { margin-top: 4px; color: #7c8781; font-size: 12px; }
 .summaryStrip .up { color: #92df62; }
 .sectionTabs { display: flex; min-height: 42px; align-items: center; gap: 3px; padding: 0 10px; overflow-x: auto; border-bottom: 1px solid #242b31; background: #0c1013; }
 .sectionTabs a { display: flex; min-height: 40px; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 2px solid transparent; color: #6f7974; font-size: 8px; font-weight: 600; white-space: nowrap; }
 .sectionTabs a:hover { color: #e1e8e4; }
 .sectionTabs .sectionActive { border-bottom-color: #92df62; color: #e1e8e4; }
 .sectionTabs > span { margin-left: auto; color: #d5a85a; font-family: var(--font-mono), monospace; font-size: 7px; white-space: nowrap; }
-.contentGrid { padding: 8px; }
+.contentGrid { padding: 10px; }
 .rankingPanel, .insightRail article { overflow: hidden; border: 1px solid #242b31; border-radius: 7px; background: #0f1317; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
 .tableTitle { display: flex; min-height: 49px; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 11px; border-bottom: 1px solid #242b31; background: linear-gradient(180deg, #12171b, #101419); }
 .tableTitle > div { display: flex; align-items: center; gap: 9px; color: #92df62; }
@@ -36,20 +36,20 @@
 .tableTitle strong { color: #e0e7e3; font-size: 10px; }
 .tableTitle > span { color: #68736d; font-family: var(--font-mono), monospace; font-size: 7px; }
 .tableScroll { overflow-x: auto; }
-.rankingTable { width: 100%; min-width: 820px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-.rankingTable th { height: 30px; padding: 0 10px; border-bottom: 1px solid #242b31; background: #0c1013; color: #56615b; font-size: 6px; font-weight: 700; letter-spacing: .08em; text-align: right; text-transform: uppercase; white-space: nowrap; }
+.rankingTable { width: 100%; min-width: 1000px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.rankingTable th { height: 38px; padding: 0 12px; border-bottom: 1px solid #242b31; background: #0c1013; color: #737e78; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-align: right; text-transform: uppercase; white-space: nowrap; }
 .rankingTable th:first-child, .rankingTable th:nth-child(2), .rankingTable th:nth-child(3) { text-align: left; }
-.rankingTable td { height: 48px; padding: 5px 10px; border-bottom: 1px solid #1b2126; color: #aeb7b2; font-size: 8px; text-align: right; white-space: nowrap; }
+.rankingTable td { height: 58px; padding: 6px 12px; border-bottom: 1px solid #1b2126; color: #aeb7b2; font-size: 13px; text-align: right; white-space: nowrap; }
 .rankingTable tbody tr:last-child td { border-bottom: 0; }
 .rankingTable tbody tr:hover td { background: #171d22; }
 .rankingTable td:first-child, .rankingTable td:nth-child(2), .rankingTable td:nth-child(3) { text-align: left; }
 .rank { color: #56605b !important; font-family: var(--font-mono), monospace; }
 .entity { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .entity > span:last-child { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 2px; }
-.entity strong { max-width: 160px; overflow: hidden; color: #e1e8e4; font-size: 8px; text-overflow: ellipsis; }
-.entity small { color: #5e6863; font-size: 6px; }
-.adoption { display: inline-grid; width: 92px; grid-template-columns: 35px 1fr; gap: 7px; align-items: center; }
-.adoption strong { color: #d8e1dc; font-family: var(--font-mono), monospace; font-size: 8px; text-align: right; }
+.entity strong { max-width: 180px; overflow: hidden; color: #e1e8e4; font-size: 13px; text-overflow: ellipsis; }
+.entity small { color: #78837d; font-size: 12px; }
+.adoption { display: inline-grid; width: 118px; grid-template-columns: 46px 1fr; gap: 8px; align-items: center; }
+.adoption strong { color: #d8e1dc; font-family: var(--font-mono), monospace; font-size: 12px; text-align: right; }
 .adoption > span { height: 3px; overflow: hidden; border-radius: 9px; background: #242c30; }
 .adoption i { display: block; height: 100%; border-radius: inherit; background: #92df62; }
 .mono { font-family: var(--font-mono), monospace; }
@@ -59,7 +59,7 @@
 .changeUp { color: #92df62; }
 .changeDown { color: #e4786c; }
 .sequence { display: flex; align-items: center; gap: 3px; }
-.sequence span { display: flex; align-items: center; gap: 3px; color: #84908a; font-family: var(--font-mono), monospace; font-size: 6px; }
+.sequence span { display: flex; align-items: center; gap: 3px; color: #84908a; font-family: var(--font-mono), monospace; font-size: 12px; }
 .sequence i { color: #3e4843; font-style: normal; }
 .tableFooter { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px; border-top: 1px solid #242b31; background: #0c1013; color: #56605b; font-size: 6px; }
 .insightRail { display: flex; flex-direction: column; gap: 8px; }
