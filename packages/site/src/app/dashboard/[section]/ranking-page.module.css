@@ -27,7 +27,7 @@
 .sectionTabs a:hover { color: #e1e8e4; }
 .sectionTabs .sectionActive { border-bottom-color: #92df62; color: #e1e8e4; }
 .sectionTabs > span { margin-left: auto; color: #d5a85a; font-family: var(--font-mono), monospace; font-size: 7px; white-space: nowrap; }
-.contentGrid { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 8px; padding: 8px; }
+.contentGrid { padding: 8px; }
 .rankingPanel, .insightRail article { overflow: hidden; border: 1px solid #242b31; border-radius: 7px; background: #0f1317; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
 .tableTitle { display: flex; min-height: 49px; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 11px; border-bottom: 1px solid #242b31; background: linear-gradient(180deg, #12171b, #101419); }
 .tableTitle > div { display: flex; align-items: center; gap: 9px; color: #92df62; }

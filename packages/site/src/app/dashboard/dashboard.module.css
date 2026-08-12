@@ -32,6 +32,10 @@
 .nav .navActive { background: var(--green-soft); color: var(--green); }
 .nav .navActive span { color: var(--green); }
 .main { min-width: 0; margin-left: 174px; }
+.mobileTopbar { display: none; }
+.pageHeader { display: flex; min-height: 70px; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.pageHeader h1 { margin: 0; font-family: var(--font-space-grotesk), sans-serif; font-size: 22px; font-weight: 620; letter-spacing: -.035em; }
+.pageHeader > span { display: grid; min-width: 46px; min-height: 32px; place-items: center; border: 1px solid #31402d; border-radius: 6px; background: var(--green-soft); color: var(--green); font-family: var(--font-mono), monospace; font-size: 12px; font-weight: 700; }
 .topbar { position: sticky; top: 0; z-index: 15; display: flex; height: 54px; align-items: center; gap: 15px; padding: 0 16px; border-bottom: 1px solid var(--line); background: rgba(9, 12, 15, .94); backdrop-filter: blur(12px); }
 .mobileBrand { display: none; }
 .search { display: flex; width: min(380px, 34vw); height: 32px; align-items: center; gap: 9px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--dim); font-size: 10px; }
@@ -236,7 +240,7 @@
 @media (max-width: 820px) {
   .sidebar { display: none; }
   .main { margin-left: 0; }
-  .topbar { padding: 0 10px; }
+  .mobileTopbar { display: flex; height: 54px; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--line); background: #0c1013; }
   .mobileBrand { display: flex; align-items: center; gap: 7px; font-family: var(--font-space-grotesk), sans-serif; font-size: 12px; }
   .mobileBrand .brandMark { width: 23px; height: 23px; font-size: 12px; }
   .search { width: min(310px, 42vw); }
@@ -255,7 +259,7 @@
 }
 
 @media (max-width: 560px) {
-  .topbar { height: 48px; }
+  .mobileTopbar { height: 48px; }
   .search, .docsLink { display: none; }
   .snapshotBadge { margin-left: auto; }
   .marketBar { grid-template-columns: 220px repeat(4, 92px); min-height: 69px; }

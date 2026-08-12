@@ -78,7 +78,6 @@ export default async function RankingPage({
   const selectedWindow: RankingWindow = isRankingWindow(query.window) ? query.window : '7d'
   const definition = DEMO_RANKINGS[activeSection]
   const icon = sectionIcons[activeSection]
-  const activeWindow = RANKING_WINDOWS.find(item => item.id === selectedWindow)!
   const ranked = [...definition.entries].sort((left, right) => right.windows[selectedWindow].adoptionPct - left.windows[selectedWindow].adoptionPct)
   const totalVolume = ranked.reduce((sum, entry) => sum + entry.windows[selectedWindow].volume, 0)
   const topMover = [...ranked].sort((left, right) => right.windows[selectedWindow].trendPct - left.windows[selectedWindow].trendPct)[0]
@@ -99,35 +98,26 @@ export default async function RankingPage({
       </aside>
 
       <main className={home.main}>
-        <header className={home.topbar}>
+        <header className={home.mobileTopbar}>
           <Link href="/dashboard" className={home.mobileBrand} aria-label="Pollen dashboard"><span className={home.brandMark}>P</span><strong>Pollen</strong></Link>
-          <div className={home.search} aria-label="Search preview"><DashboardIcon name="search" size={13} /><span>Search {definition.singular}s…</span><kbd>/</kbd></div>
-          <div className={home.topActions}><span className={home.snapshotBadge}><i />Founding panel</span><Link href="/docs" className={home.docsLink}>Methodology <DashboardIcon name="external" size={11} /></Link></div>
         </header>
 
         <section className={styles.rankingHeader}>
-          <div className={styles.breadcrumb}><Link href="/dashboard">Market overview</Link><span>›</span><strong>{definition.label}</strong></div>
           <div className={styles.titleRow}>
-            <div className={styles.titleCopy}><span className={styles.titleIcon}><DashboardIcon name={icon} size={20} /></span><div><span>FOUNDING PANEL INDEX</span><h1>{definition.label}</h1><p>{definition.description}</p></div></div>
+            <div className={styles.titleCopy}><span className={styles.titleIcon}><DashboardIcon name={icon} size={20} /></span><h1>{definition.label}</h1></div>
             <nav className={styles.windowToggle} aria-label="Ranking interval">
               {RANKING_WINDOWS.map(item => <Link key={item.id} href={`/dashboard/${activeSection}?window=${item.id}`} className={item.id === selectedWindow ? styles.windowActive : undefined} aria-current={item.id === selectedWindow ? 'page' : undefined}>{item.label}</Link>)}
             </nav>
           </div>
           <div className={styles.summaryStrip}>
-            <div><small>Ranked activity</small><strong>{number.format(totalVolume)}</strong><span>attributed {definition.volumeLabel.toLowerCase()}</span></div>
+            <div><small>{definition.volumeLabel}</small><strong>{number.format(totalVolume)}</strong></div>
             <div><small>Top mover</small><strong className={styles.summaryEntity}>{topMover.label}</strong><span className={styles.up}>+{topMover.windows[selectedWindow].trendPct}%</span></div>
-            <div><small>Highest completion</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow].completionPct}% observed</span></div>
+            <div><small>Best completion</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow].completionPct}%</span></div>
           </div>
         </section>
 
-        <div className={styles.sectionTabs}>
-          {sections.map(item => <Link key={item} href={`/dashboard/${item}?window=${selectedWindow}`} className={item === activeSection ? styles.sectionActive : undefined}><DashboardIcon name={sectionIcons[item]} size={12} />{DEMO_RANKINGS[item].label}</Link>)}
-          <span>● SYNTHETIC DATA</span>
-        </div>
-
         <div className={styles.contentGrid}>
           <section className={styles.rankingPanel}>
-            <div className={styles.tableTitle}><div><DashboardIcon name={icon} /><span><small>{activeWindow.label} MARKET</small><strong>Ranked by {definition.adoptionLabel.toLowerCase()}</strong></span></div><span>{activeWindow.eligible} eligible contributors · k ≥ 5</span></div>
             <div className={styles.tableScroll}>
               <table className={styles.rankingTable}>
                 <thead><tr><th>#</th><th>{definition.singular}</th>{activeSection === 'workflows' ? <th>Sequence</th> : null}<th>{definition.adoptionLabel}</th><th>Users</th><th>{definition.volumeLabel}</th><th>Completion</th><th>Trend</th><th>Δ prev.</th></tr></thead>
@@ -152,12 +142,6 @@ export default async function RankingPage({
               </table>
             </div>
           </section>
-
-          <aside className={styles.insightRail}>
-            <article><span>LEADING {definition.singular.toUpperCase()}</span><div className={styles.railEntity}><span className={`${home.entityIcon} ${iconTone(ranked[0])}`}>{activeSection === 'workflows' ? <DashboardIcon name="workflow" /> : <EntityMark id={ranked[0].id} provider={ranked[0].secondary} />}</span><div><strong>{ranked[0].label}</strong><small>{ranked[0].windows[selectedWindow].adoptionPct}% panel reach</small></div></div><p>Leads this interval by contributor adoption. Volume is shown separately to prevent power users from dominating the rank.</p></article>
-            <article><span>FASTEST MOVER</span><div className={styles.moverValue}>+{topMover.windows[selectedWindow].trendPct}%</div><strong>{topMover.label}</strong><p>Change versus the immediately preceding {activeWindow.label.toLowerCase()} period.</p></article>
-            <article className={styles.methodCard}><span>HOW TO READ THIS</span><dl><div><dt>Adoption</dt><dd>Unique contributors ÷ frozen eligible panel</dd></div><div><dt>Completion</dt><dd>Observed terminal state, not semantic success</dd></div><div><dt>Trend</dt><dd>Three-window adoption shape</dd></div></dl><Link href="/docs">Read methodology <DashboardIcon name="external" size={11} /></Link></article>
-          </aside>
         </div>
       </main>
     </div>
