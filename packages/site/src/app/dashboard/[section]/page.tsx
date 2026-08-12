@@ -88,6 +88,7 @@ export default async function RankingPage({
       <aside className={home.sidebar}>
         <Link href="/" className={home.brand} aria-label="Pollen home"><span className={home.brandMark}>P</span><strong>Pollen</strong></Link>
         <nav className={home.nav} aria-label="Dashboard pages">
+          <Link href="/network" aria-label="Live production network"><span><DashboardIcon name="market" /></span>Live network</Link>
           <Link href="/dashboard" aria-label="Overview"><span><DashboardIcon name="market" /></span>Overview</Link>
           {sections.map(item => (
             <Link key={item} href={`/dashboard/${item}`} className={item === activeSection ? home.navActive : undefined} aria-label={DEMO_RANKINGS[item].label}>

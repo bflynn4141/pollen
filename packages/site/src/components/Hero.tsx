@@ -46,9 +46,9 @@ export function Hero() {
             marginBottom: isMobile ? 16 : 24,
           }}
         >
-          Your prompts have value.
+          Your coding patterns have value.
           <br />
-          Now earn from them.
+          Help build shared intelligence.
         </h1>
 
         <p
@@ -60,9 +60,9 @@ export function Hero() {
             maxWidth: 520,
           }}
         >
-          One MCP server turns your anonymized coding patterns into a shared
-          dataset. Every time it gets queried, you earn — proportional
-          to what you contributed.
+          The Pollen client turns privacy-closed coding patterns into a shared
+          dataset. Founding contributors can help shape the network and become
+          eligible for future rewards as real usage develops.
         </p>
 
         <div
@@ -75,7 +75,7 @@ export function Hero() {
           }}
         >
           <a
-            href="#get-started"
+            href="/docs/quickstart"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -91,7 +91,7 @@ export function Hero() {
               cursor: 'pointer',
             }}
           >
-            Start Contributing
+            Join the Founding Panel
           </a>
 
           <div
@@ -109,12 +109,12 @@ export function Hero() {
             }}
           >
             <span style={{ color: 'var(--text-muted)' }}>$</span>
-            npx @pollen/cli setup
+            pollen setup --codex
           </div>
         </div>
 
         <p style={{ fontSize: isMobile ? 13 : 14, color: 'var(--text-muted)' }}>
-          12,847 sessions contributed&nbsp;&nbsp;·&nbsp;&nbsp;$210,102 earned by contributors
+          Production collection is live&nbsp;&nbsp;·&nbsp;&nbsp;Public cells require 5 contributors
         </p>
       </div>
 

@@ -3,9 +3,9 @@
 import { useIsMobile } from '@/lib/hooks'
 
 const STATS = [
-  { value: '$48,291', label: 'QUERY REVENUE' },
-  { value: '12,847', label: 'SESSIONS CONTRIBUTED' },
-  { value: '2,847', label: 'TOKEN HOLDERS' },
+  { value: 'LIVE', label: 'PRODUCTION COLLECTION' },
+  { value: 'K = 5', label: 'PUBLIC PRIVACY THRESHOLD' },
+  { value: '0', label: 'RAW PROMPTS COLLECTED' },
 ]
 
 export function StatsBar() {

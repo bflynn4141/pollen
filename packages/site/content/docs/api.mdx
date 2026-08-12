@@ -10,9 +10,11 @@ which tools and MCP servers coding agents actually invoke, week by week.
 The latest weeks are free; full history is paid per-request via
 [x402](https://x402.org) micropayments — USDC on Base, no API keys, no accounts.
 
-Base URL: `https://api.pollen.id` (a Cloudflare Worker; an `/api/v1` path
-prefix is also accepted). The free endpoints are additionally mirrored at
-`https://pollen.id/api/v1/*`.
+Public base URL: `https://pollen-network.vercel.app/api/v1`.
+
+The production receipt API is also served by the Pollen Cloudflare Worker.
+The custom `api.pollen.id` hostname is not considered live until its DNS is
+explicitly verified, so onboarding clients use the configured Worker origin.
 
 ## The k-anonymity guarantee
 
@@ -46,9 +48,10 @@ Latest two published weeks. Cached 5 minutes (`Cache-Control: public, max-age=30
 | `GET /trending/tools` | Trending tools: calls, sessions, success rate, week-over-week change, `new` flags |
 | `GET /trending/mcp` | MCP server ranking: calls, sessions, success rate |
 | `GET /overview` | Network totals: tool calls, sessions, distinct tools/servers, contributors |
+| `GET /network` | Privacy-closed production receipt snapshot: models, tool categories, intents, workflows, and outcomes |
 
 ```bash
-curl https://api.pollen.id/trending/tools
+curl https://pollen-network.vercel.app/api/v1/network
 ```
 
 ```json
@@ -105,7 +108,7 @@ const account = privateKeyToAccount(process.env.PRIVATE_KEY)
 const fetchWithPay = wrapFetchWithPayment(fetch, account)
 
 const res = await fetchWithPay(
-  'https://api.pollen.id/tools/history?tool=Bash',
+  'https://pollen-api.bflynn4141.workers.dev/tools/history?tool=Bash',
 )
 const data = await res.json()
 ```
@@ -113,7 +116,7 @@ const data = await res.json()
 Or inspect the challenge by hand:
 
 ```bash
-curl -i "https://api.pollen.id/tools/history?tool=Bash"
+curl -i "https://pollen-api.bflynn4141.workers.dev/tools/history?tool=Bash"
 # HTTP/1.1 402 Payment Required
 # { "x402Version": 1, "accepts": [ { "scheme": "exact", "network": "base", ... } ] }
 ```
@@ -127,8 +130,9 @@ safe to cite in posts, papers, and changelogs.
 
 ## Where the data comes from
 
-Contributors run the [Pollen CLI hook](/docs/quickstart), which captures
-coarse, anonymized tool-call events from their own Claude Code sessions
-(tool name, MCP server, success — never prompts, paths, or code) and syncs
-them to the shared network. Contributors earn POLLEN for the data that powers
-these endpoints.
+Contributors run the [Pollen CLI hook](/docs/quickstart), which converts local
+sessions into a closed receipt schema (agent, model, coarse intent, tool
+category sequence, duration bucket, terminal state, and check result). Raw
+prompts, tool arguments, commands, paths, source code, and output are never in
+the production receipt. Founding-panel participation may make contributors
+eligible for future rewards; it does not guarantee a payout.
