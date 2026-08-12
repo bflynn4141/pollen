@@ -17,7 +17,7 @@ Get contributing in four steps. You need Node.js 20+ and a founding-panel invite
 Install the beta from its public GitHub release:
 
 ```bash
-npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.1/pollen-cli-0.1.0-beta.1.tgz
+npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.2/pollen-cli-0.1.0-beta.2.tgz
 ```
 </Step>
 <Step>
@@ -28,10 +28,27 @@ the one you later verify:
 
 ```bash
 pollen join <invite-code>
+```
+
+For Claude Code, run the guided setup. It installs hooks and offers wallet and
+World ID setup:
+
+```bash
 pollen setup
 ```
 
-Setup preserves existing hooks. Capture stays local in `~/.pollen/local.db`.
+For Codex, install hooks and run the identity steps separately:
+
+```bash
+pollen setup --codex
+pollen wallet
+pollen verify
+```
+
+`pollen setup --codex` installs hooks only. Both setup paths preserve existing
+hooks, and capture stays local in `~/.pollen/local.db`. Wallet and World ID are
+required for payout eligibility, but founding-panel participation does not
+guarantee a payout while payout automation remains in beta.
 </Step>
 <Step>
 ### Inspect locally

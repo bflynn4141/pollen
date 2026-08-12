@@ -18,17 +18,53 @@ Node.js 20+ and an invite code are required. Install the beta from its public
 GitHub release:
 
 ```bash
-npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.1/pollen-cli-0.1.0-beta.1.tgz
+npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.2/pollen-cli-0.1.0-beta.2.tgz
 ```
 
-Then join before setting up identity:
+Join the founding panel before installing hooks:
 
 ```bash
 pollen join <invite-code>
+```
+
+Choose the setup path for the agent you use.
+
+### Claude Code
+
+Run the guided setup:
+
+```bash
 pollen setup
 ```
 
-Use Claude Code normally, then inspect and explicitly sync:
+The wizard installs Claude Code hooks and offers wallet setup and World ID
+verification. If you skip either identity step, you can complete it later:
+
+```bash
+pollen wallet
+pollen verify
+```
+
+### Codex
+
+Install the Codex hooks, then configure the identity steps separately:
+
+```bash
+pollen setup --codex
+pollen wallet
+pollen verify
+```
+
+`pollen setup --codex` only installs hooks in `~/.codex/hooks.json`; it does
+not run the wallet or World ID flows. A wallet and World ID verification are
+the identity inputs required for payout eligibility. Payout automation is
+still being validated during the founding-panel beta, so participation does
+not guarantee a payout.
+
+### Inspect and contribute
+
+Start a new Claude Code or Codex session after installing hooks. When that
+session is complete, inspect the local record and explicitly sync it:
 
 ```bash
 pollen my

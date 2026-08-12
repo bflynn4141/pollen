@@ -18,11 +18,12 @@ import {
 } from './query.js'
 import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
-import { DB_PATH, registerWallet, isValidAddress, loadConfig, saveNetworkRegistration, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
+import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
 import { buildNetworkReceipts } from './network-receipt.js'
-import { DEFAULT_NETWORK_API_URL, registerNetworkContributor, uploadNetworkReceipts } from './network-client.js'
+import { uploadNetworkReceipts } from './network-client.js'
+import { joinFoundingPanel } from './join.js'
 
 function openDb(commandName: string | undefined) {
   // Commands that manage identity or onboarding do not need user activity data.
@@ -280,9 +281,13 @@ try {
         console.error('Contact the Pollen operator to migrate it into the founding panel.')
         process.exit(1)
       }
-      const registration = await registerNetworkContributor(invite, DEFAULT_NETWORK_API_URL)
-      saveNetworkRegistration(registration.contributorId, DEFAULT_NETWORK_API_URL, registration.token)
-      console.log(`✓ Joined founding panel as ${registration.contributorId}`)
+      const result = await joinFoundingPanel(invite)
+      if (!result.ok) {
+        console.error(result.message)
+        process.exitCode = 1
+        break
+      }
+      console.log(`✓ Joined founding panel as ${result.contributorId}`)
       console.log('  Your bearer token is stored locally in ~/.pollen/config.json with mode 0600.')
       console.log('  Run `pollen setup`, then `pollen sync` after a completed session.')
       break
