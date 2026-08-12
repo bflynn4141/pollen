@@ -18,7 +18,7 @@ Node.js 20+ and an invite code are required. Install the beta from its public
 GitHub release:
 
 ```bash
-npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.2/pollen-cli-0.1.0-beta.2.tgz
+npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.3/pollen-cli-0.1.0-beta.3.tgz
 ```
 
 Join the founding panel before installing hooks:
