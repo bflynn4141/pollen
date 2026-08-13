@@ -45,6 +45,7 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 
 | Command | Description |
 |---------|-------------|
+| `wallet --local` | Create or load a locally encrypted macOS EOA and bind it |
 | `wallet` | Interactive wallet setup (managed or BYO) |
 | `wallet --email <email>` | Create a managed wallet |
 | `wallet --address <0x...>` | Register an existing address |
@@ -75,3 +76,4 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 |------|-------------|
 | `~/.pollen/local.db` | Local SQLite database (structured local observations) |
 | `~/.pollen/config.json` | Contributor identity and bearer token (mode `0600`) |
+| `~/.pollen/local-wallet.json` | AES-GCM encrypted local EOA (mode `0600`; wrapping key in macOS Keychain) |

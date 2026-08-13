@@ -8,3 +8,5 @@ out
 .vercel
 .gstack/
 .wrangler/
+.pollen/
+local-wallet.json

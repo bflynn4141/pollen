@@ -1,0 +1,41 @@
+---
+title: Local Encrypted Wallet
+description: Create a standard EOA locally without Para or a raw private-key environment variable.
+---
+
+# Local Encrypted Wallet
+
+On macOS, Pollen can create and bind a standard Ethereum externally owned
+account (EOA) without a wallet provider:
+
+```bash
+pollen wallet --local
+```
+
+The private key is generated on the machine and used to sign only
+`pollen:register:<contributor-id>`. Pollen sends the public address and EIP-191
+signature to the binding API; it never uploads the private key or wrapping key.
+
+## Storage model
+
+- `~/.pollen/local-wallet.json` contains AES-256-GCM ciphertext and is mode `0600`.
+- macOS Keychain contains the independent random wrapping key.
+- `~/.pollen/config.json` contains the public address and binding signature.
+- `.pollen/` and `local-wallet.json` are ignored by the source repository.
+
+The command is idempotent: rerunning it decrypts the same wallet and refreshes
+the same signed binding. It will not generate a replacement when ciphertext
+already exists but the Keychain entry is missing.
+
+## First-write-wins safety
+
+The first correctly signed wallet atomically claims an empty contributor wallet
+slot. Once set, a different address cannot replace it through the binding API.
+This prevents a later sync or stolen contributor identifier from redirecting
+payouts.
+
+## Backup
+
+Back up the encrypted wallet file together with an encrypted macOS Keychain
+backup. The ciphertext alone cannot recover the wallet. Never commit either
+secret to Git or paste a private key into chat.
