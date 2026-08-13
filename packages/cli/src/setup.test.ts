@@ -10,7 +10,7 @@ describe('setup', () => {
   it('completes the clean-user demo flow using one input stream', async () => {
     const answers = [
       '\n',
-      '2\n',
+      '3\n',
       '0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18\n',
       'n\n',
     ]

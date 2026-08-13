@@ -41,7 +41,7 @@ The wizard installs Claude Code hooks and offers wallet setup and World ID
 verification. If you skip either identity step, you can complete it later:
 
 ```bash
-pollen wallet
+pollen wallet --local
 pollen verify
 ```
 
@@ -51,7 +51,7 @@ Install the Codex hooks, then configure the identity steps separately:
 
 ```bash
 pollen setup --codex
-pollen wallet
+pollen wallet --local
 pollen verify
 ```
 
@@ -66,6 +66,12 @@ payout-eligible contributors. Each must have an epoch score, World ID
 verification, a registered wallet, and a cryptographically valid wallet
 binding. A payout dry run remains read-only and reports the current and
 required contributor counts when this quorum is not met.
+
+`pollen wallet --local` creates an EOA whose private key is AES-256-GCM
+encrypted in `~/.pollen/local-wallet.json`; the separate wrapping key is held
+by macOS Keychain. Neither secret is uploaded or stored in Git. The command
+signs the exact contributor binding locally and sends only the public address
+and EIP-191 signature to Pollen.
 
 ### Inspect and contribute
 

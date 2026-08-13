@@ -1,4 +1,4 @@
 {
   "title": "Wallet",
-  "pages": ["index", "managed", "bring-your-own"]
+  "pages": ["index", "local", "managed", "bring-your-own"]
 }

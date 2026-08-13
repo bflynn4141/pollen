@@ -1,6 +1,7 @@
 import { getAddress, verifyMessage, type Hex } from 'viem'
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/neon'
+import { claimWalletBinding, type WalletBindingSql } from './binding'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,21 +40,15 @@ export async function POST(request: Request) {
   if (!valid) return fail('signature_mismatch', 401, 'Signature does not match wallet address')
 
   const sql = getDb()
-  const rows = await sql`
-    SELECT wallet_address
-    FROM contributors
-    WHERE contributor_id = ${body.contributor_id}
-  `
-  if (rows.length === 0) return fail('contributor_not_found', 404)
-  const registered = rows[0].wallet_address as string | null
-  if (!registered || registered.toLowerCase() !== walletAddress.toLowerCase()) {
+  const result = await claimWalletBinding(
+    sql as unknown as WalletBindingSql,
+    body.contributor_id,
+    walletAddress,
+    body.signature,
+  )
+  if (result === 'not_found') return fail('contributor_not_found', 404)
+  if (result === 'wallet_mismatch') {
     return fail('wallet_mismatch', 409, 'Signed wallet does not match the registered payout wallet')
   }
-
-  await sql`
-    UPDATE contributors
-    SET wallet_binding_sig = ${body.signature}, updated_at = NOW()
-    WHERE contributor_id = ${body.contributor_id}
-  `
   return NextResponse.json({ success: true, contributor_id: body.contributor_id, wallet_address: walletAddress })
 }

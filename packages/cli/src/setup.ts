@@ -235,10 +235,13 @@ async function promptVerify(
 async function demoWallet(rl: ReturnType<typeof createInterface>): Promise<boolean> {
   console.log('  How do you want to set up your wallet?')
   console.log('')
-  console.log('  1. Create a managed wallet (recommended)')
-  console.log('     Email-based. No private keys to manage. Claim tokens with one command.')
+  console.log('  1. Create a local encrypted wallet (recommended)')
+  console.log('     Private key encrypted on disk; wrapping key stored in macOS Keychain.')
   console.log('')
-  console.log('  2. Use your own wallet')
+  console.log('  2. Create a managed wallet')
+  console.log('     Email-based wallet through Para.')
+  console.log('')
+  console.log('  3. Use your own wallet')
   console.log('     Bring an existing Ethereum address. You\'ll need your private key to claim.')
   console.log('')
 
@@ -246,6 +249,10 @@ async function demoWallet(rl: ReturnType<typeof createInterface>): Promise<boole
   const picked = choice.trim() || '1'
 
   if (picked === '1') {
+    console.log('')
+    console.log(`  ✓ Local wallet created: ${MOCK_ADDRESS}`)
+    console.log('    Private key encrypted on disk; wrapping key stored in macOS Keychain.')
+  } else if (picked === '2') {
     const email = await ask(rl, '  Email: ')
     if (!email.trim() || !email.includes('@')) {
       console.log('  Invalid email.')
@@ -268,7 +275,7 @@ async function demoWallet(rl: ReturnType<typeof createInterface>): Promise<boole
     console.log('')
     console.log('  For full wallet features (send, swap, sign):')
     console.log('    Install Clara MCP: claude mcp add clara -- npx @clara/mcp')
-  } else {
+  } else if (picked === '3') {
     const addr = await ask(rl, '  Ethereum address (0x...): ')
     if (!addr.trim().startsWith('0x')) {
       console.log('  Invalid Ethereum address.')
@@ -277,6 +284,9 @@ async function demoWallet(rl: ReturnType<typeof createInterface>): Promise<boole
     console.log('')
     console.log(`  ✓ Wallet registered: ${addr.trim()}`)
     console.log('    Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
+  } else {
+    console.log('  Invalid choice.')
+    return false
   }
 
   return true

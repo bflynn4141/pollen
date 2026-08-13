@@ -70,6 +70,11 @@ export interface ParaWallet {
   email: string       // Recovery email
 }
 
+export interface LocalWallet {
+  address: string
+  key_store: 'macos-keychain'
+}
+
 export interface PollenConfig {
   contributor_id: string
   network?: {
@@ -80,6 +85,7 @@ export interface PollenConfig {
   world_id?: WorldIdInfo
   wallet_address?: string   // kept for backward compat, auto-populated from Para
   wallet_binding_sig?: string // EIP-191 sig of `pollen:register:<contributor_id>` (BYO wallets with POLLEN_PRIVATE_KEY)
+  local_wallet?: LocalWallet
   para_wallet?: ParaWallet
   /** Recipient for the weekly Pollen Brief email (set via `pollen brief --to`) */
   brief_email?: string
@@ -155,14 +161,45 @@ export function registerWallet(address: string): void {
 /** Get effective wallet address (Para-derived or manually registered) */
 export function getWalletAddress(): string | null {
   const config = loadConfig()
-  return config?.para_wallet?.address ?? config?.wallet_address ?? null
+  return config?.local_wallet?.address
+    ?? config?.para_wallet?.address
+    ?? config?.wallet_address
+    ?? null
 }
 
 export const PROXY_URL = process.env.POLLEN_PROXY_URL ?? 'https://clara-proxy.bflynn4141.workers.dev'
 
-/** Interactive wallet setup — prompts user to choose managed or BYO wallet.
- *  Also supports non-interactive flags (--email, --address) via argv. */
-export async function runInteractiveWallet(argv: string[] = process.argv): Promise<{ address: string; type: 'managed' | 'existing' }> {
+/** Create/load the encrypted local EOA, bind it remotely, then persist only
+ * public identity data in config. Remote failure leaves config unchanged. */
+export async function setupLocalWallet(): Promise<{ address: string; type: 'local' }> {
+  const config = loadConfig()
+  if (!config?.contributor_id) {
+    throw new Error('Contributor identity is not configured; run `pollen join <code>` first')
+  }
+  const { getOrCreateLocalWallet } = await import('./local-wallet.js')
+  const { submitWalletBinding } = await import('./wallet-bind.js')
+  const wallet = await getOrCreateLocalWallet(config.contributor_id)
+  await submitWalletBinding({
+    contributor_id: config.contributor_id,
+    wallet_address: wallet.address,
+    signature: wallet.signature,
+  })
+
+  const updated = loadConfig() ?? { contributor_id: config.contributor_id }
+  updated.local_wallet = { address: wallet.address, key_store: 'macos-keychain' }
+  updated.wallet_address = wallet.address
+  updated.wallet_binding_sig = wallet.signature
+  saveConfig(updated)
+  console.log(`${wallet.created ? '✓ Local wallet created' : '✓ Local wallet loaded'}: ${wallet.address}`)
+  console.log('  Private key: encrypted on disk; wrapping key: macOS Keychain')
+  console.log(`  Backup: ${wallet.walletPath} plus an encrypted Keychain backup`)
+  return { address: wallet.address, type: 'local' }
+}
+
+/** Interactive wallet setup — prompts user to choose local, managed, or BYO.
+ *  Also supports non-interactive flags (--local, --email, --address). */
+export async function runInteractiveWallet(argv: string[] = process.argv): Promise<{ address: string; type: 'local' | 'managed' | 'existing' }> {
+  if (argv.includes('--local')) return setupLocalWallet()
   const emailFlag = argv.indexOf('--email')
   const addrFlag = argv.indexOf('--address')
 
@@ -199,10 +236,13 @@ export async function runInteractiveWallet(argv: string[] = process.argv): Promi
   console.log('')
   console.log('  How do you want to set up your wallet?')
   console.log('')
-  console.log('  1. Create a managed wallet (recommended)')
-  console.log('     Email-based. No private keys to manage. Claim tokens with one command.')
+  console.log('  1. Create a local encrypted wallet (recommended)')
+  console.log('     Private key encrypted on disk; wrapping key stored in macOS Keychain.')
   console.log('')
-  console.log('  2. Use your own wallet')
+  console.log('  2. Create a managed wallet')
+  console.log('     Email-based wallet through Para.')
+  console.log('')
+  console.log('  3. Use your own wallet')
   console.log('     Bring an existing Ethereum address. You\'ll need your private key to claim.')
   console.log('')
 
@@ -210,6 +250,9 @@ export async function runInteractiveWallet(argv: string[] = process.argv): Promi
   const picked = choice.trim() || '1'
 
   if (picked === '1') {
+    rl.close()
+    return setupLocalWallet()
+  } else if (picked === '2') {
     const email = await ask('  Email: ')
     if (!email.trim() || !email.includes('@')) {
       rl.close()
@@ -235,7 +278,7 @@ export async function runInteractiveWallet(argv: string[] = process.argv): Promi
     console.log('  For full wallet features (send, swap, sign):')
     console.log('    Install Clara MCP: claude mcp add clara -- npx @clara/mcp')
     return { address, type: 'managed' }
-  } else {
+  } else if (picked === '3') {
     const addr = await ask('  Ethereum address (0x...): ')
     rl.close()
     if (!isValidAddress(addr.trim())) {
@@ -251,6 +294,8 @@ export async function runInteractiveWallet(argv: string[] = process.argv): Promi
     console.log('  Note: You\'ll need POLLEN_PRIVATE_KEY to claim tokens.')
     return { address: addr.trim(), type: 'existing' }
   }
+  rl.close()
+  throw new Error('Invalid wallet choice; expected 1, 2, or 3')
 }
 
 /** Step 1: Initiate email verification — Para sends OTP to the email */

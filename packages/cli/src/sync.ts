@@ -1,7 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import type { NeonQueryFunction } from '@neondatabase/serverless'
 import type Database from 'better-sqlite3'
-import { SYNC_BATCH_SIZE, getOrCreateContributorId, loadConfig } from './config.js'
+import { SYNC_BATCH_SIZE, getOrCreateContributorId, getWalletAddress, loadConfig } from './config.js'
 import { finalizeStaleSessions } from './finalize.js'
 
 interface SyncResult {
@@ -349,7 +349,7 @@ async function syncContributorIdentity(
   contributorId: string,
 ): Promise<void> {
   const config = loadConfig()
-  const walletAddress = config?.para_wallet?.address ?? config?.wallet_address ?? null
+  const walletAddress = getWalletAddress()
   const bindingSig = config?.wallet_binding_sig ?? null
   const worldId = config?.world_id ?? null
 

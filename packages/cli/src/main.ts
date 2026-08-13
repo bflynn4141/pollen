@@ -18,7 +18,7 @@ import {
 } from './query.js'
 import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
-import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
+import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet, setupLocalWallet } from './config.js'
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
 import { buildNetworkReceipts, summarizeNetworkReceipts } from './network-receipt.js'
@@ -363,7 +363,9 @@ try {
       break
     }
     case 'wallet': {
-      if (process.argv[3] === 'bind') {
+      if (process.argv[3] === '--local') {
+        await setupLocalWallet()
+      } else if (process.argv[3] === 'bind') {
         const { runWalletBind } = await import('./wallet-bind.js')
         await runWalletBind()
       } else {
@@ -488,6 +490,7 @@ try {
         '  sync [--dry-run]  Preview or upload closed, privacy-safe network receipts',
         '  verify      Complete Orb-backed World ID verification',
         '  status      Show contributor identity + verification status',
+        '  wallet --local  Create or load a locally encrypted macOS wallet',
         '  wallet      Set up a wallet (managed or bring-your-own)',
         '  register    Link an Ethereum wallet: pollen register <address>',
         '  claim       Payout status (POLLEN payouts are pushed automatically each week)',

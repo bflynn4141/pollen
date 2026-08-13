@@ -1,26 +1,30 @@
 ---
 title: Wallet Setup
-description: Set up a wallet to receive POLLEN tokens. Choose between a managed wallet (email-based, no keys) or bringing your own Ethereum address.
+description: Set up a wallet to receive POLLEN tokens. Create an encrypted local EOA, use a managed wallet, or bring your own address.
 ---
 
 # Wallet Setup
 
-You need a wallet to receive POLLEN tokens and claim revenue. Pollen supports two approaches:
+You need a wallet to receive POLLEN tokens. Pollen supports three approaches:
 
-| | Managed Wallet | Bring Your Own |
-|---|---|---|
-| **Setup** | Email address | Existing 0x address |
-| **Key management** | None — handled by Para | You manage your keys |
-| **Claiming** | One command, no private key | Requires `POLLEN_PRIVATE_KEY` |
-| **Portability** | Any machine via email | Wherever you have the key |
+| | Local encrypted EOA | Managed Wallet | Bring Your Own |
+|---|---|---|---|
+| **Setup** | One command on macOS | Email address | Existing 0x address |
+| **Key management** | AES-GCM file + macOS Keychain | Handled by Para | You manage your keys |
+| **Payouts** | Automatic to the address | Automatic to the address | Automatic to the address |
+| **Portability** | Back up the encrypted file and Keychain | Any machine via email | Wherever you have the key |
 
 ## Quick setup
 
 ```bash
-npx @pollen/cli wallet
+npx @pollen/cli wallet --local
 ```
 
-This interactive command walks you through both options. Or use flags for non-interactive setup:
+The recommended beta path creates a standard EOA locally, encrypts its private
+key before writing it to disk, and stores the separate wrapping key in macOS
+Keychain. Only the address and contributor-binding signature reach Pollen.
+
+Other wallet options remain available:
 
 ```bash
 # Managed wallet
@@ -31,9 +35,12 @@ npx @pollen/cli wallet --address 0x1234...abcd
 ```
 
 Your wallet config is stored at `~/.pollen/config.json`.
+The encrypted local wallet is stored separately at
+`~/.pollen/local-wallet.json` with mode `0600`; neither file belongs in Git.
 
 ## Next steps
 
+- [Local encrypted wallet](/docs/wallet/local) — storage, binding, and backup model
 - [Managed wallet details](/docs/wallet/managed) — how Para wallets work
 - [Bring your own wallet](/docs/wallet/bring-your-own) — EOA registration
 - [Claiming tokens](/docs/earning/claiming) — how to claim POLLEN
