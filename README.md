@@ -61,6 +61,12 @@ the identity inputs required for payout eligibility. Payout automation is
 still being validated during the founding-panel beta, so participation does
 not guarantee a payout.
 
+The weekly payout agent is hard-gated until a closed epoch has at least five
+payout-eligible contributors. Each must have an epoch score, World ID
+verification, a registered wallet, and a cryptographically valid wallet
+binding. A payout dry run remains read-only and reports the current and
+required contributor counts when this quorum is not met.
+
 ### Inspect and contribute
 
 Start a new Claude Code or Codex session after installing hooks. When that

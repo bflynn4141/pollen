@@ -44,7 +44,7 @@ export async function hasValidWalletBinding(
 export interface PayoutStore {
   /** Total epoch_scores rows for the epoch (pre-eligibility) — 0 means epoch-close never ran. */
   countEpochScores(epoch: number): Promise<number>
-  /** Verified + wallet-registered contributors with a score for the epoch. */
+  /** Epoch-scored, World ID-verified contributors whose wallet binding verifies cryptographically. */
   fetchEligibleScores(epoch: number): Promise<EligibleScore[]>
   fetchPayouts(epoch: number): Promise<ExistingPayout[]>
   /** Insert status='pending' rows; existing rows (resume) are left untouched. */

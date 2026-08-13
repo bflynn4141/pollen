@@ -1,9 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { decodeFunctionData } from 'viem'
+import { privateKeyToAccount } from 'viem/accounts'
 import { POLLEN_TOKEN_V2_ABI } from './abi.js'
 import { createSplitsMintChain } from './mint.js'
 import {
-  createCustomTransaction, getTransaction, resolveSubaccount, whoami,
+  createCustomTransaction, ensureLocalSignerKey, getTransaction, resolveSubaccount, whoami,
   type SplitsDriver,
 } from './splits.js'
 
@@ -11,6 +15,83 @@ const SUBACCOUNT = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as const
 const TOKEN = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as const
 const PROPOSAL_ID = '3f0b8a1e-0000-4000-8000-000000000001'
 const TX_HASH = '0x' + 'ab'.repeat(32)
+const TEST_SIGNER_KEY = `0x${'11'.repeat(32)}` as const
+const TEST_SIGNER_ADDRESS = privateKeyToAccount(TEST_SIGNER_KEY).address
+
+const tempDirs: string[] = []
+
+afterEach(async () => {
+  vi.unstubAllEnvs()
+  await Promise.all(tempDirs.splice(0).map(path => rm(path, { recursive: true, force: true })))
+})
+
+async function fakeSplitsCli(): Promise<{ bin: string; statePath: string }> {
+  const dir = await mkdtemp(join(tmpdir(), 'pollen-splits-test-'))
+  tempDirs.push(dir)
+  const bin = join(dir, 'splits')
+  const statePath = join(dir, 'state.json')
+  await writeFile(bin, `#!/usr/bin/env node
+import { readFile, writeFile } from 'node:fs/promises'
+
+const [, , group, command] = process.argv
+const statePath = process.env.TEST_SPLITS_STATE
+const expectedAddress = process.env.TEST_SPLITS_EXPECTED_ADDRESS
+let state = null
+try { state = JSON.parse(await readFile(statePath, 'utf8')) } catch {}
+
+if (group !== 'auth') process.exit(64)
+
+if (command === 'import-key') {
+  for await (const _chunk of process.stdin) {}
+  if (process.env.TEST_SPLITS_IMPORT_FAILURE === 'unrelated') {
+    process.stderr.write('Splits service unavailable\\n')
+    process.exit(2)
+  }
+  process.stderr.write(\`Imported address: \${expectedAddress}\\n\`)
+  if (state) {
+    process.stdout.write(JSON.stringify({
+      ok: false,
+      error: {
+        code: 'UNKNOWN',
+        message: \`A local key already exists (\${state.address}, "test"). Run 'splits auth delete-key' first if you want to replace it.\`,
+      },
+    }) + '\\n')
+    process.exit(1)
+  }
+  await writeFile(statePath, JSON.stringify({ address: expectedAddress, signerId: 'signer_test' }))
+  process.stdout.write(JSON.stringify({ address: expectedAddress }) + '\\n')
+  process.exit(0)
+}
+
+if (command === 'whoami') {
+  if (process.env.TEST_SPLITS_WHOAMI_FAILURE === '1') {
+    process.stderr.write('Authentication failed\\n')
+    process.exit(1)
+  }
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    data: {
+      data: {
+        localKey: state && process.env.TEST_SPLITS_HIDE_LOCAL_KEY !== '1'
+          ? { address: state.address, signerId: state.signerId ?? null }
+          : null,
+      },
+    },
+  }) + '\\n')
+  process.exit(0)
+}
+
+process.exit(64)
+`)
+  await chmod(bin, 0o700)
+  return { bin, statePath }
+}
+
+function useFakeSignerEnv(statePath: string): void {
+  vi.stubEnv('SPLITS_SIGNER_KEY', TEST_SIGNER_KEY)
+  vi.stubEnv('TEST_SPLITS_STATE', statePath)
+  vi.stubEnv('TEST_SPLITS_EXPECTED_ADDRESS', TEST_SIGNER_ADDRESS)
+}
 
 type ToolHandler = (args: Record<string, unknown>) => unknown
 
@@ -27,6 +108,64 @@ function fakeDriver(handlers: Record<string, ToolHandler>) {
   }
   return { driver, calls }
 }
+
+describe('ensureLocalSignerKey', () => {
+  it('supports sequential preflight and payout imports when the same signer is already registered', async () => {
+    const { bin, statePath } = await fakeSplitsCli()
+    useFakeSignerEnv(statePath)
+
+    await ensureLocalSignerKey(bin) // preflight process
+    await expect(ensureLocalSignerKey(bin)).resolves.toBeUndefined() // payout process
+
+    const saved = JSON.parse(await readFile(statePath, 'utf8')) as { address: string; signerId: string }
+    expect(saved).toEqual({ address: TEST_SIGNER_ADDRESS, signerId: 'signer_test' })
+  })
+
+  it('rejects an existing local key for a different address', async () => {
+    const { bin, statePath } = await fakeSplitsCli()
+    useFakeSignerEnv(statePath)
+    await writeFile(statePath, JSON.stringify({
+      address: '0x2222222222222222222222222222222222222222',
+      signerId: 'signer_other',
+    }))
+
+    await expect(ensureLocalSignerKey(bin)).rejects.toThrow(/does not match SPLITS_SIGNER_KEY/)
+  })
+
+  it('rejects an identical local key that is not registered with Splits', async () => {
+    const { bin, statePath } = await fakeSplitsCli()
+    useFakeSignerEnv(statePath)
+    await writeFile(statePath, JSON.stringify({ address: TEST_SIGNER_ADDRESS, signerId: null }))
+
+    await expect(ensureLocalSignerKey(bin)).rejects.toThrow(/not registered/)
+  })
+
+  it('rejects when the existing signer cannot be found by whoami', async () => {
+    const { bin, statePath } = await fakeSplitsCli()
+    useFakeSignerEnv(statePath)
+    await writeFile(statePath, JSON.stringify({ address: TEST_SIGNER_ADDRESS, signerId: 'signer_test' }))
+    vi.stubEnv('TEST_SPLITS_HIDE_LOCAL_KEY', '1')
+
+    await expect(ensureLocalSignerKey(bin)).rejects.toThrow(/reported no local signer/)
+  })
+
+  it('rejects when the existing signer cannot be verified because whoami fails', async () => {
+    const { bin, statePath } = await fakeSplitsCli()
+    useFakeSignerEnv(statePath)
+    await writeFile(statePath, JSON.stringify({ address: TEST_SIGNER_ADDRESS, signerId: 'signer_test' }))
+    vi.stubEnv('TEST_SPLITS_WHOAMI_FAILURE', '1')
+
+    await expect(ensureLocalSignerKey(bin)).rejects.toThrow(/could not verify it/)
+  })
+
+  it('does not suppress unrelated import failures', async () => {
+    const { bin, statePath } = await fakeSplitsCli()
+    useFakeSignerEnv(statePath)
+    vi.stubEnv('TEST_SPLITS_IMPORT_FAILURE', 'unrelated')
+
+    await expect(ensureLocalSignerKey(bin)).rejects.toThrow(/Splits service unavailable/)
+  })
+})
 
 describe('resolveSubaccount', () => {
   it('verifies a 0x address via accounts_get', async () => {
