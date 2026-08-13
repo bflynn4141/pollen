@@ -38,6 +38,16 @@ describe('installCodexHooks', () => {
     expect(written.hooks.Notification).toBeUndefined()
   })
 
+  it('uses absolute runtime paths when no hook command override is provided', () => {
+    installCodexHooks(hooksPath)
+
+    const written = JSON.parse(readFileSync(hooksPath, 'utf-8'))
+    const command = written.hooks.UserPromptSubmit[0].hooks[0].command as string
+    expect(command).toContain(process.execPath)
+    expect(command).toMatch(/hook\.js"? --source codex$/)
+    expect(command).not.toBe('pollen-hook --source codex')
+  })
+
   it('preserves existing non-pollen hooks (matches real hooks.json shape)', () => {
     // Shape taken from ~/.codex/hooks.json.backup-20260504-200804
     const existing = {

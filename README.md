@@ -18,7 +18,7 @@ Node.js 20+ and an invite code are required. Install the beta from its public
 GitHub release:
 
 ```bash
-npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.3/pollen-cli-0.1.0-beta.3.tgz
+npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.4/pollen-cli-0.1.0-beta.4.tgz
 ```
 
 Join the founding panel before installing hooks:
@@ -68,10 +68,12 @@ session is complete, inspect the local record and explicitly sync it:
 
 ```bash
 pollen my
+pollen sync --dry-run
 pollen sync
 ```
 
-`pollen sync` sends a versioned receipt containing only intent, agent/model,
+The dry run prints aggregate counts and uploads nothing. `pollen sync` sends a
+versioned receipt containing only intent, agent/model,
 tool-category sequence, duration bucket, terminal state, and check result. The
 server independently rejects every field outside that schema.
 

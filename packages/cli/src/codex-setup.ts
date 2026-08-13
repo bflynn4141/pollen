@@ -10,6 +10,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const HOME = process.env.HOME ?? '~'
 export const CODEX_HOOKS_PATH = join(HOME, '.codex', 'hooks.json')
@@ -32,7 +33,11 @@ export const CODEX_HOOK_EVENTS = [
 
 // The --source codex flag is how dist/hook.js knows to tag sessions
 // source='codex' and route errored PostToolUse payloads to the failure path.
-const DEFAULT_CODEX_HOOK_COMMAND = 'pollen-hook --source codex'
+const DEFAULT_CODEX_HOOK_COMMAND = [
+  JSON.stringify(process.execPath),
+  JSON.stringify(fileURLToPath(new URL('./hook.js', import.meta.url))),
+  '--source codex',
+].join(' ')
 
 function makeCodexHookEntry(command: string) {
   return {

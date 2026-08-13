@@ -16,21 +16,42 @@
  *   event_msg/token_count                 → session token totals (cumulative)
  *
  * Defensive by design: malformed lines are skipped, unknown types ignored,
- * files > 50MB skipped with a warning. Idempotent: tool event ids are
+ * files > 512MB skipped with a warning. Idempotent: tool event ids are
  * sha256(session_id + call_id) and all inserts are OR IGNORE / upserts.
  */
 import { createHash } from 'node:crypto'
-import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { createInterface } from 'node:readline'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type Database from 'better-sqlite3'
-import { classifyError, classifyToolCategory, detectProjectType, extractMcpServer } from './coarsen.js'
+import { classify } from './classify.js'
+import {
+  classifyError,
+  classifyToolCategory,
+  detectProjectType,
+  extractAction,
+  extractMcpServer,
+  extractTopic,
+} from './coarsen.js'
 import { MS_PER_DAY, getOrCreateContributorId } from './config.js'
+import { extractFeatures } from './features.js'
+import { coarsenDepth } from './session.js'
 import { computeSessionArc } from './session-arc.js'
-import { insertLifecycleEvent, insertSession, insertToolEvent, updateSession } from './store.js'
-import { lowerNeonWatermarks } from './sync.js'
+import {
+  getSessionPromptCount,
+  insertContribution,
+  insertLifecycleEvent,
+  insertSession,
+  insertToolEvent,
+  updateSession,
+} from './store.js'
+import type { TermDictionary } from './types.js'
 
-export const MAX_ROLLOUT_FILE_BYTES = 50 * 1024 * 1024
+// Codex desktop sessions can legitimately grow into the hundreds of MB during
+// long-running agent work. Files are streamed line-by-line below, so keep a
+// bounded ceiling without excluding normal extended sessions.
+export const MAX_ROLLOUT_FILE_BYTES = 512 * 1024 * 1024
 
 // Error heuristic for tool outputs (rollouts carry no explicit success flag
 // on custom_tool_call_output — only the output text)
@@ -55,6 +76,15 @@ interface PendingCall {
   timestamp: number
 }
 
+let terms: TermDictionary | null = null
+
+function loadTerms(): TermDictionary {
+  if (terms) return terms
+  const here = dirname(fileURLToPath(import.meta.url))
+  terms = JSON.parse(readFileSync(join(here, '..', 'data', 'terms.json'), 'utf8')) as TermDictionary
+  return terms
+}
+
 interface FileState {
   sessionId: string | null
   startedAt: number
@@ -69,6 +99,7 @@ interface FileState {
   outputTokens: number | null
   cachedInputTokens: number | null
   toolEvents: number
+  legacyPromptIndex: number
 }
 
 function deterministicId(sessionId: string, callId: string): string {
@@ -109,8 +140,6 @@ export async function backfillCodex(
   const result: CodexBackfillResult = {
     files: 0, skippedFiles: 0, sessions: 0, toolEvents: 0, warnings: [],
   }
-  let earliestTs = 0
-
   if (!existsSync(sessionsDir)) {
     result.warnings.push(`No Codex sessions directory at ${sessionsDir}`)
     return result
@@ -128,7 +157,7 @@ export async function backfillCodex(
     }
     if (size > MAX_ROLLOUT_FILE_BYTES) {
       result.skippedFiles++
-      result.warnings.push(`Skipped ${file} (${Math.round(size / 1024 / 1024)}MB > 50MB)`)
+      result.warnings.push(`Skipped ${file} (${Math.round(size / 1024 / 1024)}MB > 512MB)`)
       continue
     }
 
@@ -138,31 +167,10 @@ export async function backfillCodex(
       if (state.sessionId) {
         result.sessions++
         result.toolEvents += state.toolEvents
-        if (state.startedAt > 0) {
-          earliestTs = earliestTs === 0 ? state.startedAt : Math.min(earliestTs, state.startedAt)
-        }
       }
     } catch (err) {
       result.skippedFiles++
       result.warnings.push(`Failed to parse ${file}: ${(err as Error).message}`)
-    }
-  }
-
-  // Backfilled rows sit BEHIND the sync watermarks; lower them so the next
-  // `pollen sync` picks the rows up instead of silently stranding them.
-  if (result.sessions > 0 && earliestTs > 0) {
-    const neonUrl = process.env.NEON_DATABASE_URL
-    if (neonUrl) {
-      try {
-        const lowered = await lowerNeonWatermarks(neonUrl, earliestTs)
-        if (lowered.length > 0) {
-          result.warnings.push(`Lowered sync watermarks (${lowered.join(', ')}) — run \`pollen sync\` to push backfilled data`)
-        }
-      } catch (err) {
-        result.warnings.push(`Could not lower sync watermarks: ${(err as Error).message}`)
-      }
-    } else {
-      result.warnings.push('NEON_DATABASE_URL not set — backfilled rows predate the sync watermarks and will NOT sync until they are lowered; rerun backfill with it set, or reset sync_meta manually')
     }
   }
 
@@ -226,6 +234,7 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
     outputTokens: null,
     cachedInputTokens: null,
     toolEvents: 0,
+    legacyPromptIndex: 0,
   }
 
   const rl = createInterface({
@@ -259,7 +268,9 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
         state.model = payload.model
       }
     } else if (type === 'response_item') {
-      if (payloadType === 'custom_tool_call' || payloadType === 'function_call') {
+      if (payloadType === 'message' && payload.role === 'user') {
+        handleUserMessage(db, state, payload, ts, contributorId)
+      } else if (payloadType === 'custom_tool_call' || payloadType === 'function_call') {
         if (typeof payload.call_id === 'string') {
           state.pending.set(payload.call_id, {
             name: typeof payload.name === 'string' && payload.name.length > 0 ? payload.name : 'unknown',
@@ -271,7 +282,16 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
       }
       // other response_item types (reasoning, message, ...) — ignored
     } else if (type === 'event_msg') {
-      if (payloadType === 'token_count') {
+      if (payloadType === 'user_message' && typeof payload.message === 'string') {
+        handlePromptText(
+          db,
+          state,
+          payload.message,
+          `legacy:${state.legacyPromptIndex++}`,
+          ts,
+          contributorId,
+        )
+      } else if (payloadType === 'token_count') {
         handleTokenCount(state, payload)
       } else if (payloadType === 'mcp_tool_call_end') {
         handleMcpToolCallEnd(db, state, payload, ts, contributorId)
@@ -283,6 +303,64 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
 
   finalizeSession(db, state)
   return state
+}
+
+/**
+ * Normalize a Codex user message through the same feature extraction and
+ * classifier used by Claude's UserPromptSubmit hook. Codex may prepend app
+ * context and AGENTS instructions as separate input_text parts, so the final
+ * text part is the user-authored prompt. Raw text is used in memory only and
+ * is never persisted.
+ */
+function handleUserMessage(
+  db: Database.Database,
+  state: FileState,
+  payload: Record<string, unknown>,
+  ts: number,
+  contributorId: string,
+): void {
+  if (!state.sessionId || typeof payload.id !== 'string' || !Array.isArray(payload.content)) return
+
+  const parts = payload.content as Array<Record<string, unknown>>
+  const text = parts
+    .filter(part => part?.type === 'input_text' && typeof part.text === 'string')
+    .map(part => String(part.text))
+    .at(-1)
+    ?.trim()
+  if (!text) return
+
+  handlePromptText(db, state, text, `message:${payload.id}`, ts, contributorId)
+}
+
+function handlePromptText(
+  db: Database.Database,
+  state: FileState,
+  text: string,
+  promptKey: string,
+  ts: number,
+  contributorId: string,
+): void {
+  if (!state.sessionId || !text.trim()) return
+  const id = deterministicId(state.sessionId, `prompt:${promptKey}`)
+  const exists = db.prepare('SELECT 1 FROM contributions WHERE id = ?').get(id)
+  if (exists) return
+
+  const dictionary = loadTerms()
+  const features = extractFeatures(text, dictionary, new Date(ts))
+  features.session_depth = coarsenDepth(getSessionPromptCount(db, state.sessionId) + 1)
+  const labels = classify(features, dictionary)
+
+  insertContribution(db, {
+    id,
+    timestamp: ts,
+    session_id: state.sessionId,
+    features,
+    labels,
+    action: extractAction(text),
+    topic: extractTopic(text),
+    contributor_id: contributorId,
+    permission_mode: null,
+  })
 }
 
 function handleSessionMeta(
