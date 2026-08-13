@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { initDb } from './store.js'
-import { buildNetworkReceipts } from './network-receipt.js'
+import { buildNetworkReceipts, summarizeNetworkReceipts } from './network-receipt.js'
 
 describe('network receipts', () => {
   it('builds the closed privacy schema without raw local fields', () => {
@@ -66,5 +66,43 @@ describe('network receipts', () => {
 
     expect(receipt.model).toBe('claude-opus-4-6')
     expect(receipt.model).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:/+ -]{0,79}$/)
+  })
+
+  it('summarizes a dry-run without exposing receipt identifiers', () => {
+    const summary = summarizeNetworkReceipts([
+      {
+        schema_version: 1,
+        receipt_id: 'private-receipt-id-1',
+        observed_at: 1_786_512_600_000,
+        intent: 'feature_build',
+        agent: 'codex',
+        model: 'gpt-5.6-sol',
+        tool_category_sequence: ['read', 'write'],
+        duration_bucket: 'short',
+        terminal_state: 'completed',
+        check_result: 'passed',
+      },
+      {
+        schema_version: 1,
+        receipt_id: 'private-receipt-id-2',
+        observed_at: 1_786_512_700_000,
+        intent: 'debugging',
+        agent: 'claude-code',
+        model: 'claude-opus-4-6',
+        tool_category_sequence: ['execute'],
+        duration_bucket: 'quick',
+        terminal_state: 'error_exit',
+        check_result: 'failed',
+      },
+    ])
+
+    expect(summary).toEqual({
+      total: 2,
+      codex: 1,
+      claudeCode: 1,
+      earliestObservedAt: 1_786_512_600_000,
+      latestObservedAt: 1_786_512_700_000,
+    })
+    expect(JSON.stringify(summary)).not.toContain('private-receipt-id')
   })
 })

@@ -14,6 +14,35 @@ export interface NetworkReceiptV1 {
   check_result: string
 }
 
+export interface NetworkReceiptSummary {
+  total: number
+  codex: number
+  claudeCode: number
+  earliestObservedAt: number | null
+  latestObservedAt: number | null
+}
+
+/** Aggregate-only preview for `pollen sync --dry-run`; contains no IDs. */
+export function summarizeNetworkReceipts(receipts: NetworkReceiptV1[]): NetworkReceiptSummary {
+  let earliestObservedAt: number | null = null
+  let latestObservedAt: number | null = null
+  let codex = 0
+  let claudeCode = 0
+
+  for (const receipt of receipts) {
+    if (receipt.agent === 'codex') codex++
+    else claudeCode++
+    earliestObservedAt = earliestObservedAt == null
+      ? receipt.observed_at
+      : Math.min(earliestObservedAt, receipt.observed_at)
+    latestObservedAt = latestObservedAt == null
+      ? receipt.observed_at
+      : Math.max(latestObservedAt, receipt.observed_at)
+  }
+
+  return { total: receipts.length, codex, claudeCode, earliestObservedAt, latestObservedAt }
+}
+
 interface ReceiptRow {
   session_id: string
   model: string

@@ -1,13 +1,13 @@
 /**
  * `pollen verify` — World ID human verification flow.
  *
- * Proves a contributor is a unique human via World ID Proof of Human.
+ * Verifies a contributor with Orb-backed World ID Proof of Human.
  * Stores nullifier_hash locally; attaches contributor_id to future sessions.
  */
 import { loadConfig, saveConfig, getOrCreateContributorId } from './config.js'
-import { createBridgeSession, pollForProof, verifyProof } from './worldid.js'
+import { createBridgeSession, formatPollFailure, pollForProof, verifyProof } from './worldid.js'
 
-export async function runVerify({ save = true }: { save?: boolean } = {}): Promise<void> {
+export async function runVerify({ save = true }: { save?: boolean } = {}): Promise<boolean> {
   // 1. Check if already verified (skip in no-save mode to allow re-demo)
   if (save) {
     const config = loadConfig()
@@ -17,20 +17,22 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
       console.log(`  Nullifier:   ${config.world_id.nullifier_hash.slice(0, 18)}...`)
       console.log(`  Level:       ${config.world_id.verification_level}`)
       console.log(`  Verified:    ${config.world_id.verified_at}`)
-      return
+      return true
     }
   }
 
   // 2. Ensure contributor_id exists
   const contributorId = save ? getOrCreateContributorId() : 'demo'
 
-  console.log('Starting World ID verification...')
-  console.log('This proves you are a unique human with World ID.\n')
+  console.log('Starting World ID Proof of Human verification...')
+  console.log('This requires an Orb-verified World ID.\n')
 
   // 3. Create bridge session
   const session = await createBridgeSession(contributorId)
 
-  // 4. Display QR code + fallback URL
+  // 4. Display the QR/link handoff to World ID App
+  console.log('Scan the QR code below with World ID App.\n')
+
   try {
     const mod = await import('qrcode-terminal')
     const qrcode = mod.default ?? mod
@@ -45,12 +47,18 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
     console.error('(QR code unavailable:', (err as Error).message, ')')
   }
 
-  console.log('Scan the QR code with World App, or open this URL on your phone:')
+  console.log('Or open this verification link on your phone:')
   console.log(`\n  ${session.connectorURI}\n`)
-  console.log('Waiting for verification (10 min timeout)...\n')
+  console.log('Waiting for verification (5 min timeout)...\n')
 
   // 5. Poll for proof
-  const proof = await pollForProof(session)
+  let proof
+  try {
+    proof = await pollForProof(session)
+  } catch (error) {
+    console.error(`✗ ${formatPollFailure(error)}`)
+    return false
+  }
 
   // 6. Verify server-side (pollen site route -> Worldcoin cloud verifier)
   console.log('Verifying proof...')
@@ -59,7 +67,7 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
   if (!result.success) {
     const reason = [result.code, result.detail].filter(Boolean).join(' — ')
     console.error(`✗ Verification failed: ${reason || 'unknown error'}`)
-    process.exit(1)
+    return false
   }
 
   // 7. Save to config (skipped in demo/no-save mode)
@@ -74,12 +82,13 @@ export async function runVerify({ save = true }: { save?: boolean } = {}): Promi
     saveConfig(updatedConfig)
   }
 
-  console.log('✓ Verified! You are a unique human.')
+  console.log('✓ Orb-backed World ID verified!')
   console.log(`  Contributor: ${contributorId}`)
   console.log(`  Nullifier:   ${result.nullifier!.slice(0, 18)}...`)
   if (save) {
     console.log('\nYour contributor_id will be attached to future sessions.')
   }
+  return true
 }
 
 export function runStatus(): void {
@@ -97,6 +106,6 @@ export function runStatus(): void {
     console.log(`Verified at:    ${config.world_id.verified_at}`)
   } else {
     console.log('World ID:       not verified')
-    console.log('Run `pollen verify` to prove you are a unique human.')
+    console.log('Run `pollen verify` to complete Orb-backed World ID verification.')
   }
 }

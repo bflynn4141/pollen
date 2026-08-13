@@ -222,8 +222,7 @@ async function promptVerify(
 
   // Real World ID flow — in demo mode, QR is scannable but nothing is saved
   try {
-    await runVerify({ save: !demo })
-    return true
+    return await runVerify({ save: !demo })
   } catch (err: any) {
     console.error(`  Verification failed: ${err.message}`)
     console.log('  You can verify later: `pollen verify`')

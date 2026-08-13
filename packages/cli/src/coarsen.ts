@@ -18,6 +18,23 @@ const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   ExitPlanMode: 'interact',
   ToolSearch: 'search',
   Skill: 'interact',
+  // Codex core tool names. Keep these in the same closed vocabulary used by
+  // Claude Code so cross-agent network receipts are directly comparable.
+  exec: 'execute',
+  exec_command: 'execute',
+  write_stdin: 'execute',
+  js: 'execute',
+  apply_patch: 'write',
+  view_image: 'read',
+  fetch: 'web',
+  request_user_input: 'interact',
+  update_plan: 'interact',
+  wait: 'interact',
+  wait_agent: 'interact',
+  spawn_agent: 'interact',
+  send_message: 'interact',
+  followup_task: 'interact',
+  list_agents: 'interact',
 }
 
 export function classifyToolCategory(toolName: string): ToolCategory {
@@ -26,6 +43,11 @@ export function classifyToolCategory(toolName: string): ToolCategory {
 
   // MCP tools: mcp__server__tool_name
   if (toolName.startsWith('mcp__')) return 'interact'
+
+  // Connected-app tools in Codex rollout logs may be serialized with a
+  // leading underscore rather than the MCP prefix. They are still external
+  // interactions, not local reads/writes.
+  if (toolName.startsWith('_')) return 'interact'
 
   return 'unknown'
 }

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export async function POST() {
   const appId = process.env.WORLD_ID_APP_ID
   const rpId = process.env.WORLD_ID_RP_ID
-  const action = process.env.WORLD_ID_ACTION ?? 'pollen-verify-v2'
+  const action = process.env.WORLD_ID_ACTION ?? 'pollen-verify-v6'
   const signingKey = process.env.RP_SIGNING_KEY
   if (!appId || !rpId || !signingKey) {
     return NextResponse.json(

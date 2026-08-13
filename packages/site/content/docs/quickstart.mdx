@@ -17,7 +17,7 @@ Get contributing in four steps. You need Node.js 20+ and a founding-panel invite
 Install the beta from its public GitHub release:
 
 ```bash
-npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.3/pollen-cli-0.1.0-beta.3.tgz
+npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.4/pollen-cli-0.1.0-beta.4.tgz
 ```
 </Step>
 <Step>
@@ -67,10 +67,12 @@ This reads only your local SQLite database and performs no upload.
 Sync only after inspecting your local data:
 
 ```bash
+pollen sync --dry-run
 pollen sync
 ```
 
-The client sends six coarsened fields. The server rejects prompts, arguments,
+The dry run prints aggregate counts and uploads nothing. The client sends six
+coarsened fields. The server rejects prompts, arguments,
 source, files, shell output, transcript paths, credentials, and unknown fields.
 </Step>
 </Steps>

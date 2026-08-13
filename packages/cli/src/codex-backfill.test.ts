@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type Database from 'better-sqlite3'
 import { initDb, getSession } from './store.js'
 import { backfillCodex } from './codex-backfill.js'
+import { buildNetworkReceipts } from './network-receipt.js'
 
 // Fixture grounded in the REAL local rollout schema (~/.codex/sessions/2026/08,
 // cli_version 0.146.0-alpha.9.2). All values synthesized/redacted.
@@ -31,6 +32,18 @@ function fixtureLines(): string[] {
       cwd: '/tmp/fixture-project',
       model: 'gpt-5.6-sol',
       effort: 'medium',
+    }),
+    // Codex can prepend app/AGENTS context as separate user-role parts. Only
+    // the actual user-authored part should feed Pollen's shared classifier.
+    line('2026-08-01T14:00:44.000Z', 'response_item', {
+      type: 'message',
+      id: 'msg_prompt_0001',
+      role: 'user',
+      content: [
+        { type: 'input_text', text: '<recommended_plugins>SECRET injected context</recommended_plugins>' },
+        { type: 'input_text', text: '# AGENTS.md instructions\nSECRET workspace policy' },
+        { type: 'input_text', text: 'fix the failing API test without storing this raw prompt' },
+      ],
     }),
     // unknown event_msg subtype — must be ignored
     line('2026-08-01T14:00:43.000Z', 'event_msg', {
@@ -145,6 +158,7 @@ describe('backfillCodex', () => {
     expect(result.sessions).toBe(1)
     expect(result.toolEvents).toBe(3)
     expect(result.skippedFiles).toBe(0)
+    expect(result.warnings).toEqual([])
 
     const session = getSession(db, SESSION_ID)!
     expect(session).toBeDefined()
@@ -153,6 +167,8 @@ describe('backfillCodex', () => {
     expect(session.started_at).toBe(Date.parse('2026-08-01T14:00:40.737Z'))
     expect(session.ended_at).toBe(Date.parse('2026-08-01T14:05:01.000Z'))
     expect(session.end_reason).toBe('codex_backfill')
+    expect(session.prompt_count).toBe(1)
+    expect(session.dominant_intent).toBe('debugging')
     expect(session.tool_use_count).toBe(3)
     expect(session.tool_failure_count).toBe(2)
 
@@ -166,6 +182,24 @@ describe('backfillCodex', () => {
       "SELECT metadata FROM lifecycle_events WHERE session_id = ? AND event_type = 'codex_session_meta'"
     ).get(SESSION_ID) as { metadata: string }
     expect(JSON.parse(meta.metadata).cli_version).toBe('0.146.0-alpha.9.2')
+
+    const contributions = db.prepare('SELECT * FROM contributions WHERE session_id = ?')
+      .all(SESSION_ID) as Array<Record<string, unknown>>
+    expect(contributions).toHaveLength(1)
+    expect(contributions[0].action).toBe('fix')
+    expect(contributions[0].topic).toBe('api')
+    expect(JSON.stringify(contributions)).not.toContain('SECRET')
+    expect(JSON.stringify(contributions)).not.toContain('without storing this raw prompt')
+
+    const receipts = buildNetworkReceipts(db, 'contributor-test')
+    expect(receipts).toHaveLength(1)
+    expect(receipts[0]).toMatchObject({
+      intent: 'debugging',
+      agent: 'codex',
+      model: 'gpt-5.6-sol',
+      tool_category_sequence: ['execute', 'execute', 'interact'],
+      terminal_state: 'error_exit',
+    })
   })
 
   it('maps tool call pairs and mcp_tool_call_end correctly', async () => {
@@ -194,6 +228,42 @@ describe('backfillCodex', () => {
     expect(rows[2].duration_ms).toBe(2500)
 
     expect(rows.map(r => r.sequence_number)).toEqual([0, 1, 2])
+  })
+
+  it('normalizes legacy event_msg user messages through the shared classifier', async () => {
+    const sid = '01900000-cccc-7000-8000-000000000003'
+    mkdirSync(join(sessionsDir, '2026', '08', '02'), { recursive: true })
+    writeFileSync(join(sessionsDir, '2026', '08', '02', 'rollout-legacy-user-message.jsonl'), [
+      line('2026-08-02T11:00:00.000Z', 'session_meta', {
+        session_id: sid,
+        timestamp: '2026-08-02T11:00:00.000Z',
+        cwd: '/tmp/api-project',
+        cli_version: '0.100.0',
+      }),
+      line('2026-08-02T11:00:01.000Z', 'turn_context', { model: 'gpt-5-codex' }),
+      line('2026-08-02T11:00:02.000Z', 'event_msg', {
+        type: 'user_message',
+        message: 'debug the database migration SECRET legacy raw text',
+        images: [],
+        local_images: [],
+        text_elements: [],
+      }),
+      line('2026-08-02T11:05:00.000Z', 'event_msg', { type: 'task_complete' }),
+    ].join('\n'))
+
+    await backfillCodex(db, { sessionsDir, days: 30, now: NOW })
+
+    const session = getSession(db, sid)!
+    expect(session.prompt_count).toBe(1)
+    // Uses the same classifier as Claude; "migration" is a strong devops
+    // signal in the shared taxonomy even though the action label is "fix".
+    expect(session.dominant_intent).toBe('devops')
+    const contribution = db.prepare('SELECT * FROM contributions WHERE session_id = ?')
+      .get(sid) as Record<string, unknown>
+    expect(contribution.action).toBe('fix')
+    expect(contribution.topic).toBe('database')
+    expect(JSON.stringify(contribution)).not.toContain('SECRET')
+    expect(JSON.stringify(contribution)).not.toContain('legacy raw text')
   })
 
   it('is idempotent — re-running changes nothing', async () => {

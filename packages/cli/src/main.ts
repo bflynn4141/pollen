@@ -21,7 +21,7 @@ import { runVerify, runStatus } from './verify.js'
 import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
-import { buildNetworkReceipts } from './network-receipt.js'
+import { buildNetworkReceipts, summarizeNetworkReceipts } from './network-receipt.js'
 import { syncNetworkReceipts } from './network-sync.js'
 import { joinFoundingPanel } from './join.js'
 
@@ -109,6 +109,17 @@ try {
       const receipts = buildNetworkReceipts(db, config.contributor_id)
       if (receipts.length === 0) {
         console.log('No completed sessions are ready to sync.')
+        break
+      }
+      if (process.argv.includes('--dry-run')) {
+        const summary = summarizeNetworkReceipts(receipts)
+        console.log(`${summary.total} local privacy-safe network receipts are eligible:`)
+        console.log(`  Codex:       ${summary.codex}`)
+        console.log(`  Claude Code: ${summary.claudeCode}`)
+        if (summary.earliestObservedAt != null && summary.latestObservedAt != null) {
+          console.log(`  Window:      ${new Date(summary.earliestObservedAt).toISOString()} to ${new Date(summary.latestObservedAt).toISOString()}`)
+        }
+        console.log('Dry run only; nothing was uploaded. The server deduplicates receipt IDs during sync.')
         break
       }
       console.log(`Uploading ${receipts.length} privacy-safe network receipt${receipts.length === 1 ? '' : 's'}...`)
@@ -256,7 +267,7 @@ try {
       break
     }
     case 'verify': {
-      await runVerify()
+      if (!await runVerify()) process.exitCode = 1
       break
     }
     case 'status': {
@@ -474,8 +485,8 @@ try {
         '  seed        Generate 20 realistic v4 demo sessions',
         '  my          Interactive dashboard — see exactly what you\'ve contributed',
         '  brief       Weekly top-3 coaching digest: pollen brief [--days 7] [--out <path>] [--open] [--send] [--to <email>]',
-        '  sync        Upload closed, privacy-safe network receipts',
-        '  verify      Prove you are a unique human via World ID',
+        '  sync [--dry-run]  Preview or upload closed, privacy-safe network receipts',
+        '  verify      Complete Orb-backed World ID verification',
         '  status      Show contributor identity + verification status',
         '  wallet      Set up a wallet (managed or bring-your-own)',
         '  register    Link an Ethereum wallet: pollen register <address>',

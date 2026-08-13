@@ -78,27 +78,83 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isIdKitResult(
+function isFieldHexInteger(value: unknown): value is string {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{1,64}$/.test(value)
+}
+
+function equalHexIntegers(left: unknown, right: string): boolean {
+  return isFieldHexInteger(left) && BigInt(left) === BigInt(right)
+}
+
+function canonicalHexInteger(value: string): string {
+  return `0x${BigInt(value).toString(16)}`
+}
+
+export type IdKitValidationStage =
+  | 'protocol'
+  | 'action'
+  | 'environment'
+  | 'response_count'
+  | 'identifier'
+  | 'issuer_schema'
+  | 'signal'
+  | 'nullifier'
+  | 'proof'
+
+type ValidIdKitResult = Record<string, unknown> & {
+  responses: Array<{
+    identifier: 'proof_of_human' | 'orb'
+    issuer_schema_id: 1
+    nullifier: string
+    proof: unknown
+    [key: string]: unknown
+  }>
+}
+
+type IdKitValidationResult =
+  | { ok: true; value: ValidIdKitResult }
+  | { ok: false; stage: IdKitValidationStage }
+
+export function validateIdKitResult(
   value: unknown,
   expectedAction: string,
   contributorId: string,
-): value is Record<string, unknown> {
-  if (!isRecord(value)) return false
-  if (value.protocol_version !== '3.0' && value.protocol_version !== '4.0') return false
-  if (typeof value.nonce !== 'string' || value.nonce.length === 0) return false
-  if (value.action !== expectedAction || value.environment !== 'production') return false
-  if (!Array.isArray(value.responses) || value.responses.length !== 1) return false
+): IdKitValidationResult {
+  // A nonce is part of the signed protocol envelope. Group its structural
+  // check under the protocol stage so diagnostics never echo the nonce.
+  if (
+    !isRecord(value)
+    || value.protocol_version !== '4.0'
+    || typeof value.nonce !== 'string'
+    || value.nonce.length === 0
+  ) return { ok: false, stage: 'protocol' }
+  if (value.action !== expectedAction) return { ok: false, stage: 'action' }
+  if (value.environment !== 'production') return { ok: false, stage: 'environment' }
+  if (!Array.isArray(value.responses) || value.responses.length !== 1) {
+    return { ok: false, stage: 'response_count' }
+  }
 
   const expectedSignalHash = hashSignal(contributorId).toLowerCase()
-  return value.responses.every(response => (
-    isRecord(response)
-      && response.identifier === 'proof_of_human'
-      && Array.isArray(response.proof)
-      && typeof response.nullifier === 'string'
-      && /^0x[0-9a-fA-F]{64}$/.test(response.nullifier)
-      && typeof response.signal_hash === 'string'
-      && response.signal_hash.toLowerCase() === expectedSignalHash
-  ))
+  const [response] = value.responses
+  if (
+    !isRecord(response)
+    || (response.identifier !== 'proof_of_human' && response.identifier !== 'orb')
+  ) {
+    return { ok: false, stage: 'identifier' }
+  }
+  if (response.issuer_schema_id !== 1) return { ok: false, stage: 'issuer_schema' }
+  if (!equalHexIntegers(response.signal_hash, expectedSignalHash)) {
+    return { ok: false, stage: 'signal' }
+  }
+  if (!isFieldHexInteger(response.nullifier)) return { ok: false, stage: 'nullifier' }
+  // The proof encoding is owned by the World ID protocol and can evolve
+  // independently of Pollen. Require the envelope field, but forward its
+  // value unchanged and leave serialization and cryptography to World.
+  if (!Object.prototype.hasOwnProperty.call(response, 'proof')) {
+    return { ok: false, stage: 'proof' }
+  }
+
+  return { ok: true, value: value as ValidIdKitResult }
 }
 
 function isContributorId(value: unknown): value is string {
@@ -177,9 +233,19 @@ export async function handleWorldIdVerify(
   if (!isRecord(body) || !isContributorId(body.contributor_id)) {
     return json({ success: false, code: 'invalid_contributor_id' }, 400)
   }
-  if (!isIdKitResult(body.idkit_result, env.WORLD_ID_ACTION, body.contributor_id)) {
-    return json({ success: false, code: 'invalid_idkit_result' }, 400)
+  const idkitValidation = validateIdKitResult(
+    body.idkit_result,
+    env.WORLD_ID_ACTION,
+    body.contributor_id,
+  )
+  if (!idkitValidation.ok) {
+    return json({
+      success: false,
+      code: 'invalid_idkit_result',
+      detail: `IDKit result failed validation at ${idkitValidation.stage}`,
+    }, 400)
   }
+  const idkitResult = idkitValidation.value
 
   const fetchImpl = dependencies.fetch ?? fetch
   let verifierResponse: Response
@@ -190,7 +256,7 @@ export async function handleWorldIdVerify(
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         // The Developer Portal requires the IDKit result without field remapping.
-        body: JSON.stringify(body.idkit_result),
+        body: JSON.stringify(idkitResult),
       },
     )
   } catch {
@@ -222,12 +288,9 @@ export async function handleWorldIdVerify(
   // World has now cryptographically verified the payload as-is. Read identity
   // fields from that verified payload rather than relying on optional duplicate
   // fields in the verifier's response envelope.
-  const [proofOfHuman] = body.idkit_result.responses as Array<{
-    identifier: string
-    nullifier: string
-  }>
-  const nullifier = proofOfHuman.nullifier.toLowerCase()
-  const verificationLevel = proofOfHuman.identifier
+  const [verifiedCredential] = idkitResult.responses
+  const nullifier = canonicalHexInteger(verifiedCredential.nullifier)
+  const verificationLevel = 'proof_of_human'
 
   const bind = dependencies.bindNullifier ?? bindWorldIdNullifier
   let binding: BindResult
