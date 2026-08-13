@@ -13,12 +13,33 @@ const PAYABLE = 2
 const WALLET_A = '0x1111111111111111111111111111111111111111'
 const WALLET_B = '0x2222222222222222222222222222222222222222'
 const WALLET_C = '0x3333333333333333333333333333333333333333'
+const WALLET_D = '0x4444444444444444444444444444444444444444'
+const WALLET_E = '0x5555555555555555555555555555555555555555'
 
 function scores(): EligibleScore[] {
   return [
     { contributor_id: 'aaa', wallet_address: WALLET_A, score: '100' },
     { contributor_id: 'bbb', wallet_address: WALLET_B, score: '200' },
     { contributor_id: 'ccc', wallet_address: WALLET_C, score: '100' },
+  ]
+}
+
+function scoresAtQuorum(): EligibleScore[] {
+  return [
+    ...scores(),
+    { contributor_id: 'ddd', wallet_address: WALLET_D, score: '100' },
+    { contributor_id: 'eee', wallet_address: WALLET_E, score: '100' },
+  ]
+}
+
+function defaultEligibleScores(): EligibleScore[] {
+  // The zero-score rows satisfy the identity/quorum precondition while keeping
+  // older payout-math fixtures focused on aaa/bbb/ccc. Production receipt
+  // scores are positive; computePayouts independently tests zero removal.
+  return [
+    ...scores(),
+    { contributor_id: 'ddd', wallet_address: WALLET_D, score: '0' },
+    { contributor_id: 'eee', wallet_address: WALLET_E, score: '0' },
   ]
 }
 
@@ -33,8 +54,8 @@ function mockStore(state: MockStoreState = {}) {
   const saved: Array<{ epoch: number; ids: string[]; transactionId: string }> = []
   const marked: Array<{ epoch: number; ids: string[]; status: string; txHash: string | null }> = []
   const store: PayoutStore = {
-    countEpochScores: vi.fn(async () => state.scoreCount ?? (state.eligible ?? scores()).length),
-    fetchEligibleScores: vi.fn(async () => state.eligible ?? scores()),
+    countEpochScores: vi.fn(async () => state.scoreCount ?? (state.eligible ?? defaultEligibleScores()).length),
+    fetchEligibleScores: vi.fn(async () => state.eligible ?? defaultEligibleScores()),
     fetchPayouts: vi.fn(async () => state.existing ?? []),
     insertPendingPayouts: vi.fn(async (epoch, rows) => { inserted.push({ epoch, rows }) }),
     savePendingTransaction: vi.fn(async (epoch, ids, transactionId) => {
@@ -122,6 +143,66 @@ describe('runPayout scoring precondition', () => {
     await expect(runPayout({ store, chain, log: silent }, { nowMs: NOW_EPOCH_3 }))
       .rejects.toThrow(/epoch-close/)
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('runPayout eligible-contributor quorum', () => {
+  it('fails closed below five eligible contributors before any write or chain proposal', async () => {
+    const { store, inserted, saved, marked } = mockStore({ eligible: scores() })
+    const { chain, calls } = mockChain()
+
+    await expect(runPayout({ store, chain, log: silent }, { nowMs: NOW_EPOCH_3 }))
+      .rejects.toThrow(/eligible-contributor quorum.*3\/5/i)
+
+    expect(inserted).toHaveLength(0)
+    expect(saved).toHaveLength(0)
+    expect(marked).toHaveLength(0)
+    expect(chain.prepareMintBatch).not.toHaveBeenCalled()
+    expect(chain.executeMintBatch).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
+  })
+
+  it('keeps dry-run diagnostic-only and returns a structured blocked result below quorum', async () => {
+    const lines: string[] = []
+    const { store, inserted, saved, marked } = mockStore({ eligible: scores() })
+    const { chain, calls } = mockChain()
+
+    const result = await runPayout(
+      { store, chain, log: line => lines.push(line) },
+      { nowMs: NOW_EPOCH_3, dryRun: true },
+    )
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      blocked: true,
+      blockReason: 'eligible_contributor_quorum',
+      eligibleContributors: 3,
+      requiredEligibleContributors: 5,
+      minted: 0,
+    })
+    expect(lines.join('\n')).toMatch(/blocked.*3\/5.*eligible contributors/i)
+    expect(inserted).toHaveLength(0)
+    expect(saved).toHaveLength(0)
+    expect(marked).toHaveLength(0)
+    expect(chain.prepareMintBatch).not.toHaveBeenCalled()
+    expect(chain.executeMintBatch).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
+  })
+
+  it('permits a payout at exactly five eligible contributors', async () => {
+    const { store } = mockStore({ eligible: scoresAtQuorum() })
+    const { chain, calls } = mockChain()
+
+    const result = await runPayout({ store, chain, log: silent }, { nowMs: NOW_EPOCH_3 })
+
+    expect(result).toMatchObject({
+      blocked: false,
+      blockReason: null,
+      eligibleContributors: 5,
+      requiredEligibleContributors: 5,
+      minted: 5,
+    })
+    expect(calls).toHaveLength(1)
   })
 })
 

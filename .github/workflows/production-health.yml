@@ -24,7 +24,9 @@ jobs:
             https://pollen-api.bflynn4141.workers.dev/admin/health)
           jq -e '.ok == true and .epoch.epoch_scores > 0 and .relayer.healthy == true' <<<"${body}" >/dev/null
           if ! jq -e '.epoch.payout_ready == true' <<<"${body}" >/dev/null; then
-            echo '::warning::The scoring pipeline is healthy, but no contributor is payout-eligible (World ID plus bound wallet required).'
+            current=$(jq -r '.epoch.payout_eligible_contributors' <<<"${body}")
+            required=$(jq -r '.epoch.required_payout_eligible_contributors' <<<"${body}")
+            echo "::warning::The scoring pipeline is healthy, but payout quorum is unmet (${current}/${required} eligible contributors). World ID plus a cryptographically bound wallet is required."
           fi
 
       - name: Check Base contract bytecode

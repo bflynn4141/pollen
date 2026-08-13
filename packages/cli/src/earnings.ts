@@ -5,9 +5,10 @@
  *   epoch_scores(epoch, contributor_id, score, breakdown JSONB, computed_at)
  *   payouts(epoch, contributor_id, wallet_address, amount, tx_hash, status)
  *
- * The breakdown JSONB carries the scoring-v1 formula components written by
- * the epoch-close cron and is rendered here for transparency. Falls back
- * gracefully when the tables aren't migrated yet.
+ * The breakdown JSONB carries the receipt-backed scoring-v2 components (or
+ * historical scoring-v1 components) written by the epoch-close cron and is
+ * rendered here for transparency. Falls back gracefully when the tables
+ * aren't migrated yet.
  */
 import { neon } from '@neondatabase/serverless'
 import { loadConfig, type ParaWallet } from './config.js'
@@ -39,10 +40,18 @@ function payoutStatusIcon(status: string): string {
   }
 }
 
-/** Scoring-v1 breakdown JSONB written by the epoch-close cron. */
+/** Versioned breakdown JSONB written by the epoch-close cron. */
 export interface ScoreBreakdown {
   formula?: string
   active_days?: number
+  receipts_scored?: number | string
+  receipt_points?: number | string
+  tool_steps_capped?: number | string
+  completed_receipts?: number | string
+  checked_receipts?: number | string
+  distinct_intents?: number | string
+  distinct_agents?: number | string
+  distinct_models?: number | string
   weighted_sessions?: number | string
   tool_events_capped?: number | string
   avg_satisfaction?: number | string | null
@@ -161,7 +170,7 @@ export function renderEarnings(data: EarningsData): string {
   lines.push(`  Next Payout:   ${formatDate(nextEpochClose().getTime())} (epochs close Tuesdays 00:00 UTC)`)
   lines.push('')
 
-  // Scores by epoch (real epoch_scores + v1 breakdown)
+  // Scores by epoch (real epoch_scores + versioned transparent breakdown)
   if (data.scores === null) {
     lines.push('  (epoch_scores not available yet — run migration 003_contributors.sql)')
     lines.push('')
@@ -177,16 +186,34 @@ export function renderEarnings(data: EarningsData): string {
       const b = bar(maxScore > 0 ? score / maxScore : 0, 15)
       lines.push(`  ${epochLabel(epoch).padEnd(40)} ${score.toFixed(2).padStart(10)}  ${b}`)
       if (breakdown) {
-        lines.push(
-          `    Active days: ${formatComponent(breakdown.active_days, 0)}` +
-          `  Sessions (weighted): ${formatComponent(breakdown.weighted_sessions)}` +
-          `  Tool events (capped): ${formatComponent(breakdown.tool_events_capped, 0)}`,
-        )
-        lines.push(
-          `    Base score:  ${formatComponent(breakdown.base_score)}` +
-          `  Quality multiplier:  ${formatComponent(breakdown.quality_multiplier, 4)}` +
-          `  Avg satisfaction: ${formatComponent(breakdown.avg_satisfaction)}`,
-        )
+        if (breakdown.formula === 'v2-network-receipts') {
+          lines.push(
+            `    Active days: ${formatComponent(breakdown.active_days, 0)}` +
+            `  Receipts (capped): ${formatComponent(breakdown.receipts_scored, 0)}` +
+            `  Receipt points: ${formatComponent(breakdown.receipt_points)}`,
+          )
+          lines.push(
+            `    Completed: ${formatComponent(breakdown.completed_receipts, 0)}` +
+            `  Checks run: ${formatComponent(breakdown.checked_receipts, 0)}` +
+            `  Tool steps (capped): ${formatComponent(breakdown.tool_steps_capped, 0)}`,
+          )
+          lines.push(
+            `    Diversity (not score-weighted): ${formatComponent(breakdown.distinct_intents, 0)} intents` +
+            `  ${formatComponent(breakdown.distinct_agents, 0)} agents` +
+            `  ${formatComponent(breakdown.distinct_models, 0)} models`,
+          )
+        } else {
+          lines.push(
+            `    Active days: ${formatComponent(breakdown.active_days, 0)}` +
+            `  Sessions (weighted): ${formatComponent(breakdown.weighted_sessions)}` +
+            `  Tool events (capped): ${formatComponent(breakdown.tool_events_capped, 0)}`,
+          )
+          lines.push(
+            `    Base score:  ${formatComponent(breakdown.base_score)}` +
+            `  Quality multiplier:  ${formatComponent(breakdown.quality_multiplier, 4)}` +
+            `  Avg satisfaction: ${formatComponent(breakdown.avg_satisfaction)}`,
+          )
+        }
       }
     }
     lines.push('')

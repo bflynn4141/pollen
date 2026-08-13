@@ -24,6 +24,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
+import { privateKeyToAccount } from 'viem/accounts'
 
 /** Raw EVM call as `splits transactions create custom` expects it. */
 export interface SplitsCall {
@@ -184,28 +185,148 @@ export class SplitsMcpDriver implements SplitsDriver {
   }
 }
 
+interface SplitsCommandResult {
+  code: number | null
+  stdout: string
+  stderr: string
+}
+
+async function runSplitsCommand(
+  bin: string,
+  args: string[],
+  stdin?: string,
+): Promise<SplitsCommandResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'], env: process.env })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.setEncoding('utf-8')
+    child.stderr.setEncoding('utf-8')
+    child.stdout.on('data', (chunk: string) => { stdout += chunk })
+    child.stderr.on('data', (chunk: string) => { stderr += chunk })
+    child.once('error', reject)
+    child.once('close', code => resolve({ code, stdout, stderr }))
+    if (stdin !== undefined) child.stdin.write(stdin)
+    child.stdin.end()
+  })
+}
+
+function signerAddressForKey(key: string): `0x${string}` {
+  const raw = key.trim()
+  const normalized = (raw.startsWith('0x') || raw.startsWith('0X'))
+    ? `0x${raw.slice(2)}`
+    : `0x${raw}`
+  try {
+    return privateKeyToAccount(normalized as `0x${string}`).address
+  } catch {
+    // Never include the secret (or a viem error that may echo it) in CI logs.
+    throw new Error('SPLITS_SIGNER_KEY is not a valid EVM private key.')
+  }
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function nestedRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const value = record[key]
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function localSignerFromWhoami(stdout: string): { address: string; signerId: string | null } | null {
+  const root = parseJsonRecord(stdout.trim())
+  if (!root) return null
+
+  // Incur's argv JSON formatter wraps the command result in `data`; the
+  // Splits whoami command itself also returns a `data` envelope.
+  const candidates: Record<string, unknown>[] = [root]
+  const first = nestedRecord(root, 'data')
+  if (first) {
+    candidates.push(first)
+    const second = nestedRecord(first, 'data')
+    if (second) candidates.push(second)
+  }
+  for (const candidate of candidates) {
+    const localKey = nestedRecord(candidate, 'localKey')
+    if (!localKey || typeof localKey.address !== 'string') continue
+    return {
+      address: localKey.address,
+      signerId: typeof localKey.signerId === 'string' && localKey.signerId.length > 0
+        ? localKey.signerId
+        : null,
+    }
+  }
+  return null
+}
+
+function commandFailureDetail(result: SplitsCommandResult): string {
+  const json = parseJsonRecord(result.stdout.trim())
+  const error = json ? nestedRecord(json, 'error') : null
+  if (error && typeof error.message === 'string' && error.message.length > 0) return error.message
+  return result.stderr.split('\n').map(line => line.trim()).find(Boolean) ?? 'no error detail'
+}
+
 /**
  * Import SPLITS_SIGNER_KEY into the CLI's local keystore (fresh CI runners
  * have none). Uses plain argv mode with the key piped over stdin, matching
  * the CLI's documented `echo $PRIVATE_KEY | splits auth import-key` flow.
+ *
+ * Splits CLI 0.2.11 intentionally rejects every import when a local key is
+ * already present, including an identical key. That makes sequential
+ * preflight -> payout processes fail on one CI runner. We only treat that
+ * exact refusal as idempotent after `auth whoami` proves the existing local
+ * address matches SPLITS_SIGNER_KEY and has a registered signer id. A
+ * different, absent, unregistered, or unverifiable key remains a hard error.
  * A no-op when the env var is unset (assumes a pre-provisioned local key).
  */
 export async function ensureLocalSignerKey(bin: string = SPLITS_BIN): Promise<void> {
   const key = process.env.SPLITS_SIGNER_KEY
   if (!key) return
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(bin, ['auth', 'import-key', '--format', 'json'], { stdio: ['pipe', 'pipe', 'pipe'], env: process.env })
-    let stderr = ''
-    child.stderr.setEncoding('utf-8')
-    child.stderr.on('data', (c: string) => { stderr += c })
-    child.on('error', reject)
-    child.on('exit', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`splits auth import-key failed (exit ${code}): ${stderr.split('\n')[0]}`))
-    })
-    child.stdin.write(`${key}\n`)
-    child.stdin.end()
-  })
+  const expectedAddress = signerAddressForKey(key)
+  const imported = await runSplitsCommand(
+    bin,
+    ['auth', 'import-key', '--format', 'json'],
+    `${key}\n`,
+  )
+  if (imported.code === 0) return
+
+  const combinedOutput = `${imported.stdout}\n${imported.stderr}`
+  if (!combinedOutput.includes('A local key already exists')) {
+    throw new Error(
+      `splits auth import-key failed (exit ${imported.code}): ${commandFailureDetail(imported)}`,
+    )
+  }
+
+  const identity = await runSplitsCommand(bin, ['auth', 'whoami', '--format', 'json'])
+  if (identity.code !== 0) {
+    throw new Error(
+      `splits auth import-key found an existing key, but auth whoami could not verify it ` +
+      `(exit ${identity.code}): ${commandFailureDetail(identity)}`,
+    )
+  }
+  const localSigner = localSignerFromWhoami(identity.stdout)
+  if (!localSigner) {
+    throw new Error('splits auth import-key found an existing key, but auth whoami reported no local signer.')
+  }
+  if (localSigner.address.toLowerCase() !== expectedAddress.toLowerCase()) {
+    throw new Error(
+      `Existing Splits local key ${localSigner.address} does not match SPLITS_SIGNER_KEY address ${expectedAddress}.`,
+    )
+  }
+  if (!localSigner.signerId) {
+    throw new Error(
+      `Existing Splits local key ${localSigner.address} is not registered with Splits; refusing to continue.`,
+    )
+  }
 }
 
 // ── Typed helpers over the driver ───────────────────────

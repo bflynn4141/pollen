@@ -4,7 +4,9 @@
 -- contributors: one row per CLI install (contributor_id from ~/.pollen/config.json).
 --   - wallet_address binding is first-write-wins (enforced in application upserts).
 --   - world_id_nullifier UNIQUE = one human (World ID) can back at most one contributor.
--- epoch_scores: output of the weekly epoch-close cron (scoring v1).
+-- epoch_scores: versioned output of the weekly epoch-close cron. Production
+-- scoring v2 reads only authenticated network_receipts; breakdown records the
+-- formula version and capped components used for each contributor.
 -- payouts: written by the AgentKit payout agent after mintBatch.
 
 CREATE TABLE IF NOT EXISTS contributors (

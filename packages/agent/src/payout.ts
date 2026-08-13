@@ -8,12 +8,14 @@
  *   2. Assert epoch_scores rows exist (else: run the epoch-close cron first).
  *   3. Eligibility: World ID-verified contributors with a bound wallet
  *      (World ID verified and an EIP-191 binding that recovers to wallet_address).
- *   4. amount_i = floor(epochPool(epoch) * score_i / total_score); zeros dropped.
- *   5. Idempotency: existing payouts rows for the epoch abort the run unless
+ *   4. Quorum: at least five eligible contributors must exist. Normal runs
+ *      fail closed below quorum; --dry-run returns a structured blocked result.
+ *   5. amount_i = floor(epochPool(epoch) * score_i / total_score); zeros dropped.
+ *   6. Idempotency: existing payouts rows for the epoch abort the run unless
  *      --resume, which skips confirmed rows and reconciles any durable Splits
  *      proposal IDs left pending by a crash.
- *   6. --dry-run prints the payout table and exits before any DB write or tx.
- *   7. Write payouts rows status='pending', create each chunk proposal, persist
+ *   7. --dry-run prints the payout table and exits before any DB write or tx.
+ *   8. Write payouts rows status='pending', create each chunk proposal, persist
  *      its ID before signing, then execute it. A confirmed receipt replaces
  *      the proposal ID with the chain tx hash.
  */
@@ -23,6 +25,8 @@ import type { PayoutStore } from './db.js'
 import { currentEpoch, epochPool } from './epoch.js'
 import type { MintChain } from './mint.js'
 import { computePayouts, type PayoutAmount } from './prorata.js'
+
+export const MIN_PAYOUT_ELIGIBLE_CONTRIBUTORS = 5
 
 export class PayoutAbort extends Error {
   constructor(message: string, public readonly exitCode: number = 1) {
@@ -48,6 +52,10 @@ export interface PayoutDeps {
 export interface PayoutRunResult {
   epoch: number
   dryRun: boolean
+  blocked: boolean
+  blockReason: 'eligible_contributor_quorum' | null
+  eligibleContributors: number
+  requiredEligibleContributors: number
   planned: number
   minted: number
   skipped: number
@@ -89,13 +97,18 @@ export async function runPayout(deps: PayoutDeps, opts: PayoutOptions = {}): Pro
     )
   }
 
-  // 3-4. Eligible contributors + pro-rata amounts
+  // 3-5. Eligible contributors + quorum + pro-rata amounts
   const eligible = await store.fetchEligibleScores(epoch)
   log(`Epoch ${epoch}: ${scoreCount} scored contributors, ${eligible.length} eligible (World ID verified + cryptographic wallet binding).`)
   const pool = epochPool(epoch)
   const payoutsAll = computePayouts(eligible, pool)
+  const quorumMet = eligible.length >= MIN_PAYOUT_ELIGIBLE_CONTRIBUTORS
+  const resultPolicy = {
+    eligibleContributors: eligible.length,
+    requiredEligibleContributors: MIN_PAYOUT_ELIGIBLE_CONTRIBUTORS,
+  }
 
-  // 5. Idempotency
+  // 6. Idempotency
   const existing = await store.fetchPayouts(epoch)
   const existingByContributor = new Map(existing.map(p => [p.contributor_id, p]))
   if (existing.length > 0 && !resume && !dryRun) {
@@ -118,18 +131,66 @@ export async function runPayout(deps: PayoutDeps, opts: PayoutOptions = {}): Pro
     return prior?.status !== 'confirmed' && !(prior?.status === 'pending' && prior.tx_hash)
   })
 
-  // 6. Dry run: print and exit before any write or tx
+  // 7. Dry run: print and exit before any write or tx. A blocked dry run is a
+  // successful diagnostic result, consistent with dry-run's inspection-only
+  // treatment of stale epochs and existing payout rows.
   printTable(log, epoch, pool, payoutsAll, existingByContributor)
   if (dryRun) {
     log('')
+    if (!quorumMet) {
+      log(`--dry-run BLOCKED: eligible-contributor quorum unmet (${eligible.length}/${MIN_PAYOUT_ELIGIBLE_CONTRIBUTORS} eligible contributors). ` +
+        'No payouts would be written and no transactions would be sent.')
+      return {
+        epoch,
+        dryRun: true,
+        blocked: true,
+        blockReason: 'eligible_contributor_quorum',
+        ...resultPolicy,
+        planned: payoutsAll.length,
+        minted: 0,
+        skipped,
+        txHashes: [],
+      }
+    }
     log(`--dry-run: no payouts written, no transactions sent. Would mint to ${freshToMint.length} wallets` +
       ` in ${chunk(freshToMint).length} new tx and reconcile ${pendingTransactions.size} pending tx (${skipped} already confirmed).`)
-    return { epoch, dryRun: true, planned: payoutsAll.length, minted: 0, skipped, txHashes: [] }
+    return {
+      epoch,
+      dryRun: true,
+      blocked: false,
+      blockReason: null,
+      ...resultPolicy,
+      planned: payoutsAll.length,
+      minted: 0,
+      skipped,
+      txHashes: [],
+    }
+  }
+
+  // Hard execution boundary: no payout row write, Splits proposal, signature,
+  // or chain transaction can occur until the exact cryptographically-filtered
+  // eligible list returned by fetchEligibleScores reaches quorum.
+  if (!quorumMet) {
+    throw new PayoutAbort(
+      `Payout blocked: eligible-contributor quorum unmet (${eligible.length}/${MIN_PAYOUT_ELIGIBLE_CONTRIBUTORS}). ` +
+      `Need ${MIN_PAYOUT_ELIGIBLE_CONTRIBUTORS - eligible.length} more scored contributor(s) with World ID verification, ` +
+      'a wallet, and a valid cryptographic wallet binding.',
+    )
   }
 
   if (freshToMint.length === 0 && pendingTransactions.size === 0) {
     log('Nothing to mint — every eligible payout is already confirmed.')
-    return { epoch, dryRun: false, planned: payoutsAll.length, minted: 0, skipped, txHashes: [] }
+    return {
+      epoch,
+      dryRun: false,
+      blocked: false,
+      blockReason: null,
+      ...resultPolicy,
+      planned: payoutsAll.length,
+      minted: 0,
+      skipped,
+      txHashes: [],
+    }
   }
 
   const prepareMintBatch = chain.prepareMintBatch
@@ -138,7 +199,7 @@ export async function runPayout(deps: PayoutDeps, opts: PayoutOptions = {}): Pro
     throw new PayoutAbort('Mint chain does not support crash-safe proposal persistence; refusing to execute payouts.')
   }
 
-  // 7. Write pending rows, then mint in chunks
+  // 8. Write pending rows, then mint in chunks
   await store.insertPendingPayouts(epoch, freshToMint)
 
   const txHashes: string[] = []
@@ -211,7 +272,17 @@ export async function runPayout(deps: PayoutDeps, opts: PayoutOptions = {}): Pro
   }
 
   log(`Done. Epoch ${epoch}: minted to ${minted} wallets across ${txHashes.length} tx (${skipped} previously confirmed).`)
-  return { epoch, dryRun: false, planned: payoutsAll.length, minted, skipped, txHashes }
+  return {
+    epoch,
+    dryRun: false,
+    blocked: false,
+    blockReason: null,
+    ...resultPolicy,
+    planned: payoutsAll.length,
+    minted,
+    skipped,
+    txHashes,
+  }
 }
 
 function sum(values: bigint[]): bigint {
