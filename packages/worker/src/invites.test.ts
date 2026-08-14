@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   handleCreateInvite,
+  handleListInvites,
   handleRevokeInvite,
   type InviteDependencies,
 } from './invites'
@@ -9,6 +10,7 @@ function dependencies(overrides: Partial<InviteDependencies> = {}): InviteDepend
   return {
     createInvite: vi.fn(async () => undefined),
     revokeInvite: vi.fn(async () => true),
+    listInvites: vi.fn(async () => []),
     ...overrides,
   }
 }
@@ -63,5 +65,23 @@ describe('invite administration', () => {
     )
 
     expect(response.status).toBe(404)
+  })
+
+  it('lists invite metadata without ever returning code hashes or raw codes', async () => {
+    const deps = dependencies({
+      listInvites: vi.fn(async () => [{
+        id: 'invite-id',
+        status: 'active',
+        created_at: '2026-08-13T00:00:00.000Z',
+        expires_at: '2026-08-20T00:00:00.000Z',
+        contributor_id: null,
+      }]),
+    })
+    const response = await handleListInvites(deps)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ invites: [expect.objectContaining({ id: 'invite-id', status: 'active' })] })
+    expect(JSON.stringify(body)).not.toMatch(/code|hash|pinv_/i)
   })
 })

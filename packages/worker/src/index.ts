@@ -33,8 +33,13 @@ import {
 import {
   createInviteDependencies,
   handleCreateInvite,
+  handleListInvites,
   handleRevokeInvite,
 } from './invites'
+import {
+  createOperationsDependencies,
+  handleContributionHealth,
+} from './operations'
 export { X402SettlementRelayer } from './x402-relay'
 
 /**
@@ -259,6 +264,12 @@ app.post('/admin/invites', async c => {
   return handleCreateInvite(c.req.raw, createInviteDependencies(c.env.NEON_DATABASE_URL))
 })
 
+app.get('/admin/invites', c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleListInvites(createInviteDependencies(c.env.NEON_DATABASE_URL))
+})
+
 app.post('/admin/invites/:id/revoke', async c => {
   const denied = requireAdmin(c)
   if (denied) return denied
@@ -267,6 +278,12 @@ app.post('/admin/invites/:id/revoke', async c => {
     c.req.param('id'),
     createInviteDependencies(c.env.NEON_DATABASE_URL),
   )
+})
+
+app.get('/admin/contributions/health', c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleContributionHealth(createOperationsDependencies(c.env.NEON_DATABASE_URL))
 })
 
 app.post('/admin/run/epoch-close', async c => {

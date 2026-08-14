@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Join the founding panel, install local hooks, inspect your data, and upload a privacy-safe receipt.
+description: Join the founding panel, install local hooks, and automatically contribute privacy-safe receipts.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout'
@@ -30,25 +30,25 @@ the one you later verify:
 pollen join <invite-code>
 ```
 
-For Claude Code, run the guided setup. It installs hooks and offers wallet and
-World ID setup:
+Install hooks for detected Claude Code and Codex installations, then check the
+result:
 
 ```bash
-pollen setup
+pollen setup --agents
+pollen doctor
 ```
 
-For Codex, install hooks and run the identity steps separately:
+Wallet and World ID setup are separate and optional for capture. They are
+required only for payout eligibility:
 
 ```bash
-pollen setup --codex
 pollen wallet
 pollen verify
 ```
 
-`pollen setup --codex` installs hooks only. Both setup paths preserve existing
-hooks, and capture stays local in `~/.pollen/local.db`. Wallet and World ID are
-required for payout eligibility, but founding-panel participation does not
-guarantee a payout while payout automation remains in beta.
+Setup preserves existing hooks, and detailed observations stay local in
+`~/.pollen/local.db`. Founding-panel participation does not guarantee a payout
+while payout automation remains in beta.
 </Step>
 <Step>
 ### Inspect locally
@@ -62,20 +62,34 @@ pollen my
 This reads only your local SQLite database and performs no upload.
 </Step>
 <Step>
-### Upload a network receipt
+### Contribute automatically
 
-Sync only after inspecting your local data:
+Completed sessions are placed in a durable local outbox and uploaded in the
+background. Failed uploads retry at later session boundaries. You can preview
+eligible receipts or force a retry:
 
 ```bash
 pollen sync --dry-run
 pollen sync
 ```
 
-The dry run prints aggregate counts and uploads nothing. The client sends six
+The dry run prints aggregate counts and uploads nothing. The client sends only
 coarsened fields. The server rejects prompts, arguments,
 source, files, shell output, transcript paths, credentials, and unknown fields.
 </Step>
 </Steps>
+
+## Contributor controls
+
+```bash
+pollen pause
+pollen resume
+pollen leave --delete-network-data
+```
+
+Pause stops local capture without deleting anything. Leave is explicit and
+permanent: it deletes the contributor's server receipts and revokes the token,
+then recomputes published aggregates. Local history remains available.
 
 ## Next steps
 

@@ -41,7 +41,7 @@ function openDb(commandName: string | undefined) {
   // Keeping them in memory makes `pollen setup --demo` genuinely side-effect free.
   const databaseFreeCommands = new Set([
     undefined, 'help', '--help', '-h', 'setup', 'join', 'verify', 'status',
-    'doctor', 'pause', 'resume', 'leave', 'earnings', 'points', 'register', 'wallet', 'claim',
+    'doctor', 'pause', 'resume', 'leave', 'admin', 'earnings', 'points', 'register', 'wallet', 'claim',
   ])
   if (databaseFreeCommands.has(commandName)) return initDb()
 
@@ -345,6 +345,16 @@ try {
       console.log('  Local history, wallet, and identity settings were preserved.')
       break
     }
+    case 'admin': {
+      const { runAdminCommand } = await import('./admin.js')
+      const result = await runAdminCommand(process.argv.slice(3))
+      if (result.ok) console.log(result.output)
+      else {
+        console.error(result.output)
+        process.exitCode = 1
+      }
+      break
+    }
     case 'setup': {
       if (process.argv.includes('--agents')) {
         const { runAgentSetup } = await import('./agent-setup.js')
@@ -545,6 +555,7 @@ try {
         '  pause           Stop local capture without deleting data',
         '  resume          Resume local capture',
         '  leave --delete-network-data  Delete server receipts and revoke access',
+        '  admin health | invite ...  Operator support commands',
         '  backfill --codex [--days N]  Ingest historical Codex sessions (default 30 days)',
         '  stats       Summary dashboard',
         '  intents     Intent distribution',

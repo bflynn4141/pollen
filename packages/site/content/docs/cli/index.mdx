@@ -1,12 +1,12 @@
 ---
 title: CLI Reference
-description: Reference for local inspection, founding-panel registration, and privacy-safe receipt sync.
+description: Reference for local inspection, founding-panel registration, automatic receipt delivery, and contributor controls.
 ---
 
 # CLI Reference
 
 The Pollen CLI is your local interface for viewing stats, installing hooks,
-and explicitly uploading closed network receipts.
+and controlling automatic delivery of closed network receipts.
 
 ```bash
 pollen <command>
@@ -36,7 +36,11 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 | Command | Description | Requires |
 |---------|-------------|----------|
 | `join <code>` | Register this installation with the founding panel | Invite code |
-| `sync [--dry-run]` | Preview or upload closed, versioned network receipts | Completed `join` |
+| `doctor` | Verify runtime, permissions, hooks, and network authentication | Completed `join` |
+| `sync [--dry-run]` | Preview or retry closed, versioned network receipts | Completed `join` |
+| `pause` | Stop local capture while preserving data and credentials | — |
+| `resume` | Resume local capture and automatic delivery | — |
+| `leave --delete-network-data` | Delete server receipts and revoke the network token | Completed `join` |
 | `verify` | Complete Orb-backed World ID Proof of Human verification | — |
 | `status` | Show contributor ID and verification status | — |
 | `earnings` | Legacy operator-only earnings view | Operator database access |
@@ -57,6 +61,8 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 | Command | Description | Requires |
 |---------|-------------|----------|
 | `backfill-subjects` | Extract subjects for existing sessions via Haiku | `ANTHROPIC_API_KEY` |
+| `admin health` | Inspect aggregate contribution-pipeline health | Operator secret |
+| `admin invite create/list/revoke` | Manage single-use contributor invites | Operator secret |
 
 ## Environment variables
 
@@ -64,6 +70,7 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 |----------|---------|-------------|
 | `POLLEN_API_URL` | `join`, `sync` | Override the public Pollen API URL |
 | `POLLEN_INVITE_CODE` | `join` | Alternative to passing the invite on the command line |
+| `POLLEN_ADMIN_SECRET` | `admin` | Operator API secret; otherwise read from the private local secret file |
 | `NEON_DATABASE_URL` | Legacy operator tools | Never required for contributors |
 | `POLLEN_PRIVATE_KEY` | `claim` (BYO wallet) | Private key for signing claim transactions |
 | `POLLEN_API_KEY` | `claim` (managed wallet) | API key for proxy-based claiming |
@@ -73,5 +80,5 @@ These read from your local SQLite database at `~/.pollen/local.db`.
 
 | Path | Description |
 |------|-------------|
-| `~/.pollen/local.db` | Local SQLite database (structured local observations) |
+| `~/.pollen/local.db` | Local SQLite database (structured local observations, mode `0600`) |
 | `~/.pollen/config.json` | Contributor identity and bearer token (mode `0600`) |

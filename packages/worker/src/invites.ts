@@ -8,6 +8,13 @@ const JSON_HEADERS = {
 export interface InviteDependencies {
   createInvite(inviteId: string, codeHash: string, expiresAt: Date): Promise<void>
   revokeInvite(inviteId: string): Promise<boolean>
+  listInvites(): Promise<Array<{
+    id: string
+    status: string
+    created_at: string | Date
+    expires_at: string | Date
+    contributor_id: string | null
+  }>>
 }
 
 function json(body: object, status = 200): Response {
@@ -65,6 +72,10 @@ export async function handleRevokeInvite(
   return revoked ? json({ ok: true }) : json({ error: 'invite_not_found' }, 404)
 }
 
+export async function handleListInvites(deps: InviteDependencies): Promise<Response> {
+  return json({ invites: await deps.listInvites() })
+}
+
 export function createInviteDependencies(databaseUrl: string): InviteDependencies {
   const sql = neon(databaseUrl)
   return {
@@ -80,6 +91,30 @@ export function createInviteDependencies(databaseUrl: string): InviteDependencie
         WHERE invite_id = ${inviteId} AND used_at IS NULL AND revoked_at IS NULL
         RETURNING invite_id`
       return rows.length === 1
+    },
+    async listInvites() {
+      const rows = await sql`
+        SELECT
+          invite_id AS id,
+          CASE
+            WHEN used_at IS NOT NULL THEN 'used'
+            WHEN revoked_at IS NOT NULL THEN 'revoked'
+            WHEN expires_at <= NOW() THEN 'expired'
+            ELSE 'active'
+          END AS status,
+          created_at,
+          expires_at,
+          contributor_id
+        FROM contributor_invites
+        ORDER BY created_at DESC
+        LIMIT 100`
+      return rows.map(row => ({
+        id: String(row.id),
+        status: String(row.status),
+        created_at: row.created_at as string | Date,
+        expires_at: row.expires_at as string | Date,
+        contributor_id: row.contributor_id == null ? null : String(row.contributor_id),
+      }))
     },
   }
 }

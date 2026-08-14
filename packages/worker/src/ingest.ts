@@ -7,6 +7,7 @@ const JSON_HEADERS = {
 
 const MAX_BODY_BYTES = 128 * 1024
 const MAX_RECEIPTS = 100
+export const MAX_RECEIPTS_PER_DAY = 1_000
 const TOKEN_RE = /^pln_[A-Za-z0-9_-]{43}$/
 const INVITE_RE = /^pinv_[A-Za-z0-9_-]{43}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -42,7 +43,10 @@ export interface NetworkReceiptV1 {
 export interface IngestDependencies {
   registerContributor(inviteHash: string, contributorId: string, tokenHash: string): Promise<boolean>
   authenticateTokenHash(tokenHash: string): Promise<string | null>
-  insertReceipts(contributorId: string, receipts: NetworkReceiptV1[]): Promise<number>
+  insertReceipts(
+    contributorId: string,
+    receipts: NetworkReceiptV1[],
+  ): Promise<{ accepted: number; limited: boolean }>
   deleteContributor(tokenHash: string): Promise<string | null>
 }
 
@@ -175,8 +179,15 @@ export async function handleReceiptIngest(
     return json({ error: 'invalid_receipt', detail: (error as Error).message }, 400)
   }
 
-  const accepted = await deps.insertReceipts(contributorId, receipts)
-  return json({ accepted, received: receipts.length }, 202)
+  const result = await deps.insertReceipts(contributorId, receipts)
+  if (result.limited && result.accepted === 0) {
+    return json({ error: 'rate_limited', accepted: 0, received: receipts.length }, 429)
+  }
+  return json({
+    accepted: result.accepted,
+    received: receipts.length,
+    ...(result.limited ? { rate_limited: true } : {}),
+  }, 202)
 }
 
 export async function handleContributorStatus(
@@ -252,22 +263,37 @@ export function createIngestDependencies(databaseUrl: string): IngestDependencie
     },
     async insertReceipts(contributorId, receipts) {
       let accepted = 0
+      let limited = false
       for (const receipt of receipts) {
         const rows = await sql`
-          INSERT INTO network_receipts (
-            receipt_id, contributor_id, observed_at, intent, agent, model,
-            tool_category_sequence, duration_bucket, terminal_state, check_result
-          ) VALUES (
-            ${receipt.receipt_id}, ${contributorId}, ${receipt.observed_at},
-            ${receipt.intent}, ${receipt.agent}, ${receipt.model},
-            ${receipt.tool_category_sequence}, ${receipt.duration_bucket},
-            ${receipt.terminal_state}, ${receipt.check_result}
+          WITH quota AS (
+            SELECT COUNT(*)::int AS receipts_24h
+            FROM network_receipts
+            WHERE contributor_id = ${contributorId}
+              AND received_at >= NOW() - INTERVAL '24 hours'
+          ), inserted AS (
+            INSERT INTO network_receipts (
+              receipt_id, contributor_id, observed_at, intent, agent, model,
+              tool_category_sequence, duration_bucket, terminal_state, check_result
+            )
+            SELECT
+              ${receipt.receipt_id}, ${contributorId}, ${receipt.observed_at},
+              ${receipt.intent}, ${receipt.agent}, ${receipt.model},
+              ${receipt.tool_category_sequence}, ${receipt.duration_bucket},
+              ${receipt.terminal_state}, ${receipt.check_result}
+            FROM quota
+            WHERE receipts_24h < ${MAX_RECEIPTS_PER_DAY}
+            ON CONFLICT (contributor_id, receipt_id) DO NOTHING
+            RETURNING receipt_id
           )
-          ON CONFLICT (contributor_id, receipt_id) DO NOTHING
-          RETURNING receipt_id`
-        accepted += rows.length
+          SELECT
+            (SELECT receipts_24h FROM quota) >= ${MAX_RECEIPTS_PER_DAY} AS limited,
+            (SELECT COUNT(*)::int FROM inserted) AS accepted`
+        accepted += Number(rows[0]?.accepted ?? 0)
+        limited = Boolean(rows[0]?.limited)
+        if (limited) break
       }
-      return accepted
+      return { accepted, limited }
     },
     async deleteContributor(tokenHash) {
       const rows = await sql`

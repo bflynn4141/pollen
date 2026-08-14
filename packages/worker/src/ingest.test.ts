@@ -25,7 +25,7 @@ function dependencies(overrides: Partial<IngestDependencies> = {}): IngestDepend
   return {
     registerContributor: vi.fn(async () => true),
     authenticateTokenHash: vi.fn(async () => 'contributor-1'),
-    insertReceipts: vi.fn(async () => 1),
+    insertReceipts: vi.fn(async () => ({ accepted: 1, limited: false })),
     deleteContributor: vi.fn(async () => 'contributor-1'),
     ...overrides,
   }
@@ -185,5 +185,28 @@ describe('receipt ingest handlers', () => {
 
     expect(response.status).toBe(202)
     expect(deps.insertReceipts).toHaveBeenCalledWith('contributor-1', [validReceipt])
+  })
+
+  it('rate-limits a contributor after the daily receipt quota is exhausted', async () => {
+    const response = await handleReceiptIngest(
+      new Request('https://api.pollen.test/api/v1/receipts', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer pln_${'a'.repeat(43)}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ receipts: [validReceipt] }),
+      }),
+      dependencies({
+        insertReceipts: vi.fn(async () => ({ accepted: 0, limited: true })),
+      }),
+    )
+
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({
+      error: 'rate_limited',
+      accepted: 0,
+      received: 1,
+    })
   })
 })
