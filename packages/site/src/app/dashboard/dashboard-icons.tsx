@@ -1,3 +1,5 @@
+import { McpBrandMark, hasMcpBrandMark } from './mcp-icons'
+
 export type DashboardIconName =
   | 'market'
   | 'models'
@@ -56,6 +58,8 @@ export function PlaywrightMark() {
 export function EntityMark({ id, provider }: { id: string; provider?: string }) {
   if (provider === 'Anthropic') return <AnthropicMark />
   if (provider === 'OpenAI') return <OpenAIMark />
+  if (hasMcpBrandMark(id)) return <McpBrandMark id={id} />
+  if (id === 'private') return <DashboardIcon name="private" />
   if (id === 'github-mcp') return <GitHubMark />
   if (id === 'playwright') return <PlaywrightMark />
   if (id === 'shell') return <DashboardIcon name="terminal" />

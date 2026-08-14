@@ -30,6 +30,8 @@ const WEEKLY_ROLLUPS = [
   'receipt_overview',
   'receipt_models',
   'receipt_tool_categories',
+  'receipt_mcp_servers',
+  'receipt_mcp_tools',
   'receipt_intents',
   'receipt_workflows',
 ]
@@ -38,6 +40,8 @@ const RECEIPT_ROLLUPS = [
   'receipt_overview',
   'receipt_models',
   'receipt_tool_categories',
+  'receipt_mcp_servers',
+  'receipt_mcp_tools',
   'receipt_intents',
   'receipt_workflows',
 ]
@@ -197,6 +201,7 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     SELECT to_char(to_timestamp(observed_at / 1000.0) AT TIME ZONE 'UTC', 'IYYY-"W"IW') AS period,
            COUNT(*)::int AS sessions,
            COALESCE(SUM(cardinality(tool_category_sequence)), 0)::int AS category_events,
+           COALESCE(SUM(jsonb_array_length(mcp_calls)), 0)::int AS mcp_calls,
            ROUND(AVG(CASE WHEN terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
            ROUND(AVG(CASE WHEN check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
            COUNT(DISTINCT contributor_id)::int AS contributors
@@ -210,6 +215,7 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     value: {
       sessions: r.sessions,
       category_events: r.category_events,
+      mcp_calls: r.mcp_calls,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
     },
@@ -262,6 +268,68 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
       sessions: r.sessions,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  // --- receipt_mcp_servers/tools: public MCP identity and reliability ------
+  const receiptMcpServers = await sql`
+    SELECT to_char(to_timestamp(r.observed_at / 1000.0) AT TIME ZONE 'UTC', 'IYYY-"W"IW') AS period,
+           mcp_call->>'server' AS server,
+           COUNT(*)::int AS calls,
+           COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'moderate')::int AS latency_moderate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'slow')::int AS latency_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'very_slow')::int AS latency_very_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'unknown')::int AS latency_unknown,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM network_receipts r
+    CROSS JOIN LATERAL jsonb_array_elements(r.mcp_calls) AS mcp_call
+    WHERE r.observed_at > ${windowStartMs}
+    GROUP BY 1, 2
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_mcp_servers', receiptMcpServers.map(r => ({
+    period: String(r.period),
+    dims: { server: r.server },
+    value: {
+      calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      latency_instant: r.latency_instant, latency_fast: r.latency_fast,
+      latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
+      latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  const receiptMcpTools = await sql`
+    SELECT to_char(to_timestamp(r.observed_at / 1000.0) AT TIME ZONE 'UTC', 'IYYY-"W"IW') AS period,
+           mcp_call->>'server' AS server,
+           mcp_call->>'tool' AS tool,
+           COUNT(*)::int AS calls,
+           COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'moderate')::int AS latency_moderate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'slow')::int AS latency_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'very_slow')::int AS latency_very_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'unknown')::int AS latency_unknown,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM network_receipts r
+    CROSS JOIN LATERAL jsonb_array_elements(r.mcp_calls) AS mcp_call
+    WHERE r.observed_at > ${windowStartMs}
+    GROUP BY 1, 2, 3
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_mcp_tools', receiptMcpTools.map(r => ({
+    period: String(r.period),
+    dims: { server: r.server, tool: r.tool },
+    value: {
+      calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      latency_instant: r.latency_instant, latency_fast: r.latency_fast,
+      latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
+      latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,
     },
     contributors: Number(r.contributors),
   })))
@@ -332,6 +400,7 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     SELECT p.period,
            COUNT(*)::int AS sessions,
            COALESCE(SUM(cardinality(r.tool_category_sequence)), 0)::int AS category_events,
+           COALESCE(SUM(jsonb_array_length(r.mcp_calls)), 0)::int AS mcp_calls,
            ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
            ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
            COUNT(DISTINCT r.contributor_id)::int AS contributors
@@ -345,6 +414,7 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     value: {
       sessions: r.sessions,
       category_events: r.category_events,
+      mcp_calls: r.mcp_calls,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
     },
@@ -408,6 +478,78 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
       sessions: r.sessions,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  const rollingMcpServers = await sql`
+    WITH periods(period, start_ms, end_ms) AS (VALUES
+      ('rolling:24h:current', ${h24Current.startMs}::bigint, ${h24Current.endMs}::bigint),
+      ('rolling:24h:previous', ${h24Previous.startMs}::bigint, ${h24Previous.endMs}::bigint),
+      ('rolling:7d:current', ${d7Current.startMs}::bigint, ${d7Current.endMs}::bigint),
+      ('rolling:7d:previous', ${d7Previous.startMs}::bigint, ${d7Previous.endMs}::bigint),
+      ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
+      ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
+    )
+    SELECT p.period, mcp_call->>'server' AS server,
+           COUNT(*)::int AS calls,
+           COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'moderate')::int AS latency_moderate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'slow')::int AS latency_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'very_slow')::int AS latency_very_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'unknown')::int AS latency_unknown,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM periods p
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms
+    CROSS JOIN LATERAL jsonb_array_elements(r.mcp_calls) AS mcp_call
+    GROUP BY 1, 2
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_mcp_servers', rollingMcpServers.map(r => ({
+    period: String(r.period), dims: { server: r.server },
+    value: {
+      calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      latency_instant: r.latency_instant, latency_fast: r.latency_fast,
+      latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
+      latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  const rollingMcpTools = await sql`
+    WITH periods(period, start_ms, end_ms) AS (VALUES
+      ('rolling:24h:current', ${h24Current.startMs}::bigint, ${h24Current.endMs}::bigint),
+      ('rolling:24h:previous', ${h24Previous.startMs}::bigint, ${h24Previous.endMs}::bigint),
+      ('rolling:7d:current', ${d7Current.startMs}::bigint, ${d7Current.endMs}::bigint),
+      ('rolling:7d:previous', ${d7Previous.startMs}::bigint, ${d7Previous.endMs}::bigint),
+      ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
+      ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
+    )
+    SELECT p.period, mcp_call->>'server' AS server, mcp_call->>'tool' AS tool,
+           COUNT(*)::int AS calls,
+           COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'moderate')::int AS latency_moderate,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'slow')::int AS latency_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'very_slow')::int AS latency_very_slow,
+           COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'unknown')::int AS latency_unknown,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM periods p
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms
+    CROSS JOIN LATERAL jsonb_array_elements(r.mcp_calls) AS mcp_call
+    GROUP BY 1, 2, 3
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_mcp_tools', rollingMcpTools.map(r => ({
+    period: String(r.period), dims: { server: r.server, tool: r.tool },
+    value: {
+      calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      latency_instant: r.latency_instant, latency_fast: r.latency_fast,
+      latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
+      latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,
     },
     contributors: Number(r.contributors),
   })))

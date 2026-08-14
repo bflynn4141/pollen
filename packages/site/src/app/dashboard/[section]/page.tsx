@@ -16,9 +16,10 @@ import styles from './ranking-page.module.css'
 export const revalidate = 300
 
 const number = new Intl.NumberFormat('en-US')
-const sections: RankingSection[] = ['models', 'tools', 'workflows', 'intents']
+const sections: RankingSection[] = ['models', 'mcps', 'tools', 'workflows', 'intents']
 const sectionIcons: Record<RankingSection, DashboardIconName> = {
   models: 'models',
+  mcps: 'tools',
   tools: 'tools',
   workflows: 'workflow',
   intents: 'intent',
@@ -93,6 +94,7 @@ export default async function RankingPage({
   const topMover = [...ranked].filter(entry => entry.windows[selectedWindow]!.trendPct !== null)
     .sort((left, right) => (right.windows[selectedWindow]!.trendPct ?? 0) - (left.windows[selectedWindow]!.trendPct ?? 0))[0]
   const mostReliable = [...ranked].sort((left, right) => right.windows[selectedWindow]!.completionPct - left.windows[selectedWindow]!.completionPct)[0]
+  const isMcpRanking = activeSection === 'mcps' || activeSection === 'tools'
 
   return (
     <div className={home.terminalShell}>
@@ -124,7 +126,7 @@ export default async function RankingPage({
           {ranked.length > 0 ? <div className={styles.summaryStrip}>
             <div><small>{definition.volumeLabel}</small><strong>{number.format(totalVolume)}</strong></div>
             <div><small>Top mover</small><strong className={styles.summaryEntity}>{topMover?.label ?? 'Not enough history'}</strong>{topMover ? <span className={styles.up}>{topMover.windows[selectedWindow]!.trendPct! >= 0 ? '+' : ''}{topMover.windows[selectedWindow]!.trendPct}%</span> : null}</div>
-            <div><small>Best completion</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow]!.completionPct}%</span></div>
+            <div><small>{isMcpRanking ? 'Best success' : 'Best completion'}</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow]!.completionPct}%</span></div>
           </div> : null}
         </section>
 
@@ -132,19 +134,20 @@ export default async function RankingPage({
           <section className={styles.rankingPanel}>
             <div className={styles.tableScroll}>
               <table className={styles.rankingTable}>
-                <thead><tr><th>#</th><th>{definition.singular}</th>{activeSection === 'workflows' ? <th>Sequence</th> : null}<th>{definition.adoptionLabel}</th><th>Users</th><th>{definition.volumeLabel}</th><th>Completion</th><th>Trend</th><th>Δ prev.</th></tr></thead>
+                <thead><tr><th>#</th><th>{definition.singular}</th>{activeSection === 'workflows' ? <th>Sequence</th> : null}<th>{definition.adoptionLabel}</th><th>Users</th><th>{definition.volumeLabel}</th><th>{isMcpRanking ? 'Success' : 'Completion'}</th>{isMcpRanking ? <th>Latency</th> : null}<th>Trend</th><th>Δ prev.</th></tr></thead>
                 <tbody>
                   {ranked.map((entry, index) => {
                     const value = entry.windows[selectedWindow]!
                     return (
                       <tr key={entry.id}>
                         <td className={styles.rank}>{String(index + 1).padStart(2, '0')}</td>
-                        <td><div className={styles.entity}><span className={`${home.entityIcon} ${iconTone(entry)}`}>{activeSection === 'workflows' ? <DashboardIcon name="workflow" /> : <EntityMark id={entry.id} provider={entry.secondary} />}</span><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></div></td>
+                        <td><div className={styles.entity}><span className={`${home.entityIcon} ${iconTone(entry)}`}>{activeSection === 'workflows' ? <DashboardIcon name="workflow" /> : <EntityMark id={entry.iconId ?? entry.id} provider={entry.secondary} />}</span><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></div></td>
                         {activeSection === 'workflows' ? <td><div className={styles.sequence}>{entry.sequence?.map((step, stepIndex) => <span key={step}>{step}{stepIndex < (entry.sequence?.length ?? 0) - 1 ? <i>›</i> : null}</span>)}</div></td> : null}
                         <td><div className={styles.adoption}><strong>{value.adoptionPct}%</strong><span><i style={{ width: `${value.adoptionPct}%` }} /></span></div></td>
                         <td className={styles.mono}>{value.contributors}/{value.eligibleContributors}</td>
                         <td className={styles.mono}>{number.format(value.volume)}</td>
                         <td><span className={styles.score}>{value.completionPct}%</span></td>
+                        {isMcpRanking ? <td className={styles.mono}>{value.latencyBucket?.replace('_', ' ') ?? '—'}</td> : null}
                         <td><TrendLine entry={entry} /></td>
                         <td><span className={value.trendPct == null || value.trendPct >= 0 ? styles.changeUp : styles.changeDown}>{value.trendPct == null ? '—' : `${value.trendPct >= 0 ? '+' : ''}${value.trendPct}%`}</span></td>
                       </tr>

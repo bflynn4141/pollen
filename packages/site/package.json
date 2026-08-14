@@ -26,6 +26,7 @@
     "next": "^15",
     "react": "^19",
     "react-dom": "^19",
+    "simple-icons": "^16.28.0",
     "viem": "^2.47.0"
   },
   "devDependencies": {

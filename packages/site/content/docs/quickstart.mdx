@@ -74,7 +74,9 @@ pollen sync
 ```
 
 The dry run prints aggregate counts and uploads nothing. The client sends only
-coarsened fields. The server rejects prompts, arguments,
+coarsened fields, including canonical public MCP server/tool identifiers plus
+success and latency buckets. Unknown or custom MCP aliases become `private`.
+The server rejects prompts, arguments,
 source, files, shell output, transcript paths, credentials, and unknown fields.
 </Step>
 </Steps>

@@ -47,7 +47,7 @@ describe('durable network receipt outbox', () => {
     expect(result).toEqual({ attempted: 1, synced: 1, accepted: 1, retryScheduled: 0 })
     expect(upload).toHaveBeenCalledOnce()
     expect(upload.mock.calls[0][1]).toEqual([
-      expect.objectContaining({ schema_version: 1, model: 'gpt-5.6-sol' }),
+      expect.objectContaining({ schema_version: 2, model: 'gpt-5.6-sol', mcp_calls: [] }),
     ])
     expect(getNetworkOutboxStatus(db)).toEqual({ pending: 0, synced: 1 })
     db.close()

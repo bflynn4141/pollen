@@ -1,9 +1,9 @@
 import { uploadNetworkReceipts } from './network-client.js'
-import type { NetworkReceiptV1 } from './network-receipt.js'
+import type { NetworkReceiptV2 } from './network-receipt.js'
 
 interface SyncNetworkReceiptsOptions {
   token: string
-  receipts: NetworkReceiptV1[]
+  receipts: NetworkReceiptV2[]
   apiUrl?: string
   upload?: typeof uploadNetworkReceipts
 }

@@ -25,19 +25,35 @@ describe('network receipts', () => {
     db.prepare(`
       INSERT INTO tool_events (
         id, session_id, timestamp, tool_name, tool_category, success,
-        command_category, sequence_number, response_summary
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run('tool-2', 'raw-local-session-id', 1_786_512_200_000, 'Bash', 'execute', 1, 'test', 1, 'all tests passed')
+        command_category, sequence_number, response_summary, mcp_server, duration_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('tool-2', 'raw-local-session-id', 1_786_512_200_000, 'Bash', 'execute', 1, 'test', 1, 'all tests passed', null, null)
+    db.prepare(`
+      INSERT INTO tool_events (
+        id, session_id, timestamp, tool_name, tool_category, success,
+        command_category, sequence_number, response_summary, mcp_server, duration_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('tool-3', 'raw-local-session-id', 1_786_512_300_000, 'mcp__github__create_issue', 'interact', 1, null, 2, null, 'github', 820)
+    db.prepare(`
+      INSERT INTO tool_events (
+        id, session_id, timestamp, tool_name, tool_category, success,
+        command_category, sequence_number, response_summary, mcp_server, duration_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('tool-4', 'raw-local-session-id', 1_786_512_400_000, 'mcp__secret_customer__lookup', 'interact', 0, null, 3, null, 'secret_customer', 6_200)
 
     const [receipt] = buildNetworkReceipts(db, 'pseudonymous-contributor')
     const serialized = JSON.stringify(receipt)
 
     expect(receipt).toMatchObject({
-      schema_version: 1,
+      schema_version: 2,
       intent: 'feature_build',
       agent: 'codex',
       model: 'gpt-5.2-codex',
-      tool_category_sequence: ['read', 'execute'],
+      tool_category_sequence: ['read', 'execute', 'interact', 'interact'],
+      mcp_calls: [
+        { server: 'github', tool: 'create_issue', success: true, latency_bucket: 'fast' },
+        { server: 'private', tool: 'private', success: false, latency_bucket: 'slow' },
+      ],
       duration_bucket: 'short',
       terminal_state: 'completed',
       check_result: 'passed',
@@ -46,6 +62,7 @@ describe('network receipts', () => {
     expect(serialized).not.toContain('transcript')
     expect(serialized).not.toContain('secret excerpt')
     expect(serialized).not.toContain('Private project')
+    expect(serialized).not.toContain('secret_customer')
   })
 
   it('normalizes captured model variants to the closed network schema', () => {
@@ -89,25 +106,27 @@ describe('network receipts', () => {
   it('summarizes a dry-run without exposing receipt identifiers', () => {
     const summary = summarizeNetworkReceipts([
       {
-        schema_version: 1,
+        schema_version: 2,
         receipt_id: 'private-receipt-id-1',
         observed_at: 1_786_512_600_000,
         intent: 'feature_build',
         agent: 'codex',
         model: 'gpt-5.6-sol',
         tool_category_sequence: ['read', 'write'],
+        mcp_calls: [],
         duration_bucket: 'short',
         terminal_state: 'completed',
         check_result: 'passed',
       },
       {
-        schema_version: 1,
+        schema_version: 2,
         receipt_id: 'private-receipt-id-2',
         observed_at: 1_786_512_700_000,
         intent: 'debugging',
         agent: 'claude-code',
         model: 'claude-opus-4-6',
         tool_category_sequence: ['execute'],
+        mcp_calls: [],
         duration_bucket: 'quick',
         terminal_state: 'error_exit',
         check_result: 'failed',

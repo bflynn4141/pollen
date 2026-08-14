@@ -39,13 +39,14 @@ describe('network client', () => {
       { status: 202, headers: { 'content-type': 'application/json' } },
     ))
     const receipt = {
-      schema_version: 1 as const,
+      schema_version: 2 as const,
       receipt_id: '2b92eeda-e523-4dd8-b65a-0cf2f272e221',
       observed_at: 1_786_512_600_000,
       intent: 'feature_build',
       agent: 'codex' as const,
       model: 'gpt-5.2-codex',
       tool_category_sequence: ['read'],
+      mcp_calls: [],
       duration_bucket: 'short',
       terminal_state: 'completed',
       check_result: 'passed',

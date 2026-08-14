@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "rollups": "tsx scripts/rollups.ts"
+    "rollups": "tsx scripts/rollups.ts",
+    "test:mcp-rollups": "tsx scripts/verify-mcp-rollups.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2"

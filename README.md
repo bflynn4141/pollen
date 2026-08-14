@@ -66,8 +66,10 @@ pollen sync
 The dry run prints aggregate counts and uploads nothing. Automatic delivery
 and `pollen sync` send a
 versioned receipt containing only intent, agent/model,
-tool-category sequence, duration bucket, terminal state, and check result. The
-server independently rejects every field outside that schema.
+tool-category sequence, public MCP server/tool identifiers, success and
+latency buckets, duration bucket, terminal state, and check result. Unknown or
+custom MCP aliases are grouped as `private`; arguments and results never enter
+the receipt. The server independently rejects every field outside that schema.
 
 Contributor controls are local and immediate:
 

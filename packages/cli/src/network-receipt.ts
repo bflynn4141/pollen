@@ -1,14 +1,23 @@
 import { createHash } from 'node:crypto'
 import type Database from 'better-sqlite3'
+import { canonicalizeMcpIdentity, latencyBucket, type McpLatencyBucket } from './mcp-identity.js'
 
-export interface NetworkReceiptV1 {
-  schema_version: 1
+export interface NetworkMcpCallV2 {
+  server: string
+  tool: string
+  success: boolean
+  latency_bucket: McpLatencyBucket
+}
+
+export interface NetworkReceiptV2 {
+  schema_version: 2
   receipt_id: string
   observed_at: number
   intent: string
   agent: 'claude-code' | 'codex'
   model: string
   tool_category_sequence: string[]
+  mcp_calls: NetworkMcpCallV2[]
   duration_bucket: string
   terminal_state: string
   check_result: string
@@ -23,7 +32,7 @@ export interface NetworkReceiptSummary {
 }
 
 /** Aggregate-only preview for `pollen sync --dry-run`; contains no IDs. */
-export function summarizeNetworkReceipts(receipts: NetworkReceiptV1[]): NetworkReceiptSummary {
+export function summarizeNetworkReceipts(receipts: NetworkReceiptV2[]): NetworkReceiptSummary {
   let earliestObservedAt: number | null = null
   let latestObservedAt: number | null = null
   let codex = 0
@@ -55,24 +64,36 @@ interface ReceiptRow {
 
 interface ToolRow {
   session_id: string
+  tool_name: string
   tool_category: string
   success: number
   command_category: string | null
+  mcp_server: string | null
+  duration_ms: number | null
 }
 
 function buildReceipt(
   contributorId: string,
   session: ReceiptRow,
   sessionTools: ToolRow[],
-): NetworkReceiptV1 {
+): NetworkReceiptV2 {
+  const mcpCalls = sessionTools
+    .filter((tool): tool is ToolRow & { mcp_server: string } => tool.mcp_server !== null)
+    .slice(0, 64)
+    .map(tool => ({
+      ...canonicalizeMcpIdentity(tool.mcp_server, tool.tool_name),
+      success: tool.success !== 0,
+      latency_bucket: latencyBucket(tool.duration_ms),
+    }))
   return {
-    schema_version: 1,
+    schema_version: 2,
     receipt_id: deterministicReceiptId(contributorId, session.session_id),
     observed_at: Math.trunc(session.ended_at),
     intent: session.dominant_intent,
     agent: session.source === 'codex' ? 'codex' : 'claude-code',
     model: normalizeModel(session.model),
     tool_category_sequence: sessionTools.slice(0, 64).map(tool => tool.tool_category),
+    mcp_calls: mcpCalls,
     duration_bucket: session.duration_bucket,
     terminal_state: session.outcome,
     check_result: checkResult(sessionTools),
@@ -118,7 +139,7 @@ function normalizeModel(model: string): string {
 export function buildNetworkReceipts(
   db: Database.Database,
   contributorId: string,
-): NetworkReceiptV1[] {
+): NetworkReceiptV2[] {
   const sessions = db.prepare(`
     SELECT session_id, model, source, ended_at, duration_bucket,
            dominant_intent, outcome
@@ -132,7 +153,8 @@ export function buildNetworkReceipts(
   `).all() as ReceiptRow[]
 
   const tools = db.prepare(`
-    SELECT session_id, tool_category, success, command_category
+    SELECT session_id, tool_name, tool_category, success, command_category,
+           mcp_server, duration_ms
     FROM tool_events
     ORDER BY session_id, sequence_number
   `).all() as ToolRow[]
@@ -155,7 +177,7 @@ export function buildNetworkReceipt(
   db: Database.Database,
   contributorId: string,
   sessionId: string,
-): NetworkReceiptV1 | null {
+): NetworkReceiptV2 | null {
   const session = db.prepare(`
     SELECT session_id, model, source, ended_at, duration_bucket,
            dominant_intent, outcome
@@ -169,7 +191,8 @@ export function buildNetworkReceipt(
   `).get(sessionId) as ReceiptRow | undefined
   if (!session) return null
   const tools = db.prepare(`
-    SELECT session_id, tool_category, success, command_category
+    SELECT session_id, tool_name, tool_category, success, command_category,
+           mcp_server, duration_ms
     FROM tool_events
     WHERE session_id = ?
     ORDER BY sequence_number

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { uploadNetworkReceipts } from './network-client.js'
-import { buildNetworkReceipt, type NetworkReceiptV1 } from './network-receipt.js'
+import { buildNetworkReceipt, type NetworkReceiptV2 } from './network-receipt.js'
 
 const BATCH_SIZE = 100
 const LEASE_MS = 5 * 60_000
@@ -14,7 +14,7 @@ interface OutboxRow {
 
 type UploadReceipts = (
   token: string,
-  receipts: NetworkReceiptV1[],
+  receipts: NetworkReceiptV2[],
   apiUrl?: string,
 ) => Promise<{ accepted: number; received: number }>
 
