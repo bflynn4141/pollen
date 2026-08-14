@@ -143,6 +143,14 @@
 .moverCompletion { color: #9da7a1; font-family: var(--font-mono), monospace; text-align: right; }
 .moverChange { display: flex; align-items: center; justify-content: flex-end; gap: 7px; color: var(--green); font-family: var(--font-mono), monospace; }
 .moverChange svg { color: #52604f; }
+.moverDecline { display: flex; align-items: center; justify-content: flex-end; gap: 7px; color: #e4786c; font-family: var(--font-mono), monospace; }
+.moverDecline svg { color: #604f4f; }
+
+.networkState { display: flex; min-height: calc(100vh - 70px); align-items: center; justify-content: center; flex-direction: column; padding: 40px 20px; text-align: center; }
+.networkState > span { color: var(--green); font-family: var(--font-mono), monospace; font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.networkState h2 { margin: 12px 0 0; font-family: var(--font-space-grotesk), sans-serif; font-size: 28px; letter-spacing: -.04em; }
+.networkState p { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.networkState a { display: flex; min-height: 42px; align-items: center; gap: 8px; margin-top: 24px; padding: 0 14px; border-radius: 6px; background: var(--green); color: #10160e; font-size: 13px; font-weight: 750; }
 
 .toolPanel { grid-column: 2; grid-row: 1; }
 .compactRows { display: flex; flex-direction: column; }

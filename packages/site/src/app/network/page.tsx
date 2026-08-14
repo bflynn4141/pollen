@@ -42,7 +42,7 @@ export default async function NetworkPage() {
             <section className={styles.marketBar}>
               <div className={styles.marketIdentity}>
                 <span className={styles.marketIcon}>P</span>
-                <div><h1>Privacy-safe production activity</h1><p>Closed receipts · {network.week} · no prompts or source code</p></div>
+                <div><h1>Privacy-safe production activity</h1><p>Closed receipts · {network.period} · no prompts or source code</p></div>
               </div>
               <div className={styles.marketMetric}><small>Contributors</small><strong>{network.overview.contributors}</strong><span>qualified panel</span></div>
               <div className={styles.marketMetric}><small>Sessions</small><strong>{number.format(network.overview.sessions)}</strong><span>closed receipts</span></div>

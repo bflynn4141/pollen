@@ -2,15 +2,18 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
-  DEMO_RANKINGS,
+  fetchNetworkDashboard,
+  RANKING_SECTION_META,
   RANKING_WINDOWS,
   type RankingEntry,
   type RankingSection,
   type RankingWindow,
-} from '@/data/demo-rankings'
+} from '@/lib/network-dashboard'
 import { DashboardIcon, EntityMark, type DashboardIconName } from '../dashboard-icons'
 import home from '../dashboard.module.css'
 import styles from './ranking-page.module.css'
+
+export const revalidate = 300
 
 const number = new Intl.NumberFormat('en-US')
 const sections: RankingSection[] = ['models', 'tools', 'workflows', 'intents']
@@ -28,7 +31,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ section: string }> }): Promise<Metadata> {
   const { section } = await params
   if (!sections.includes(section as RankingSection)) return {}
-  const definition = DEMO_RANKINGS[section as RankingSection]
+  const definition = RANKING_SECTION_META[section as RankingSection]
   return {
     title: `${definition.label} — Pollen`,
     description: definition.description,
@@ -47,18 +50,22 @@ function iconTone(entry: RankingEntry): string {
 }
 
 function TrendLine({ entry }: { entry: RankingEntry }) {
-  const values = RANKING_WINDOWS.map(item => entry.windows[item.id].adoptionPct)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
+  const values = RANKING_WINDOWS.flatMap(item => {
+    const metric = entry.windows[item.id]
+    return metric ? [{ id: item.id, value: metric.adoptionPct }] : []
+  })
+  if (values.length < 2) return <span aria-label="Not enough history">—</span>
+  const min = Math.min(...values.map(item => item.value))
+  const max = Math.max(...values.map(item => item.value))
   const range = max - min || 1
-  const points = values.map((value, index) => `${4 + index * 22},${18 - ((value - min) / range) * 13}`).join(' ')
+  const points = values.map((item, index) => `${4 + index * (44 / (values.length - 1))},${18 - ((item.value - min) / range) * 13}`).join(' ')
 
   return (
-    <svg className={styles.sparkline} viewBox="0 0 52 22" aria-label={`Adoption trend: ${values.join('%, ')}%`}>
+    <svg className={styles.sparkline} viewBox="0 0 52 22" aria-label={`Adoption trend: ${values.map(item => item.value).join('%, ')}%`}>
       <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       {points.split(' ').map((point, index) => {
         const [cx, cy] = point.split(',')
-        return <circle key={RANKING_WINDOWS[index].id} cx={cx} cy={cy} r="1.8" fill="currentColor" />
+        return <circle key={values[index].id} cx={cx} cy={cy} r="1.8" fill="currentColor" />
       })}
     </svg>
   )
@@ -76,12 +83,16 @@ export default async function RankingPage({
 
   const activeSection = section as RankingSection
   const selectedWindow: RankingWindow = isRankingWindow(query.window) ? query.window : '7d'
-  const definition = DEMO_RANKINGS[activeSection]
+  const dashboard = await fetchNetworkDashboard()
+  const definition = dashboard.rankings[activeSection]
   const icon = sectionIcons[activeSection]
-  const ranked = [...definition.entries].sort((left, right) => right.windows[selectedWindow].adoptionPct - left.windows[selectedWindow].adoptionPct)
-  const totalVolume = ranked.reduce((sum, entry) => sum + entry.windows[selectedWindow].volume, 0)
-  const topMover = [...ranked].sort((left, right) => right.windows[selectedWindow].trendPct - left.windows[selectedWindow].trendPct)[0]
-  const mostReliable = [...ranked].sort((left, right) => right.windows[selectedWindow].completionPct - left.windows[selectedWindow].completionPct)[0]
+  const ranked = definition.entries
+    .flatMap(entry => entry.windows[selectedWindow] ? [entry] : [])
+    .sort((left, right) => right.windows[selectedWindow]!.adoptionPct - left.windows[selectedWindow]!.adoptionPct)
+  const totalVolume = ranked.reduce((sum, entry) => sum + entry.windows[selectedWindow]!.volume, 0)
+  const topMover = [...ranked].filter(entry => entry.windows[selectedWindow]!.trendPct !== null)
+    .sort((left, right) => (right.windows[selectedWindow]!.trendPct ?? 0) - (left.windows[selectedWindow]!.trendPct ?? 0))[0]
+  const mostReliable = [...ranked].sort((left, right) => right.windows[selectedWindow]!.completionPct - left.windows[selectedWindow]!.completionPct)[0]
 
   return (
     <div className={home.terminalShell}>
@@ -91,8 +102,8 @@ export default async function RankingPage({
           <Link href="/network" aria-label="Live production network"><span><DashboardIcon name="market" /></span>Live network</Link>
           <Link href="/dashboard" aria-label="Overview"><span><DashboardIcon name="market" /></span>Overview</Link>
           {sections.map(item => (
-            <Link key={item} href={`/dashboard/${item}`} className={item === activeSection ? home.navActive : undefined} aria-label={DEMO_RANKINGS[item].label}>
-              <span><DashboardIcon name={sectionIcons[item]} /></span>{DEMO_RANKINGS[item].label.replace(' rankings', '')}
+            <Link key={item} href={`/dashboard/${item}`} className={item === activeSection ? home.navActive : undefined} aria-label={RANKING_SECTION_META[item].label}>
+              <span><DashboardIcon name={sectionIcons[item]} /></span>{RANKING_SECTION_META[item].label.replace(' rankings', 's')}
             </Link>
           ))}
         </nav>
@@ -110,21 +121,21 @@ export default async function RankingPage({
               {RANKING_WINDOWS.map(item => <Link key={item.id} href={`/dashboard/${activeSection}?window=${item.id}`} className={item.id === selectedWindow ? styles.windowActive : undefined} aria-current={item.id === selectedWindow ? 'page' : undefined}>{item.label}</Link>)}
             </nav>
           </div>
-          <div className={styles.summaryStrip}>
+          {ranked.length > 0 ? <div className={styles.summaryStrip}>
             <div><small>{definition.volumeLabel}</small><strong>{number.format(totalVolume)}</strong></div>
-            <div><small>Top mover</small><strong className={styles.summaryEntity}>{topMover.label}</strong><span className={styles.up}>+{topMover.windows[selectedWindow].trendPct}%</span></div>
-            <div><small>Best completion</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow].completionPct}%</span></div>
-          </div>
+            <div><small>Top mover</small><strong className={styles.summaryEntity}>{topMover?.label ?? 'Not enough history'}</strong>{topMover ? <span className={styles.up}>{topMover.windows[selectedWindow]!.trendPct! >= 0 ? '+' : ''}{topMover.windows[selectedWindow]!.trendPct}%</span> : null}</div>
+            <div><small>Best completion</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow]!.completionPct}%</span></div>
+          </div> : null}
         </section>
 
-        <div className={styles.contentGrid}>
+        {ranked.length > 0 ? <div className={styles.contentGrid}>
           <section className={styles.rankingPanel}>
             <div className={styles.tableScroll}>
               <table className={styles.rankingTable}>
                 <thead><tr><th>#</th><th>{definition.singular}</th>{activeSection === 'workflows' ? <th>Sequence</th> : null}<th>{definition.adoptionLabel}</th><th>Users</th><th>{definition.volumeLabel}</th><th>Completion</th><th>Trend</th><th>Δ prev.</th></tr></thead>
                 <tbody>
                   {ranked.map((entry, index) => {
-                    const value = entry.windows[selectedWindow]
+                    const value = entry.windows[selectedWindow]!
                     return (
                       <tr key={entry.id}>
                         <td className={styles.rank}>{String(index + 1).padStart(2, '0')}</td>
@@ -135,7 +146,7 @@ export default async function RankingPage({
                         <td className={styles.mono}>{number.format(value.volume)}</td>
                         <td><span className={styles.score}>{value.completionPct}%</span></td>
                         <td><TrendLine entry={entry} /></td>
-                        <td><span className={value.trendPct >= 0 ? styles.changeUp : styles.changeDown}>{value.trendPct >= 0 ? '+' : ''}{value.trendPct}%</span></td>
+                        <td><span className={value.trendPct == null || value.trendPct >= 0 ? styles.changeUp : styles.changeDown}>{value.trendPct == null ? '—' : `${value.trendPct >= 0 ? '+' : ''}${value.trendPct}%`}</span></td>
                       </tr>
                     )
                   })}
@@ -143,7 +154,13 @@ export default async function RankingPage({
               </table>
             </div>
           </section>
-        </div>
+        </div> : (
+          <section className={home.networkState}>
+            <span>{dashboard.status === 'unavailable' ? 'NETWORK UNAVAILABLE' : 'NETWORK WARMING UP'}</span>
+            <h2>No public {definition.label.toLowerCase()} for {RANKING_WINDOWS.find(item => item.id === selectedWindow)?.label}.</h2>
+            <p>{dashboard.status === 'unavailable' ? 'Try again shortly.' : `Rankings publish when at least ${dashboard.kAnonymity} contributors qualify.`}</p>
+          </section>
+        )}
       </main>
     </div>
   )

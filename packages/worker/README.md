@@ -83,7 +83,7 @@ curl -X POST https://api.pollen.id/admin/run/rollups \
 # local dev
 npx wrangler dev
 # manual cron test against wrangler dev:
-curl "http://localhost:8787/__scheduled?cron=0+*/6+*+*+*"
+curl "http://localhost:8787/__scheduled?cron=*/15+*+*+*+*"
 ```
 
 ## Verification without deploying

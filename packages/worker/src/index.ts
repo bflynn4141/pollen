@@ -12,6 +12,7 @@ import {
   readMcpRanking,
   readOverview,
   readReceiptNetwork,
+  readReceiptNetworkWindows,
   readToolHistory,
   readTrendingTools,
 } from '@pollen/data'
@@ -32,7 +33,7 @@ export { X402SettlementRelayer } from './x402-relay'
 /**
  * pollen-api — Cloudflare Worker serving the public /api/v1 endpoints at
  * api.pollen.id, plus the two cron jobs that used to be Vercel crons
- * (rollups every 6h, epoch-close Tuesdays 00:10 UTC).
+ * (rollups every 15m, epoch-close Tuesdays 00:10 UTC).
  *
  * k-anonymity boundary: route handlers import ONLY the @pollen/data readers
  * (rollup_cells); never the site's raw-table queries. computeRollups() (cron/
@@ -112,11 +113,16 @@ api.get('/overview', async c => {
 // contributors qualify in one week, this intentionally returns an empty list.
 api.get('/network', async c => {
   const weeks = (await listReceiptWeeks()).slice(0, 2)
-  const data = await Promise.all(weeks.map(week => readReceiptNetwork(week)))
+  const [data, windows] = await Promise.all([
+    Promise.all(weeks.map(week => readReceiptNetwork(week))),
+    readReceiptNetworkWindows(),
+  ])
+  const live = Object.values(windows).some(window => window.current !== null)
   return c.json({
     source: 'network_receipts',
     k_anonymity: K_ANONYMITY,
-    status: data.length > 0 ? 'live' : 'warming_up',
+    status: live ? 'live' : 'warming_up',
+    windows,
     weeks: data.filter(Boolean),
   }, 200, FREE_CACHE)
 })
@@ -240,7 +246,7 @@ app.get('/admin/health', async c => {
 async function scheduled(controller: ScheduledController, env: Env): Promise<void> {
   configureDb(env.NEON_DATABASE_URL)
   switch (controller.cron) {
-    case '0 */6 * * *': {
+    case '*/15 * * * *': {
       const cells = await computeRollups()
       console.log(`[cron rollups] wrote ${cells} cells`)
       break

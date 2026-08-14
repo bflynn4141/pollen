@@ -1,12 +1,16 @@
 import Link from 'next/link'
-import { DEMO_NETWORK_SNAPSHOT as network } from '@/data/demo-network'
-import { DEMO_RANKINGS, type RankingSection } from '@/data/demo-rankings'
+import {
+  fetchNetworkDashboard,
+  type RankingSection,
+} from '@/lib/network-dashboard'
 import {
   DashboardIcon,
   EntityMark,
   type DashboardIconName,
 } from './dashboard-icons'
 import styles from './dashboard.module.css'
+
+export const revalidate = 300
 
 const number = new Intl.NumberFormat('en-US')
 function EntityIcon({ id, provider, section }: { id: string; provider?: string; section?: RankingSection }) {
@@ -31,7 +35,8 @@ function PanelTitle({ icon, title, href }: { icon: DashboardIconName; title: str
   )
 }
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const dashboard = await fetchNetworkDashboard()
   const sections: Array<{ id: RankingSection; label: string; icon: DashboardIconName }> = [
     { id: 'models', label: 'Models', icon: 'models' },
     { id: 'tools', label: 'Tools', icon: 'tools' },
@@ -39,9 +44,21 @@ export default function DashboardPage() {
     { id: 'intents', label: 'Intents', icon: 'intent' },
   ]
   const movers = sections
-    .flatMap(section => DEMO_RANKINGS[section.id].entries.map(entry => ({ section, entry, metric: entry.windows['24h'] })))
-    .sort((left, right) => right.metric.trendPct - left.metric.trendPct)
+    .flatMap(section => dashboard.rankings[section.id].entries.flatMap(entry => {
+      const metric = entry.windows['24h']
+      return metric ? [{ section, entry, metric }] : []
+    }))
+    .filter(item => item.metric.trendPct !== null)
+    .sort((left, right) => (right.metric.trendPct ?? 0) - (left.metric.trendPct ?? 0))
     .slice(0, 6)
+  const models = dashboard.rankings.models.entries.flatMap(entry => {
+    const metric = entry.windows['7d']
+    return metric ? [{ entry, metric }] : []
+  }).sort((left, right) => right.metric.adoptionPct - left.metric.adoptionPct).slice(0, 6)
+  const tools = dashboard.rankings.tools.entries.flatMap(entry => {
+    const metric = entry.windows['7d']
+    return metric ? [{ entry, metric }] : []
+  }).sort((left, right) => right.metric.adoptionPct - left.metric.adoptionPct).slice(0, 6)
 
   return (
     <div className={styles.terminalShell}>
@@ -68,24 +85,24 @@ export default function DashboardPage() {
 
         <section className={styles.pageHeader}>
           <h1>Agent Market Index</h1>
-          <span>7D</span>
+          <span>{dashboard.status === 'live' ? 'LIVE' : `K≥${dashboard.kAnonymity}`}</span>
         </section>
 
-        <div className={styles.dashboardGrid}>
+        {dashboard.status === 'live' ? <div className={styles.dashboardGrid}>
           <section id="models" className={`${styles.panel} ${styles.modelPanel}`}>
             <PanelTitle icon="models" title="Model adoption" href="/dashboard/models" />
             <div className={styles.tableScroll}>
               <table className={styles.dataTable}>
                 <thead><tr><th>#</th><th>Model</th><th>Adoption</th><th>Users</th><th>Sessions</th><th>Completion</th></tr></thead>
                 <tbody>
-                  {network.models.map((model, index) => (
-                    <tr key={model.id}>
+                  {models.map(({ entry, metric }, index) => (
+                    <tr key={entry.id}>
                       <td className={styles.rank}>{index + 1}</td>
-                      <td><div className={styles.entity}><EntityIcon id={model.id} provider={model.provider} /><span><strong>{model.label}</strong><small>{model.provider}</small></span></div></td>
-                      <td><div className={styles.metricBar}><strong>{model.adoptionPct}%</strong><span><i style={{ width: `${model.adoptionPct}%` }} /></span></div></td>
-                      <td className={styles.mono}>{model.contributors}/{model.eligibleContributors}</td>
-                      <td className={styles.mono}>{model.sessions}</td>
-                      <td><span className={styles.score}>{model.completionPct}%</span></td>
+                      <td><div className={styles.entity}><EntityIcon id={entry.id} provider={entry.secondary} /><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></div></td>
+                      <td><div className={styles.metricBar}><strong>{metric.adoptionPct}%</strong><span><i style={{ width: `${metric.adoptionPct}%` }} /></span></div></td>
+                      <td className={styles.mono}>{metric.contributors}/{metric.eligibleContributors}</td>
+                      <td className={styles.mono}>{metric.volume}</td>
+                      <td><span className={styles.score}>{metric.completionPct}%</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -96,13 +113,13 @@ export default function DashboardPage() {
           <aside id="tools" className={`${styles.panel} ${styles.toolPanel}`}>
             <PanelTitle icon="tools" title="Top tools" href="/dashboard/tools" />
             <div className={styles.compactRows}>
-              {network.tools.map((tool, index) => (
-                <div className={styles.toolRow} key={tool.id}>
+              {tools.map(({ entry, metric }, index) => (
+                <div className={styles.toolRow} key={entry.id}>
                   <span className={styles.rank}>{index + 1}</span>
-                  <EntityIcon id={tool.id} />
-                  <span className={styles.toolName}><strong>{tool.label}</strong><small>{tool.category}</small></span>
-                  <span className={styles.toolCalls}><strong>{number.format(tool.calls)}</strong><small>calls</small></span>
-                  <span className={styles.toolAdoption}>{tool.adoptionPct}%</span>
+                  <EntityIcon id={entry.id} />
+                  <span className={styles.toolName}><strong>{entry.label}</strong><small>{entry.secondary}</small></span>
+                  <span className={styles.toolCalls}><strong>{number.format(metric.volume)}</strong><small>events</small></span>
+                  <span className={styles.toolAdoption}>{metric.adoptionPct}%</span>
                 </div>
               ))}
             </div>
@@ -118,12 +135,19 @@ export default function DashboardPage() {
                   <span className={styles.marketType}><DashboardIcon name={section.icon} size={11} />{section.label}</span>
                   <span className={styles.moverReach}><strong>{metric.adoptionPct}%</strong><i><b style={{ width: `${metric.adoptionPct}%` }} /></i></span>
                   <span className={styles.moverCompletion}>{metric.completionPct}%</span>
-                  <span className={styles.moverChange}>+{metric.trendPct}% <DashboardIcon name="external" size={10} /></span>
+                  <span className={metric.trendPct != null && metric.trendPct < 0 ? styles.moverDecline : styles.moverChange}>{metric.trendPct == null ? '—' : `${metric.trendPct >= 0 ? '+' : ''}${metric.trendPct}%`} <DashboardIcon name="external" size={10} /></span>
                 </Link>
               ))}
             </div>
           </section>
-        </div>
+        </div> : (
+          <section className={styles.networkState}>
+            <span>{dashboard.status === 'unavailable' ? 'NETWORK UNAVAILABLE' : 'NETWORK WARMING UP'}</span>
+            <h2>{dashboard.status === 'unavailable' ? 'Live rankings are temporarily unavailable.' : 'No public rankings yet.'}</h2>
+            <p>{dashboard.status === 'unavailable' ? 'Try again shortly.' : `Rankings publish when at least ${dashboard.kAnonymity} contributors qualify.`}</p>
+            <Link href="/docs/quickstart">Join the network <DashboardIcon name="external" size={12} /></Link>
+          </section>
+        )}
       </main>
     </div>
   )

@@ -16,9 +16,9 @@ compatibility_flags = ["nodejs_compat"]
 # ]
 
 [triggers]
-# 1) rollups: recompute k-anonymized rollup cells every 6 hours
+# 1) rollups: recompute k-anonymized rollup cells every 15 minutes
 # 2) epoch-close: score the just-closed epoch, Tuesdays 00:10 UTC
-crons = ["0 */6 * * *", "10 0 * * 2"]
+crons = ["*/15 * * * *", "10 0 * * 2"]
 
 [[durable_objects.bindings]]
 name = "X402_RELAYER"
