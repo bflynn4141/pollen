@@ -18,19 +18,30 @@ import {
 } from './query.js'
 import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
-import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
+import {
+  clearNetworkRegistration,
+  DB_PATH,
+  getWalletAddress,
+  isValidAddress,
+  loadConfig,
+  registerWallet,
+  runInteractiveWallet,
+  setCapturePaused,
+  setupWallet,
+} from './config.js'
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
 import { buildNetworkReceipts, summarizeNetworkReceipts } from './network-receipt.js'
 import { drainNetworkOutbox, enqueueEligibleNetworkReceipts } from './network-outbox.js'
 import { joinFoundingPanel } from './join.js'
+import { deleteNetworkContributor } from './network-client.js'
 
 function openDb(commandName: string | undefined) {
   // Commands that manage identity or onboarding do not need user activity data.
   // Keeping them in memory makes `pollen setup --demo` genuinely side-effect free.
   const databaseFreeCommands = new Set([
     undefined, 'help', '--help', '-h', 'setup', 'join', 'verify', 'status',
-    'doctor', 'earnings', 'points', 'register', 'wallet', 'claim',
+    'doctor', 'pause', 'resume', 'leave', 'earnings', 'points', 'register', 'wallet', 'claim',
   ])
   if (databaseFreeCommands.has(commandName)) return initDb()
 
@@ -302,6 +313,38 @@ try {
       if (!await runDoctor()) process.exitCode = 1
       break
     }
+    case 'pause': {
+      setCapturePaused(true)
+      console.log('✓ Capture paused. Existing local data and network credentials were preserved.')
+      console.log('  Run `pollen resume` to start capturing again.')
+      break
+    }
+    case 'resume': {
+      setCapturePaused(false)
+      console.log('✓ Capture resumed.')
+      break
+    }
+    case 'leave': {
+      if (!process.argv.includes('--delete-network-data')) {
+        console.error('Usage: pollen leave --delete-network-data')
+        console.error('This permanently deletes your server-side receipts and revokes the network token.')
+        process.exitCode = 1
+        break
+      }
+      const config = loadConfig()
+      if (!config?.network) {
+        console.log('This installation is not connected to the contribution network.')
+        break
+      }
+      await deleteNetworkContributor(
+        config.network.token,
+        config.network.api_url,
+      )
+      clearNetworkRegistration()
+      console.log('✓ Network receipts deleted and contribution token revoked.')
+      console.log('  Local history, wallet, and identity settings were preserved.')
+      break
+    }
     case 'setup': {
       if (process.argv.includes('--agents')) {
         const { runAgentSetup } = await import('./agent-setup.js')
@@ -499,6 +542,9 @@ try {
         '  setup --agents  Install capture hooks for detected agent CLIs',
         '  setup --codex   Install pollen hooks into ~/.codex/hooks.json',
         '  doctor          Check hooks, local privacy, and network registration',
+        '  pause           Stop local capture without deleting data',
+        '  resume          Resume local capture',
+        '  leave --delete-network-data  Delete server receipts and revoke access',
         '  backfill --codex [--days N]  Ingest historical Codex sessions (default 30 days)',
         '  stats       Summary dashboard',
         '  intents     Intent distribution',

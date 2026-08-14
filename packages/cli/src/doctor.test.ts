@@ -30,6 +30,7 @@ function healthyHome(): { home: string; token: string } {
   }), { mode: 0o600 })
   chmodSync(configPath, 0o600)
   writeFileSync(join(pollenDir, 'local.db'), '')
+  chmodSync(join(pollenDir, 'local.db'), 0o600)
   installClaudeHooks(join(home, '.claude', 'settings.json'), 'pollen-hook')
   installCodexHooks(join(home, '.codex', 'hooks.json'), 'pollen-hook --source codex')
   return { home, token }

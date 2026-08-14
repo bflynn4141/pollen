@@ -90,11 +90,16 @@ export async function collectDoctorReport(options: DoctorOptions = {}): Promise<
   const configPath = join(pollenDir, 'config.json')
   const databasePath = join(pollenDir, 'local.db')
   let network: NetworkConfig | null = null
+  let capturePaused = false
   if (!existsSync(configPath)) {
     add('config', 'Contributor config', 'fail', 'missing; run pollen join <invite-code>')
   } else {
     try {
-      const config = JSON.parse(readFileSync(configPath, 'utf8')) as { network?: Partial<NetworkConfig> }
+      const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+        network?: Partial<NetworkConfig>
+        capture_paused?: unknown
+      }
+      capturePaused = config.capture_paused === true
       if (
         typeof config.network?.api_url !== 'string'
         || typeof config.network?.token !== 'string'
@@ -110,6 +115,13 @@ export async function collectDoctorReport(options: DoctorOptions = {}): Promise<
     }
   }
 
+  add(
+    'capture',
+    'Capture',
+    capturePaused ? 'warn' : 'pass',
+    capturePaused ? 'paused; run pollen resume to contribute' : 'active',
+  )
+
   const configMode = mode(configPath)
   const dirMode = mode(pollenDir)
   const privatePermissions = configMode === 0o600 && dirMode === 0o700
@@ -119,7 +131,15 @@ export async function collectDoctorReport(options: DoctorOptions = {}): Promise<
     privatePermissions ? 'pass' : 'warn',
     privatePermissions ? 'config 0600 · directory 0700' : 'expected config 0600 and directory 0700',
   )
-  add('database', 'Local database', existsSync(databasePath) ? 'pass' : 'warn', existsSync(databasePath) ? 'present' : 'created after first captured event')
+  const databaseMode = mode(databasePath)
+  add(
+    'database',
+    'Local database',
+    databaseMode === null || databaseMode === 0o600 ? (databaseMode === null ? 'warn' : 'pass') : 'warn',
+    databaseMode === null
+      ? 'created after first captured event'
+      : databaseMode === 0o600 ? 'private (0600)' : 'expected mode 0600; run any pollen data command to repair',
+  )
 
   for (const agent of ['claude', 'codex'] as const) {
     const installed = commandExists(agent)

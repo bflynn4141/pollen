@@ -26,6 +26,7 @@ import {
 import {
   createIngestDependencies,
   handleContributorRegistration,
+  handleContributorDeletion,
   handleContributorStatus,
   handleReceiptIngest,
 } from './ingest'
@@ -111,6 +112,19 @@ api.post('/contributors/register', async c => {
 api.get('/contributors/me', c =>
   handleContributorStatus(c.req.raw, createIngestDependencies(c.env.NEON_DATABASE_URL)),
 )
+api.delete('/contributors/me', async c => {
+  const response = await handleContributorDeletion(
+    c.req.raw,
+    createIngestDependencies(c.env.NEON_DATABASE_URL),
+  )
+  if (!response.ok) return response
+  try {
+    await computeRollups()
+    return response
+  } catch {
+    return c.json({ deleted: true, rollups: 'pending' }, 202, NO_STORE)
+  }
+})
 api.post('/receipts', c =>
   handleReceiptIngest(c.req.raw, createIngestDependencies(c.env.NEON_DATABASE_URL)),
 )

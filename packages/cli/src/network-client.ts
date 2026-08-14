@@ -75,3 +75,18 @@ export async function uploadNetworkReceipts(
   }
   return { accepted, received }
 }
+
+export async function deleteNetworkContributor(
+  token: string,
+  apiUrl = DEFAULT_NETWORK_API_URL,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const response = await fetchImpl(`${apiUrl}/api/v1/contributors/me`, {
+    method: 'DELETE',
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+  })
+  if (!response.ok) throw await responseError(response)
+}

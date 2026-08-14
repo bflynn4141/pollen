@@ -17,7 +17,7 @@ import {
   handlePermissionRequest, handlePermissionDenied, handlePostCompact,
 } from './hooks/capture-events.js'
 import { handleCodexPostToolUse } from './codex-hook.js'
-import { DB_PATH } from './config.js'
+import { DB_PATH, isCapturePaused } from './config.js'
 import { launchBackgroundNetworkSync } from './background-sync.js'
 
 function ensureDir(filepath: string): void {
@@ -117,6 +117,7 @@ export function runHookSync(input: HookInput, source?: string): HookResult {
 
 // Backward-compat: awaits all work then closes db
 export async function runHook(input: HookInput, source?: string): Promise<void> {
+  if (isCapturePaused()) return
   const { pendingWork, db, shouldSyncNetwork } = runHookSync(input, source)
   try {
     if (pendingWork) await pendingWork
@@ -148,11 +149,13 @@ async function main(): Promise<void> {
     }
 
     const input: HookInput = JSON.parse(data)
-    const result = runHookSync(input, parseSourceFlag(process.argv))
-    pendingWork = result.pendingWork
-    db = result.db
-    systemMessage = result.systemMessage
-    shouldSyncNetwork = result.shouldSyncNetwork
+    if (!isCapturePaused()) {
+      const result = runHookSync(input, parseSourceFlag(process.argv))
+      pendingWork = result.pendingWork
+      db = result.db
+      systemMessage = result.systemMessage
+      shouldSyncNetwork = result.shouldSyncNetwork
+    }
   } catch {
     // Fail silently — never block Claude Code
   }

@@ -43,6 +43,7 @@ export interface IngestDependencies {
   registerContributor(inviteHash: string, contributorId: string, tokenHash: string): Promise<boolean>
   authenticateTokenHash(tokenHash: string): Promise<string | null>
   insertReceipts(contributorId: string, receipts: NetworkReceiptV1[]): Promise<number>
+  deleteContributor(tokenHash: string): Promise<string | null>
 }
 
 function json(body: object, status = 200): Response {
@@ -190,6 +191,18 @@ export async function handleContributorStatus(
   return json({ contributor_id: contributorId, status: 'active' })
 }
 
+export async function handleContributorDeletion(
+  request: Request,
+  deps: IngestDependencies,
+): Promise<Response> {
+  const authorization = request.headers.get('authorization') ?? ''
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : ''
+  if (!TOKEN_RE.test(token)) return json({ error: 'unauthorized' }, 401)
+  const contributorId = await deps.deleteContributor(await sha256(token))
+  if (!contributorId) return json({ error: 'unauthorized' }, 401)
+  return json({ deleted: true })
+}
+
 export function createIngestDependencies(databaseUrl: string): IngestDependencies {
   const sql = neon(databaseUrl)
   return {
@@ -255,6 +268,22 @@ export function createIngestDependencies(databaseUrl: string): IngestDependencie
         accepted += rows.length
       }
       return accepted
+    },
+    async deleteContributor(tokenHash) {
+      const rows = await sql`
+        WITH owner AS (
+          SELECT contributor_id
+          FROM contributor_api_tokens
+          WHERE token_hash = ${tokenHash} AND revoked_at IS NULL
+          FOR UPDATE
+        ), deleted AS (
+          DELETE FROM contributors c
+          USING owner
+          WHERE c.contributor_id = owner.contributor_id
+          RETURNING c.contributor_id
+        )
+        SELECT contributor_id FROM deleted`
+      return rows[0]?.contributor_id ? String(rows[0].contributor_id) : null
     },
   }
 }

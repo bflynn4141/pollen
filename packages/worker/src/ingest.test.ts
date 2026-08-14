@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   handleContributorRegistration,
+  handleContributorDeletion,
   handleContributorStatus,
   handleReceiptIngest,
   validateNetworkReceipt,
@@ -25,6 +26,7 @@ function dependencies(overrides: Partial<IngestDependencies> = {}): IngestDepend
     registerContributor: vi.fn(async () => true),
     authenticateTokenHash: vi.fn(async () => 'contributor-1'),
     insertReceipts: vi.fn(async () => 1),
+    deleteContributor: vi.fn(async () => 'contributor-1'),
     ...overrides,
   }
 }
@@ -137,6 +139,34 @@ describe('receipt ingest handlers', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ contributor_id: 'contributor-1', status: 'active' })
+  })
+
+  it('deletes the authenticated contributor and all cascade-owned data', async () => {
+    const deps = dependencies()
+    const response = await handleContributorDeletion(
+      new Request('https://api.pollen.test/api/v1/contributors/me', {
+        method: 'DELETE',
+        headers: { authorization: `Bearer pln_${'a'.repeat(43)}` },
+      }),
+      deps,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ deleted: true })
+    expect(deps.deleteContributor).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/))
+  })
+
+  it('does not reveal whether an invalid or already-revoked deletion token existed', async () => {
+    const response = await handleContributorDeletion(
+      new Request('https://api.pollen.test/api/v1/contributors/me', {
+        method: 'DELETE',
+        headers: { authorization: `Bearer pln_${'a'.repeat(43)}` },
+      }),
+      dependencies({ deleteContributor: vi.fn(async () => null) }),
+    )
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ error: 'unauthorized' })
   })
 
   it('stores only validated receipts under the server-authenticated contributor', async () => {
