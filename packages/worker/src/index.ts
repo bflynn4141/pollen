@@ -26,8 +26,14 @@ import {
 import {
   createIngestDependencies,
   handleContributorRegistration,
+  handleContributorStatus,
   handleReceiptIngest,
 } from './ingest'
+import {
+  createInviteDependencies,
+  handleCreateInvite,
+  handleRevokeInvite,
+} from './invites'
 export { X402SettlementRelayer } from './x402-relay'
 
 /**
@@ -49,7 +55,6 @@ export interface Env extends X402RelayEnv, WorldIdEnv {
   // Secrets (wrangler secret put):
   NEON_DATABASE_URL: string
   ADMIN_SECRET: string
-  FOUNDING_PANEL_INVITE_CODE: string
 }
 
 const FREE_CACHE = { 'Cache-Control': 'public, max-age=300' }
@@ -76,12 +81,36 @@ api.post('/worldid/verify', c => handleWorldIdVerify(c.req.raw, c.env))
 // uploads use the one-time bearer token issued to that installation. Only the
 // closed receipt schema in ingest.ts can cross this boundary.
 api.post('/contributors/register', async c => {
-  const invite = c.req.header('x-pollen-invite')
-  if (!c.env.FOUNDING_PANEL_INVITE_CODE || invite !== c.env.FOUNDING_PANEL_INVITE_CODE) {
-    return c.json({ error: 'invalid_invite' }, 403, NO_STORE)
+  const invite = c.req.header('x-pollen-invite') ?? ''
+  let contributorId: string | undefined
+  const rawBody = await c.req.text()
+  if (rawBody) {
+    let body: unknown
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400, NO_STORE)
+    }
+    if (
+      typeof body !== 'object'
+      || body === null
+      || Array.isArray(body)
+      || Object.keys(body).some(key => key !== 'contributor_id')
+      || typeof (body as Record<string, unknown>).contributor_id !== 'string'
+    ) {
+      return c.json({ error: 'invalid_registration' }, 400, NO_STORE)
+    }
+    contributorId = (body as { contributor_id: string }).contributor_id
   }
-  return handleContributorRegistration(createIngestDependencies(c.env.NEON_DATABASE_URL))
+  return handleContributorRegistration(
+    invite,
+    createIngestDependencies(c.env.NEON_DATABASE_URL),
+    contributorId,
+  )
 })
+api.get('/contributors/me', c =>
+  handleContributorStatus(c.req.raw, createIngestDependencies(c.env.NEON_DATABASE_URL)),
+)
 api.post('/receipts', c =>
   handleReceiptIngest(c.req.raw, createIngestDependencies(c.env.NEON_DATABASE_URL)),
 )
@@ -208,6 +237,22 @@ app.post('/admin/run/rollups', async c => {
       NO_STORE,
     )
   }
+})
+
+app.post('/admin/invites', async c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleCreateInvite(c.req.raw, createInviteDependencies(c.env.NEON_DATABASE_URL))
+})
+
+app.post('/admin/invites/:id/revoke', async c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleRevokeInvite(
+    c.req.raw,
+    c.req.param('id'),
+    createInviteDependencies(c.env.NEON_DATABASE_URL),
+  )
 })
 
 app.post('/admin/run/epoch-close', async c => {

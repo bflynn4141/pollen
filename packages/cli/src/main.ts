@@ -30,7 +30,7 @@ function openDb(commandName: string | undefined) {
   // Keeping them in memory makes `pollen setup --demo` genuinely side-effect free.
   const databaseFreeCommands = new Set([
     undefined, 'help', '--help', '-h', 'setup', 'join', 'verify', 'status',
-    'earnings', 'points', 'register', 'wallet', 'claim',
+    'doctor', 'earnings', 'points', 'register', 'wallet', 'claim',
   ])
   if (databaseFreeCommands.has(commandName)) return initDb()
 
@@ -274,7 +274,17 @@ try {
       runStatus()
       break
     }
+    case 'doctor': {
+      const { runDoctor } = await import('./doctor.js')
+      if (!await runDoctor()) process.exitCode = 1
+      break
+    }
     case 'setup': {
+      if (process.argv.includes('--agents')) {
+        const { runAgentSetup } = await import('./agent-setup.js')
+        if (!runAgentSetup()) process.exitCode = 1
+        break
+      }
       if (process.argv.includes('--codex')) {
         const { runCodexSetup } = await import('./codex-setup.js')
         await runCodexSetup()
@@ -292,12 +302,7 @@ try {
         process.exit(1)
       }
       const existing = loadConfig()
-      if (existing?.world_id) {
-        console.error('This legacy profile is already World ID verified and cannot be re-keyed automatically.')
-        console.error('Contact the Pollen operator to migrate it into the founding panel.')
-        process.exit(1)
-      }
-      const result = await joinFoundingPanel(invite)
+      const result = await joinFoundingPanel(invite, undefined, existing?.contributor_id)
       if (!result.ok) {
         console.error(result.message)
         process.exitCode = 1
@@ -305,7 +310,7 @@ try {
       }
       console.log(`✓ Joined founding panel as ${result.contributorId}`)
       console.log('  Your bearer token is stored locally in ~/.pollen/config.json with mode 0600.')
-      console.log('  Run `pollen setup`, then `pollen sync` after a completed session.')
+      console.log('  Run `pollen setup --agents`, then `pollen doctor`.')
       break
     }
     case 'earnings': {
@@ -468,7 +473,9 @@ try {
         '  join <code>     Join the invite-only founding panel',
         '  setup           Guided onboarding — hooks, wallet, everything',
         '  setup --demo    Same flow, nothing written to disk (for demos)',
+        '  setup --agents  Install capture hooks for detected agent CLIs',
         '  setup --codex   Install pollen hooks into ~/.codex/hooks.json',
+        '  doctor          Check hooks, local privacy, and network registration',
         '  backfill --codex [--days N]  Ingest historical Codex sessions (default 30 days)',
         '  stats       Summary dashboard',
         '  intents     Intent distribution',

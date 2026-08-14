@@ -41,7 +41,6 @@ WORLD_ID_ACTION = "pollen-verify-v6"
 # Secrets — set via `wrangler secret put <NAME>`:
 #   NEON_DATABASE_URL   Neon Postgres connection string
 #   ADMIN_SECRET        Bearer token for POST /admin/run/{rollups,epoch-close}
-#   FOUNDING_PANEL_INVITE_CODE  Invite required to register a contributor
 #   X402_RELAYER_KEY     Gas-funded EOA that submits PollenSettlementV2.settle
 #   RP_SIGNING_KEY        World ID relying-party request signing key
 

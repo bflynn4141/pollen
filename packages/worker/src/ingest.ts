@@ -8,7 +8,9 @@ const JSON_HEADERS = {
 const MAX_BODY_BYTES = 128 * 1024
 const MAX_RECEIPTS = 100
 const TOKEN_RE = /^pln_[A-Za-z0-9_-]{43}$/
+const INVITE_RE = /^pinv_[A-Za-z0-9_-]{43}$/
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const LEGACY_CONTRIBUTOR_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 
 const INTENTS = new Set([
   'debugging', 'feature_build', 'refactoring', 'learning', 'devops',
@@ -38,7 +40,7 @@ export interface NetworkReceiptV1 {
 }
 
 export interface IngestDependencies {
-  registerContributor(contributorId: string, tokenHash: string): Promise<void>
+  registerContributor(inviteHash: string, contributorId: string, tokenHash: string): Promise<boolean>
   authenticateTokenHash(tokenHash: string): Promise<string | null>
   insertReceipts(contributorId: string, receipts: NetworkReceiptV1[]): Promise<number>
 }
@@ -110,10 +112,26 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export async function handleContributorRegistration(deps: IngestDependencies): Promise<Response> {
-  const contributorId = crypto.randomUUID()
+export async function handleContributorRegistration(
+  inviteCode: string,
+  deps: IngestDependencies,
+  requestedContributorId?: string,
+): Promise<Response> {
+  if (!INVITE_RE.test(inviteCode)) return json({ error: 'invalid_invite' }, 403)
+  if (
+    requestedContributorId !== undefined
+    && !LEGACY_CONTRIBUTOR_ID_RE.test(requestedContributorId)
+  ) {
+    return json({ error: 'invalid_contributor_id' }, 400)
+  }
+  const contributorId = requestedContributorId ?? crypto.randomUUID()
   const token = randomToken()
-  await deps.registerContributor(contributorId, await sha256(token))
+  const registered = await deps.registerContributor(
+    await sha256(inviteCode),
+    contributorId,
+    await sha256(token),
+  )
+  if (!registered) return json({ error: 'invalid_invite' }, 403)
   return json({ contributor_id: contributorId, token, token_type: 'Bearer' }, 201)
 }
 
@@ -160,17 +178,56 @@ export async function handleReceiptIngest(
   return json({ accepted, received: receipts.length }, 202)
 }
 
+export async function handleContributorStatus(
+  request: Request,
+  deps: IngestDependencies,
+): Promise<Response> {
+  const authorization = request.headers.get('authorization') ?? ''
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : ''
+  if (!TOKEN_RE.test(token)) return json({ error: 'unauthorized' }, 401)
+  const contributorId = await deps.authenticateTokenHash(await sha256(token))
+  if (!contributorId) return json({ error: 'unauthorized' }, 401)
+  return json({ contributor_id: contributorId, status: 'active' })
+}
+
 export function createIngestDependencies(databaseUrl: string): IngestDependencies {
   const sql = neon(databaseUrl)
   return {
-    async registerContributor(contributorId, tokenHash) {
-      await sql`
-        INSERT INTO contributors (contributor_id, updated_at)
-        VALUES (${contributorId}, NOW())
-        ON CONFLICT (contributor_id) DO NOTHING`
-      await sql`
-        INSERT INTO contributor_api_tokens (token_hash, contributor_id)
-        VALUES (${tokenHash}, ${contributorId})`
+    async registerContributor(inviteHash, contributorId, tokenHash) {
+      const rows = await sql`
+        WITH candidate AS (
+          SELECT invite_id
+          FROM contributor_invites
+          WHERE code_hash = ${inviteHash}
+            AND used_at IS NULL
+            AND revoked_at IS NULL
+            AND expires_at > NOW()
+            AND NOT EXISTS (
+              SELECT 1
+              FROM contributor_api_tokens
+              WHERE contributor_id = ${contributorId}
+                AND revoked_at IS NULL
+            )
+          FOR UPDATE
+        ), inserted_contributor AS (
+          INSERT INTO contributors (contributor_id, updated_at)
+          SELECT ${contributorId}, NOW() FROM candidate
+          ON CONFLICT (contributor_id) DO UPDATE SET updated_at = NOW()
+          RETURNING contributor_id
+        ), consumed AS (
+          UPDATE contributor_invites i
+          SET used_at = NOW(), contributor_id = ${contributorId}
+          FROM candidate c, inserted_contributor created
+          WHERE i.invite_id = c.invite_id
+          RETURNING i.invite_id
+        ), inserted_token AS (
+          INSERT INTO contributor_api_tokens (token_hash, contributor_id)
+          SELECT ${tokenHash}, ${contributorId} FROM consumed
+          RETURNING token_hash
+        )
+        SELECT consumed.invite_id
+        FROM consumed, inserted_token`
+      return rows.length === 1
     },
     async authenticateTokenHash(tokenHash) {
       const rows = await sql`

@@ -1,10 +1,29 @@
 import { PassThrough, Writable } from 'node:stream'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { makePollenHookEntry, runSetup } from './setup.js'
+import { installClaudeHooks, makePollenHookEntry, POLLEN_HOOK_EVENTS, runSetup } from './setup.js'
 
 describe('setup', () => {
   it('uses the executable installed by the CLI package for hooks', () => {
     expect(makePollenHookEntry().hooks[0].command).toBe('pollen-hook')
+  })
+
+  it('creates a clean Claude Code install with every required hook', () => {
+    const home = mkdtempSync(join(tmpdir(), 'pollen-claude-install-'))
+    const settingsPath = join(home, '.claude', 'settings.json')
+    try {
+      const result = installClaudeHooks(settingsPath, 'pollen-hook')
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf8'))
+
+      expect(result.added).toEqual([...POLLEN_HOOK_EVENTS])
+      for (const event of POLLEN_HOOK_EVENTS) {
+        expect(settings.hooks[event][0].hooks[0].command).toBe('pollen-hook')
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('completes the clean-user demo flow using one input stream', async () => {

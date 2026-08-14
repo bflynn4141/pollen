@@ -21,13 +21,18 @@ export async function registerNetworkContributor(
   inviteCode: string,
   apiUrl = DEFAULT_NETWORK_API_URL,
   fetchImpl: typeof fetch = fetch,
+  existingContributorId?: string,
 ): Promise<NetworkRegistration> {
   const response = await fetchImpl(`${apiUrl}/api/v1/contributors/register`, {
     method: 'POST',
     headers: {
       accept: 'application/json',
       'x-pollen-invite': inviteCode,
+      ...(existingContributorId === undefined ? {} : { 'content-type': 'application/json' }),
     },
+    ...(existingContributorId === undefined
+      ? {}
+      : { body: JSON.stringify({ contributor_id: existingContributorId }) }),
   })
   if (!response.ok) throw await responseError(response)
   const body = await response.json() as { contributor_id?: unknown; token?: unknown }

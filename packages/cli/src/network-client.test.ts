@@ -18,6 +18,21 @@ describe('network client', () => {
     )
   })
 
+  it('preserves a legacy contributor id when joining the receipt network', async () => {
+    const contributorId = '2b92eeda-e523-4dd8-b65a-0cf2f272e221'
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      contributor_id: contributorId,
+      token: `pln_${'a'.repeat(43)}`,
+    }), { status: 201, headers: { 'content-type': 'application/json' } }))
+
+    await registerNetworkContributor('invite-code', 'https://api.test', fetchImpl as typeof fetch, contributorId)
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.test/api/v1/contributors/register',
+      expect.objectContaining({ body: JSON.stringify({ contributor_id: contributorId }) }),
+    )
+  })
+
   it('uploads receipts with the contributor token', async () => {
     const fetchImpl = vi.fn(async () => new Response(
       JSON.stringify({ accepted: 1, received: 1 }),
