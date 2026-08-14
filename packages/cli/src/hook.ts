@@ -17,7 +17,8 @@ import {
   handlePermissionRequest, handlePermissionDenied, handlePostCompact,
 } from './hooks/capture-events.js'
 import { handleCodexPostToolUse } from './codex-hook.js'
-import { DB_PATH } from './config.js'
+import { DB_PATH, isCapturePaused } from './config.js'
+import { launchBackgroundNetworkSync } from './background-sync.js'
 
 function ensureDir(filepath: string): void {
   mkdirSync(dirname(filepath), { recursive: true })
@@ -28,6 +29,7 @@ interface HookResult {
   db: ReturnType<typeof initDb>
   /** Optional user-visible message merged into the hook's stdout JSON */
   systemMessage?: string
+  shouldSyncNetwork: boolean
 }
 
 /**
@@ -105,17 +107,24 @@ export function runHookSync(input: HookInput, source?: string): HookResult {
       break
   }
 
-  return { pendingWork, db, systemMessage }
+  return {
+    pendingWork,
+    db,
+    systemMessage,
+    shouldSyncNetwork: event === 'SessionStart' || event === 'SessionEnd',
+  }
 }
 
 // Backward-compat: awaits all work then closes db
 export async function runHook(input: HookInput, source?: string): Promise<void> {
-  const { pendingWork, db } = runHookSync(input, source)
+  if (isCapturePaused()) return
+  const { pendingWork, db, shouldSyncNetwork } = runHookSync(input, source)
   try {
     if (pendingWork) await pendingWork
   } finally {
     db.close()
   }
+  if (shouldSyncNetwork) launchBackgroundNetworkSync()
 }
 
 /** Parse `--source <name>` from the hook command's argv (e.g. `--source codex`) */
@@ -131,6 +140,7 @@ async function main(): Promise<void> {
   let pendingWork: Promise<void> | null = null
   let db: ReturnType<typeof initDb> | null = null
   let systemMessage: string | undefined
+  let shouldSyncNetwork = false
 
   try {
     let data = ''
@@ -139,10 +149,13 @@ async function main(): Promise<void> {
     }
 
     const input: HookInput = JSON.parse(data)
-    const result = runHookSync(input, parseSourceFlag(process.argv))
-    pendingWork = result.pendingWork
-    db = result.db
-    systemMessage = result.systemMessage
+    if (!isCapturePaused()) {
+      const result = runHookSync(input, parseSourceFlag(process.argv))
+      pendingWork = result.pendingWork
+      db = result.db
+      systemMessage = result.systemMessage
+      shouldSyncNetwork = result.shouldSyncNetwork
+    }
   } catch {
     // Fail silently — never block Claude Code
   }
@@ -162,6 +175,7 @@ async function main(): Promise<void> {
   if (db) {
     try { db.close() } catch { /* ignore */ }
   }
+  if (shouldSyncNetwork) launchBackgroundNetworkSync()
 }
 
 main()

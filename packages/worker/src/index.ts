@@ -12,6 +12,7 @@ import {
   readMcpRanking,
   readOverview,
   readReceiptNetwork,
+  readReceiptNetworkWindows,
   readToolHistory,
   readTrendingTools,
 } from '@pollen/data'
@@ -25,14 +26,26 @@ import {
 import {
   createIngestDependencies,
   handleContributorRegistration,
+  handleContributorDeletion,
+  handleContributorStatus,
   handleReceiptIngest,
 } from './ingest'
+import {
+  createInviteDependencies,
+  handleCreateInvite,
+  handleListInvites,
+  handleRevokeInvite,
+} from './invites'
+import {
+  createOperationsDependencies,
+  handleContributionHealth,
+} from './operations'
 export { X402SettlementRelayer } from './x402-relay'
 
 /**
  * pollen-api — Cloudflare Worker serving the public /api/v1 endpoints at
  * api.pollen.id, plus the two cron jobs that used to be Vercel crons
- * (rollups every 6h, epoch-close Tuesdays 00:10 UTC).
+ * (rollups every 15m, epoch-close Tuesdays 00:10 UTC).
  *
  * k-anonymity boundary: route handlers import ONLY the @pollen/data readers
  * (rollup_cells); never the site's raw-table queries. computeRollups() (cron/
@@ -48,7 +61,6 @@ export interface Env extends X402RelayEnv, WorldIdEnv {
   // Secrets (wrangler secret put):
   NEON_DATABASE_URL: string
   ADMIN_SECRET: string
-  FOUNDING_PANEL_INVITE_CODE: string
 }
 
 const FREE_CACHE = { 'Cache-Control': 'public, max-age=300' }
@@ -75,11 +87,48 @@ api.post('/worldid/verify', c => handleWorldIdVerify(c.req.raw, c.env))
 // uploads use the one-time bearer token issued to that installation. Only the
 // closed receipt schema in ingest.ts can cross this boundary.
 api.post('/contributors/register', async c => {
-  const invite = c.req.header('x-pollen-invite')
-  if (!c.env.FOUNDING_PANEL_INVITE_CODE || invite !== c.env.FOUNDING_PANEL_INVITE_CODE) {
-    return c.json({ error: 'invalid_invite' }, 403, NO_STORE)
+  const invite = c.req.header('x-pollen-invite') ?? ''
+  let contributorId: string | undefined
+  const rawBody = await c.req.text()
+  if (rawBody) {
+    let body: unknown
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400, NO_STORE)
+    }
+    if (
+      typeof body !== 'object'
+      || body === null
+      || Array.isArray(body)
+      || Object.keys(body).some(key => key !== 'contributor_id')
+      || typeof (body as Record<string, unknown>).contributor_id !== 'string'
+    ) {
+      return c.json({ error: 'invalid_registration' }, 400, NO_STORE)
+    }
+    contributorId = (body as { contributor_id: string }).contributor_id
   }
-  return handleContributorRegistration(createIngestDependencies(c.env.NEON_DATABASE_URL))
+  return handleContributorRegistration(
+    invite,
+    createIngestDependencies(c.env.NEON_DATABASE_URL),
+    contributorId,
+  )
+})
+api.get('/contributors/me', c =>
+  handleContributorStatus(c.req.raw, createIngestDependencies(c.env.NEON_DATABASE_URL)),
+)
+api.delete('/contributors/me', async c => {
+  const response = await handleContributorDeletion(
+    c.req.raw,
+    createIngestDependencies(c.env.NEON_DATABASE_URL),
+  )
+  if (!response.ok) return response
+  try {
+    await computeRollups()
+    return response
+  } catch {
+    return c.json({ deleted: true, rollups: 'pending' }, 202, NO_STORE)
+  }
 })
 api.post('/receipts', c =>
   handleReceiptIngest(c.req.raw, createIngestDependencies(c.env.NEON_DATABASE_URL)),
@@ -112,11 +161,16 @@ api.get('/overview', async c => {
 // contributors qualify in one week, this intentionally returns an empty list.
 api.get('/network', async c => {
   const weeks = (await listReceiptWeeks()).slice(0, 2)
-  const data = await Promise.all(weeks.map(week => readReceiptNetwork(week)))
+  const [data, windows] = await Promise.all([
+    Promise.all(weeks.map(week => readReceiptNetwork(week))),
+    readReceiptNetworkWindows(),
+  ])
+  const live = Object.values(windows).some(window => window.current !== null)
   return c.json({
     source: 'network_receipts',
     k_anonymity: K_ANONYMITY,
-    status: data.length > 0 ? 'live' : 'warming_up',
+    status: live ? 'live' : 'warming_up',
+    windows,
     weeks: data.filter(Boolean),
   }, 200, FREE_CACHE)
 })
@@ -204,6 +258,34 @@ app.post('/admin/run/rollups', async c => {
   }
 })
 
+app.post('/admin/invites', async c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleCreateInvite(c.req.raw, createInviteDependencies(c.env.NEON_DATABASE_URL))
+})
+
+app.get('/admin/invites', c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleListInvites(createInviteDependencies(c.env.NEON_DATABASE_URL))
+})
+
+app.post('/admin/invites/:id/revoke', async c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleRevokeInvite(
+    c.req.raw,
+    c.req.param('id'),
+    createInviteDependencies(c.env.NEON_DATABASE_URL),
+  )
+})
+
+app.get('/admin/contributions/health', c => {
+  const denied = requireAdmin(c)
+  if (denied) return denied
+  return handleContributionHealth(createOperationsDependencies(c.env.NEON_DATABASE_URL))
+})
+
 app.post('/admin/run/epoch-close', async c => {
   const denied = requireAdmin(c)
   if (denied) return denied
@@ -240,7 +322,7 @@ app.get('/admin/health', async c => {
 async function scheduled(controller: ScheduledController, env: Env): Promise<void> {
   configureDb(env.NEON_DATABASE_URL)
   switch (controller.cron) {
-    case '0 */6 * * *': {
+    case '*/15 * * * *': {
       const cells = await computeRollups()
       console.log(`[cron rollups] wrote ${cells} cells`)
       break

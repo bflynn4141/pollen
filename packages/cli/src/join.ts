@@ -9,7 +9,11 @@ const INVALID_INVITE_MESSAGE = 'That invite code was not accepted. Check the cod
 
 interface JoinDependencies {
   apiUrl: string
-  register: (inviteCode: string, apiUrl: string) => Promise<NetworkRegistration>
+  register: (
+    inviteCode: string,
+    apiUrl: string,
+    existingContributorId?: string,
+  ) => Promise<NetworkRegistration>
   saveRegistration: (contributorId: string, apiUrl: string, token: string) => void
 }
 
@@ -19,7 +23,8 @@ export type JoinResult =
 
 const defaultDependencies: JoinDependencies = {
   apiUrl: DEFAULT_NETWORK_API_URL,
-  register: registerNetworkContributor,
+  register: (inviteCode, apiUrl, existingContributorId) =>
+    registerNetworkContributor(inviteCode, apiUrl, fetch, existingContributorId),
   saveRegistration: saveNetworkRegistration,
 }
 
@@ -32,10 +37,13 @@ function isInvalidInviteError(error: unknown): boolean {
 export async function joinFoundingPanel(
   inviteCode: string,
   dependencies: JoinDependencies = defaultDependencies,
+  existingContributorId?: string,
 ): Promise<JoinResult> {
   let registration: NetworkRegistration
   try {
-    registration = await dependencies.register(inviteCode, dependencies.apiUrl)
+    registration = existingContributorId === undefined
+      ? await dependencies.register(inviteCode, dependencies.apiUrl)
+      : await dependencies.register(inviteCode, dependencies.apiUrl, existingContributorId)
   } catch (error) {
     if (isInvalidInviteError(error)) {
       return { ok: false, message: INVALID_INVITE_MESSAGE }

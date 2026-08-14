@@ -46,8 +46,9 @@ When you submit a prompt in Claude Code:
 
 Topic and intent classification is fully local — no API calls, no network requests. If you have `ANTHROPIC_API_KEY` set, the hook optionally uses Claude Haiku to extract a short subject summary from the first prompt of each session. You can disable this by unsetting the key.
 
-Data only leaves your machine when you explicitly run `pollen sync`. Sync does
-not copy local tables. It constructs a versioned receipt containing only:
+When a session ends, Pollen places a closed receipt in a durable local outbox
+and uploads it in the background. `pollen sync` manually retries pending work.
+Neither path copies local tables. Each receipt contains only:
 
 - intent;
 - agent and model ID;
@@ -58,6 +59,10 @@ not copy local tables. It constructs a versioned receipt containing only:
 
 The Worker independently rejects unknown fields, so raw content cannot be
 added accidentally by a future client change.
+
+Run `pollen pause` to stop capture and automatic delivery. Run `pollen resume`
+to continue. `pollen leave --delete-network-data` deletes server receipts and
+revokes the local network credential.
 
 ## Performance
 

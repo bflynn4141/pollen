@@ -7,6 +7,7 @@
 // contributors at write time.
 
 export * from './week'
+export * from './receipt-windows'
 export * from './rollups'
 export * from './rollup-queries'
 export { configureDb, getDb } from './neon'

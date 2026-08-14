@@ -43,7 +43,7 @@ export const SATISFACTION_THRESHOLDS = {
 // ── Paths ──
 
 export const DB_PATH = join(process.env.HOME ?? '~', '.pollen', 'local.db')
-const CONFIG_PATH = join(process.env.HOME ?? '~', '.pollen', 'config.json')
+export const CONFIG_PATH = join(process.env.HOME ?? '~', '.pollen', 'config.json')
 
 // ── Sync ──
 
@@ -83,22 +83,41 @@ export interface PollenConfig {
   para_wallet?: ParaWallet
   /** Recipient for the weekly Pollen Brief email (set via `pollen brief --to`) */
   brief_email?: string
+  capture_paused?: boolean
 }
 
-export function loadConfig(): PollenConfig | null {
-  if (!existsSync(CONFIG_PATH)) return null
+export function loadConfig(configPath: string = CONFIG_PATH): PollenConfig | null {
+  if (!existsSync(configPath)) return null
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as PollenConfig
+    return JSON.parse(readFileSync(configPath, 'utf-8')) as PollenConfig
   } catch {
     return null
   }
 }
 
-export function saveConfig(config: PollenConfig): void {
-  const dir = dirname(CONFIG_PATH)
+export function saveConfig(config: PollenConfig, configPath: string = CONFIG_PATH): void {
+  const dir = dirname(configPath)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
-  chmodSync(CONFIG_PATH, 0o600)
+  chmodSync(dir, 0o700)
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+  chmodSync(configPath, 0o600)
+}
+
+export function setCapturePaused(paused: boolean, configPath: string = CONFIG_PATH): void {
+  const config = loadConfig(configPath) ?? { contributor_id: randomUUID() }
+  config.capture_paused = paused
+  saveConfig(config, configPath)
+}
+
+export function clearNetworkRegistration(configPath: string = CONFIG_PATH): void {
+  const config = loadConfig(configPath)
+  if (!config) return
+  delete config.network
+  saveConfig(config, configPath)
+}
+
+export function isCapturePaused(configPath: string = CONFIG_PATH): boolean {
+  return loadConfig(configPath)?.capture_paused === true
 }
 
 export function saveNetworkRegistration(

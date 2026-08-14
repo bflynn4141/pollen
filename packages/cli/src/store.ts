@@ -163,6 +163,24 @@ CREATE TABLE IF NOT EXISTS brief_kv (
 );
 `
 
+// LOCAL-ONLY: durable delivery state for privacy-safe network receipts.
+// The outbox stores session IDs and retry metadata, never network credentials.
+const NETWORK_OUTBOX_SCHEMA = `
+CREATE TABLE IF NOT EXISTS network_receipt_outbox (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+  enqueued_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL,
+  lease_until INTEGER,
+  last_error TEXT,
+  synced_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_network_receipt_outbox_ready
+  ON network_receipt_outbox(next_attempt_at)
+  WHERE synced_at IS NULL;
+`
+
 export function initDb(dbPath?: string): Database.Database {
   const db = dbPath ? new Database(dbPath) : new Database(':memory:')
   db.pragma('journal_mode = WAL')
@@ -174,6 +192,7 @@ export function initDb(dbPath?: string): Database.Database {
   db.exec(LIFECYCLE_SCHEMA)
   db.exec(X402_SCHEMA)
   db.exec(BRIEF_SCHEMA)
+  db.exec(NETWORK_OUTBOX_SCHEMA)
   return db
 }
 

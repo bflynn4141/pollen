@@ -147,6 +147,11 @@ describe('hooks integration: full session lifecycle', () => {
     // Verify end_reason
     expect(finalSession.end_reason).toBe('exit')
 
+    const outbox = db.prepare(
+      'SELECT synced_at FROM network_receipt_outbox WHERE session_id = ?'
+    ).get(SESSION_ID) as { synced_at: number | null } | undefined
+    expect(outbox).toEqual({ synced_at: null })
+
     // Verify response stats
     expect(finalSession.response_count).toBe(2)
     expect(finalSession.avg_response_length).toBeGreaterThan(0)

@@ -41,4 +41,20 @@ describe('joinFoundingPanel', () => {
       `pln_${'a'.repeat(43)}`,
     )
   })
+
+  it('requests a token for an existing legacy contributor id', async () => {
+    const register = vi.fn(async () => ({
+      contributorId: 'legacy-contributor',
+      token: `pln_${'a'.repeat(43)}`,
+    }))
+
+    const result = await joinFoundingPanel('valid-invite', {
+      apiUrl: 'https://api.test',
+      register,
+      saveRegistration: vi.fn(),
+    }, 'legacy-contributor')
+
+    expect(result.ok).toBe(true)
+    expect(register).toHaveBeenCalledWith('valid-invite', 'https://api.test', 'legacy-contributor')
+  })
 })

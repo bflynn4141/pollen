@@ -18,19 +18,30 @@ import {
 } from './query.js'
 import { backfillSubjects } from './backfill-subjects.js'
 import { runVerify, runStatus } from './verify.js'
-import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWalletAddress, runInteractiveWallet } from './config.js'
+import {
+  clearNetworkRegistration,
+  DB_PATH,
+  getWalletAddress,
+  isValidAddress,
+  loadConfig,
+  registerWallet,
+  runInteractiveWallet,
+  setCapturePaused,
+  setupWallet,
+} from './config.js'
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
 import { buildNetworkReceipts, summarizeNetworkReceipts } from './network-receipt.js'
-import { syncNetworkReceipts } from './network-sync.js'
+import { drainNetworkOutbox, enqueueEligibleNetworkReceipts } from './network-outbox.js'
 import { joinFoundingPanel } from './join.js'
+import { deleteNetworkContributor } from './network-client.js'
 
 function openDb(commandName: string | undefined) {
   // Commands that manage identity or onboarding do not need user activity data.
   // Keeping them in memory makes `pollen setup --demo` genuinely side-effect free.
   const databaseFreeCommands = new Set([
     undefined, 'help', '--help', '-h', 'setup', 'join', 'verify', 'status',
-    'earnings', 'points', 'register', 'wallet', 'claim',
+    'doctor', 'pause', 'resume', 'leave', 'admin', 'earnings', 'points', 'register', 'wallet', 'claim',
   ])
   if (databaseFreeCommands.has(commandName)) return initDb()
 
@@ -122,18 +133,41 @@ try {
         console.log('Dry run only; nothing was uploaded. The server deduplicates receipt IDs during sync.')
         break
       }
-      console.log(`Uploading ${receipts.length} privacy-safe network receipt${receipts.length === 1 ? '' : 's'}...`)
-      const result = await syncNetworkReceipts({
-        token: config.network.token,
-        receipts,
-        apiUrl: config.network.api_url,
-      })
-      if (!result.ok) {
-        console.error(result.message)
-        process.exitCode = 1
-        break
+      enqueueEligibleNetworkReceipts(db)
+      console.log(`Uploading pending privacy-safe network receipts...`)
+      let synced = 0
+      let accepted = 0
+      let failed = 0
+      for (let batch = 0; batch < 100; batch++) {
+        const result = await drainNetworkOutbox(db, {
+          contributorId: config.contributor_id,
+          token: config.network.token,
+          apiUrl: config.network.api_url,
+        })
+        synced += result.synced
+        accepted += result.accepted
+        failed += result.retryScheduled
+        if (result.attempted === 0 || result.retryScheduled > 0) break
       }
-      console.log(`Synced: ${result.accepted} new, ${result.received - result.accepted} already present.`)
+      console.log(`Synced: ${accepted} new, ${synced - accepted} already present.`)
+      if (failed > 0) {
+        console.error(`${failed} receipt${failed === 1 ? '' : 's'} retained locally for automatic retry.`)
+        process.exitCode = 1
+      }
+      break
+    }
+    case '_sync-network-outbox': {
+      const config = loadConfig()
+      if (!config?.network) break
+      enqueueEligibleNetworkReceipts(db)
+      for (let batch = 0; batch < 100; batch++) {
+        const result = await drainNetworkOutbox(db, {
+          contributorId: config.contributor_id,
+          token: config.network.token,
+          apiUrl: config.network.api_url,
+        })
+        if (result.attempted === 0 || result.retryScheduled > 0) break
+      }
       break
     }
     case 'backfill-subjects': {
@@ -274,7 +308,59 @@ try {
       runStatus()
       break
     }
+    case 'doctor': {
+      const { runDoctor } = await import('./doctor.js')
+      if (!await runDoctor()) process.exitCode = 1
+      break
+    }
+    case 'pause': {
+      setCapturePaused(true)
+      console.log('✓ Capture paused. Existing local data and network credentials were preserved.')
+      console.log('  Run `pollen resume` to start capturing again.')
+      break
+    }
+    case 'resume': {
+      setCapturePaused(false)
+      console.log('✓ Capture resumed.')
+      break
+    }
+    case 'leave': {
+      if (!process.argv.includes('--delete-network-data')) {
+        console.error('Usage: pollen leave --delete-network-data')
+        console.error('This permanently deletes your server-side receipts and revokes the network token.')
+        process.exitCode = 1
+        break
+      }
+      const config = loadConfig()
+      if (!config?.network) {
+        console.log('This installation is not connected to the contribution network.')
+        break
+      }
+      await deleteNetworkContributor(
+        config.network.token,
+        config.network.api_url,
+      )
+      clearNetworkRegistration()
+      console.log('✓ Network receipts deleted and contribution token revoked.')
+      console.log('  Local history, wallet, and identity settings were preserved.')
+      break
+    }
+    case 'admin': {
+      const { runAdminCommand } = await import('./admin.js')
+      const result = await runAdminCommand(process.argv.slice(3))
+      if (result.ok) console.log(result.output)
+      else {
+        console.error(result.output)
+        process.exitCode = 1
+      }
+      break
+    }
     case 'setup': {
+      if (process.argv.includes('--agents')) {
+        const { runAgentSetup } = await import('./agent-setup.js')
+        if (!runAgentSetup()) process.exitCode = 1
+        break
+      }
       if (process.argv.includes('--codex')) {
         const { runCodexSetup } = await import('./codex-setup.js')
         await runCodexSetup()
@@ -292,12 +378,7 @@ try {
         process.exit(1)
       }
       const existing = loadConfig()
-      if (existing?.world_id) {
-        console.error('This legacy profile is already World ID verified and cannot be re-keyed automatically.')
-        console.error('Contact the Pollen operator to migrate it into the founding panel.')
-        process.exit(1)
-      }
-      const result = await joinFoundingPanel(invite)
+      const result = await joinFoundingPanel(invite, undefined, existing?.contributor_id)
       if (!result.ok) {
         console.error(result.message)
         process.exitCode = 1
@@ -305,7 +386,7 @@ try {
       }
       console.log(`✓ Joined founding panel as ${result.contributorId}`)
       console.log('  Your bearer token is stored locally in ~/.pollen/config.json with mode 0600.')
-      console.log('  Run `pollen setup`, then `pollen sync` after a completed session.')
+      console.log('  Run `pollen setup --agents`, then `pollen doctor`.')
       break
     }
     case 'earnings': {
@@ -468,7 +549,13 @@ try {
         '  join <code>     Join the invite-only founding panel',
         '  setup           Guided onboarding — hooks, wallet, everything',
         '  setup --demo    Same flow, nothing written to disk (for demos)',
+        '  setup --agents  Install capture hooks for detected agent CLIs',
         '  setup --codex   Install pollen hooks into ~/.codex/hooks.json',
+        '  doctor          Check hooks, local privacy, and network registration',
+        '  pause           Stop local capture without deleting data',
+        '  resume          Resume local capture',
+        '  leave --delete-network-data  Delete server receipts and revoke access',
+        '  admin health | invite ...  Operator support commands',
         '  backfill --codex [--days N]  Ingest historical Codex sessions (default 30 days)',
         '  stats       Summary dashboard',
         '  intents     Intent distribution',
@@ -485,7 +572,7 @@ try {
         '  seed        Generate 20 realistic v4 demo sessions',
         '  my          Interactive dashboard — see exactly what you\'ve contributed',
         '  brief       Weekly top-3 coaching digest: pollen brief [--days 7] [--out <path>] [--open] [--send] [--to <email>]',
-        '  sync [--dry-run]  Preview or upload closed, privacy-safe network receipts',
+        '  sync [--dry-run]  Preview or retry privacy-safe network receipts',
         '  verify      Complete Orb-backed World ID verification',
         '  status      Show contributor identity + verification status',
         '  wallet      Set up a wallet (managed or bring-your-own)',

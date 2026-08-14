@@ -8,7 +8,7 @@
  * No writes to settings.json, config, or wallet API.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { Readable, Writable } from 'node:stream'
 import { loadConfig, getWalletAddress, runInteractiveWallet } from './config.js'
@@ -18,7 +18,7 @@ const HOME = process.env.HOME ?? '~'
 const SETTINGS_PATH = join(HOME, '.claude', 'settings.json')
 
 // Hook events pollen needs to be registered on
-const POLLEN_HOOK_EVENTS = [
+export const POLLEN_HOOK_EVENTS = [
   'UserPromptSubmit',
   'PostToolUse',
   'PostToolUseFailure',
@@ -68,6 +68,54 @@ function isPollenHook(entry: any): boolean {
     return entry.command.includes('pollen') || entry.command.includes('@pollen/')
   }
   return false
+}
+
+export interface ClaudeInstallResult {
+  added: string[]
+  alreadyInstalled: string[]
+  error?: string
+}
+
+/** Merge-safe, non-interactive Claude Code hook installation. */
+export function installClaudeHooks(
+  settingsPath: string = SETTINGS_PATH,
+  command: string = POLLEN_HOOK_COMMAND,
+): ClaudeInstallResult {
+  let settings: any = {}
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, 'utf8'))
+    } catch {
+      return {
+        added: [],
+        alreadyInstalled: [],
+        error: `${settingsPath} exists but is malformed JSON — left untouched.`,
+      }
+    }
+  }
+  if (!settings.hooks || typeof settings.hooks !== 'object') settings.hooks = {}
+
+  const added: string[] = []
+  const alreadyInstalled: string[] = []
+  for (const event of POLLEN_HOOK_EVENTS) {
+    const entries = settings.hooks[event]
+    if (Array.isArray(entries) && entries.some(isPollenHook)) {
+      alreadyInstalled.push(event)
+      continue
+    }
+    if (!Array.isArray(settings.hooks[event])) settings.hooks[event] = []
+    settings.hooks[event].push({
+      matcher: '',
+      hooks: [{ type: 'command', command, timeout: 10 }],
+    })
+    added.push(event)
+  }
+  if (added.length > 0) {
+    const dir = dirname(settingsPath)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n')
+  }
+  return { added, alreadyInstalled }
 }
 
 function ask(rl: ReturnType<typeof createInterface>, q: string): Promise<string> {
@@ -187,7 +235,7 @@ export async function runSetup(
   console.log('')
   console.log('  Next steps:')
   console.log('    pollen my         Inspect exactly what Pollen captured')
-  console.log('    pollen sync       Upload a closed network receipt')
+  console.log('    pollen sync       Check or retry automatic receipt delivery')
   console.log('    pollen status     Check contributor identity')
   console.log('')
 }

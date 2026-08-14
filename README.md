@@ -18,7 +18,7 @@ Node.js 20+ and an invite code are required. Install the beta from its public
 GitHub release:
 
 ```bash
-npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.4/pollen-cli-0.1.0-beta.4.tgz
+npm install --global https://github.com/bflynn4141/pollen/releases/download/cli-v0.1.0-beta.5/pollen-cli-0.1.0-beta.5.tgz
 ```
 
 Join the founding panel before installing hooks:
@@ -27,50 +27,35 @@ Join the founding panel before installing hooks:
 pollen join <invite-code>
 ```
 
-Choose the setup path for the agent you use.
-
-### Claude Code
-
-Run the guided setup:
+Install capture hooks for every supported agent detected on the machine, then
+verify the installation:
 
 ```bash
-pollen setup
+pollen setup --agents
+pollen doctor
 ```
 
-The wizard installs Claude Code hooks and offers wallet setup and World ID
-verification. If you skip either identity step, you can complete it later:
+### Optional payout identity
+
+Capture and contribution do not require a wallet or World ID. Configure them
+only if you want to become payout-eligible:
 
 ```bash
 pollen wallet
 pollen verify
 ```
 
-### Codex
-
-Install the Codex hooks, then configure the identity steps separately:
-
-```bash
-pollen setup --codex
-pollen wallet
-pollen verify
-```
-
-`pollen setup --codex` only installs hooks in `~/.codex/hooks.json`; it does
-not run the wallet or World ID flows. A wallet and World ID verification are
-the identity inputs required for payout eligibility. Payout automation is
-still being validated during the founding-panel beta, so participation does
-not guarantee a payout.
-
-The weekly payout agent is hard-gated until a closed epoch has at least five
+The weekly payout agent is hard-gated until an epoch has at least five
 payout-eligible contributors. Each must have an epoch score, World ID
 verification, a registered wallet, and a cryptographically valid wallet
-binding. A payout dry run remains read-only and reports the current and
-required contributor counts when this quorum is not met.
+binding. Participation does not guarantee a payout while automation remains
+in beta.
 
 ### Inspect and contribute
 
-Start a new Claude Code or Codex session after installing hooks. When that
-session is complete, inspect the local record and explicitly sync it:
+Start a new Claude Code or Codex session after installing hooks. When a
+session closes, Pollen durably queues and uploads its closed receipt in the
+background. Inspect the local record or retry a failed delivery at any time:
 
 ```bash
 pollen my
@@ -78,10 +63,23 @@ pollen sync --dry-run
 pollen sync
 ```
 
-The dry run prints aggregate counts and uploads nothing. `pollen sync` sends a
+The dry run prints aggregate counts and uploads nothing. Automatic delivery
+and `pollen sync` send a
 versioned receipt containing only intent, agent/model,
 tool-category sequence, duration bucket, terminal state, and check result. The
 server independently rejects every field outside that schema.
+
+Contributor controls are local and immediate:
+
+```bash
+pollen pause
+pollen resume
+pollen leave --delete-network-data
+```
+
+`leave --delete-network-data` revokes the network token, deletes that
+contributor's raw server receipts, and recomputes public aggregates. Local
+history and identity settings remain on the machine.
 
 ## Development
 

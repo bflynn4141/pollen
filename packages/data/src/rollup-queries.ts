@@ -1,4 +1,5 @@
 import { getDb } from './neon'
+import type { ReceiptRankingWindow } from './receipt-windows'
 import { prevWeek } from './week'
 
 /**
@@ -71,7 +72,7 @@ export interface NetworkOverview {
 }
 
 export interface ReceiptOverview {
-  week: string
+  period: string
   sessions: number
   categoryEvents: number
   completionRate: number
@@ -92,6 +93,8 @@ export interface ReceiptCategoryRank {
   category: string
   events: number
   sessions: number
+  completionRate: number
+  checkPassRate: number
   contributors: number
 }
 
@@ -112,7 +115,7 @@ export interface ReceiptWorkflowRank {
 }
 
 export interface ReceiptNetworkSnapshot {
-  week: string
+  period: string
   overview: ReceiptOverview
   models: ReceiptModelRank[]
   toolCategories: ReceiptCategoryRank[]
@@ -154,7 +157,7 @@ export async function listReceiptWeeks(): Promise<string[]> {
   const sql = getDb()
   const rows = await sql`
     SELECT DISTINCT period FROM rollup_cells
-    WHERE rollup = 'receipt_overview'
+    WHERE rollup = 'receipt_overview' AND period ~ '^\\d{4}-W\\d{2}$'
     ORDER BY period DESC`
   return rows.map(r => String(r.period))
 }
@@ -283,22 +286,22 @@ export async function readOverview(week: string): Promise<NetworkOverview | null
  * overview means fewer than K distinct contributors qualified, so callers
  * must render a warm-up state rather than inspect raw receipt counts.
  */
-export async function readReceiptNetwork(week: string): Promise<ReceiptNetworkSnapshot | null> {
+export async function readReceiptNetwork(period: string): Promise<ReceiptNetworkSnapshot | null> {
   const [overviewCells, modelCells, categoryCells, intentCells, workflowCells] = await Promise.all([
-    readCells('receipt_overview', week),
-    readCells('receipt_models', week),
-    readCells('receipt_tool_categories', week),
-    readCells('receipt_intents', week),
-    readCells('receipt_workflows', week),
+    readCells('receipt_overview', period),
+    readCells('receipt_models', period),
+    readCells('receipt_tool_categories', period),
+    readCells('receipt_intents', period),
+    readCells('receipt_workflows', period),
   ])
   const overview = overviewCells[0]
   if (!overview) return null
 
   const rate = (cell: CellRow, key: string) => Number(cell.value[key] ?? 0)
   return {
-    week,
+    period,
     overview: {
-      week,
+      period,
       sessions: Number(overview.value.sessions),
       categoryEvents: Number(overview.value.category_events),
       completionRate: rate(overview, 'completion_rate'),
@@ -317,6 +320,8 @@ export async function readReceiptNetwork(week: string): Promise<ReceiptNetworkSn
       category: cell.dims.category,
       events: Number(cell.value.events),
       sessions: Number(cell.value.sessions),
+      completionRate: rate(cell, 'completion_rate'),
+      checkPassRate: rate(cell, 'check_pass_rate'),
       contributors: cell.contributors,
     })).sort((a, b) => b.events - a.events),
     intents: intentCells.map(cell => ({
@@ -334,6 +339,22 @@ export async function readReceiptNetwork(week: string): Promise<ReceiptNetworkSn
       contributors: cell.contributors,
     })).sort((a, b) => b.sessions - a.sessions),
   }
+}
+
+export interface ReceiptNetworkWindow {
+  current: ReceiptNetworkSnapshot | null
+  previous: ReceiptNetworkSnapshot | null
+}
+
+/** Rolling dashboard windows; missing cells remain null when K is not met. */
+export async function readReceiptNetworkWindows(): Promise<Record<ReceiptRankingWindow, ReceiptNetworkWindow>> {
+  const windows: ReceiptRankingWindow[] = ['24h', '7d', '30d']
+  const pairs = await Promise.all(windows.map(async window => ({
+    window,
+    current: await readReceiptNetwork(`rolling:${window}:current`),
+    previous: await readReceiptNetwork(`rolling:${window}:previous`),
+  })))
+  return Object.fromEntries(pairs.map(({ window, current, previous }) => [window, { current, previous }])) as Record<ReceiptRankingWindow, ReceiptNetworkWindow>
 }
 
 /** Daily call series for the top `limit` tools over the last `days` days. */

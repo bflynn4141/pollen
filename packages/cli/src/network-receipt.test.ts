@@ -68,6 +68,24 @@ describe('network receipts', () => {
     expect(receipt.model).toMatch(/^[A-Za-z0-9][A-Za-z0-9._:/+ -]{0,79}$/)
   })
 
+  it('normalizes fractional timestamps written by legacy importers', () => {
+    const db = initDb()
+    db.prepare(`
+      INSERT INTO sessions (
+        session_id, model, source, started_at, ended_at, duration_bucket,
+        dominant_intent, outcome
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'legacy-fractional-time', 'claude-sonnet-4-6', 'claude-code',
+      1_786_512_000_000, 1_786_512_600_000.75, 'short',
+      'feature_build', 'completed',
+    )
+
+    const [receipt] = buildNetworkReceipts(db, 'pseudonymous-contributor')
+    expect(receipt.observed_at).toBe(1_786_512_600_000)
+    expect(Number.isSafeInteger(receipt.observed_at)).toBe(true)
+  })
+
   it('summarizes a dry-run without exposing receipt identifiers', () => {
     const summary = summarizeNetworkReceipts([
       {

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { getSession, updateSession } from '../store.js'
 import { computeSessionArc } from '../session-arc.js'
+import { enqueueEligibleNetworkReceipts } from '../network-outbox.js'
 import type { HookInput } from '../types.js'
 
 export function handleSessionEnd(db: Database.Database, input: HookInput): void {
@@ -25,4 +26,8 @@ export function handleSessionEnd(db: Database.Database, input: HookInput): void 
     mcp_servers_used: mcpServers.length > 0 ? JSON.stringify(mcpServers) : null,
     ...arc,
   })
+
+  // Durable-before-delivery: the hook records work locally before a detached
+  // worker attempts any network request.
+  enqueueEligibleNetworkReceipts(db)
 }

@@ -1,4 +1,5 @@
 import { getDb } from './neon'
+import { receiptRollingWindows } from './receipt-windows'
 import { currentWeek, isoWeekStart, recentWeeks, shiftWeek } from './week'
 
 /**
@@ -26,6 +27,14 @@ const WEEKLY_ROLLUPS = [
   'mcp_server_calls',
   'network_overview',
   'mcp_co_usage',
+  'receipt_overview',
+  'receipt_models',
+  'receipt_tool_categories',
+  'receipt_intents',
+  'receipt_workflows',
+]
+
+const RECEIPT_ROLLUPS = [
   'receipt_overview',
   'receipt_models',
   'receipt_tool_categories',
@@ -237,6 +246,8 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
            category,
            COUNT(*)::int AS events,
            COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
+           ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
            COUNT(DISTINCT r.contributor_id)::int AS contributors
     FROM network_receipts r,
          unnest(r.tool_category_sequence) AS category
@@ -246,7 +257,12 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
   await write('receipt_tool_categories', receiptCategories.map(r => ({
     period: String(r.period),
     dims: { category: r.category },
-    value: { events: r.events, sessions: r.sessions },
+    value: {
+      events: r.events,
+      sessions: r.sessions,
+      completion_rate: r.completion_rate,
+      check_pass_rate: r.check_pass_rate,
+    },
     contributors: Number(r.contributors),
   })))
 
@@ -286,6 +302,164 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     GROUP BY 1, 2
     HAVING COUNT(DISTINCT contributor_id) >= ${K}`
   await write('receipt_workflows', receiptWorkflows.map(r => ({
+    period: String(r.period),
+    dims: { sequence: r.sequence },
+    value: {
+      sessions: r.sessions,
+      completion_rate: r.completion_rate,
+      check_pass_rate: r.check_pass_rate,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  // --- rolling receipt windows: dashboard 24h / 7d / 30d + comparisons ---
+  // These are recomputed as one query per ranking family. A receipt can join
+  // several windows, but each published cell independently clears K.
+  const [h24Current, h24Previous, d7Current, d7Previous, d30Current, d30Previous] = receiptRollingWindows(now)
+  await sql`
+    DELETE FROM rollup_cells
+    WHERE rollup = ANY(${RECEIPT_ROLLUPS}) AND period LIKE 'rolling:%'`
+
+  const rollingOverview = await sql`
+    WITH periods(period, start_ms, end_ms) AS (VALUES
+      ('rolling:24h:current', ${h24Current.startMs}::bigint, ${h24Current.endMs}::bigint),
+      ('rolling:24h:previous', ${h24Previous.startMs}::bigint, ${h24Previous.endMs}::bigint),
+      ('rolling:7d:current', ${d7Current.startMs}::bigint, ${d7Current.endMs}::bigint),
+      ('rolling:7d:previous', ${d7Previous.startMs}::bigint, ${d7Previous.endMs}::bigint),
+      ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
+      ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
+    )
+    SELECT p.period,
+           COUNT(*)::int AS sessions,
+           COALESCE(SUM(cardinality(r.tool_category_sequence)), 0)::int AS category_events,
+           ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
+           ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM periods p
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms
+    GROUP BY 1
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_overview', rollingOverview.map(r => ({
+    period: String(r.period),
+    dims: {},
+    value: {
+      sessions: r.sessions,
+      category_events: r.category_events,
+      completion_rate: r.completion_rate,
+      check_pass_rate: r.check_pass_rate,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  const rollingModels = await sql`
+    WITH periods(period, start_ms, end_ms) AS (VALUES
+      ('rolling:24h:current', ${h24Current.startMs}::bigint, ${h24Current.endMs}::bigint),
+      ('rolling:24h:previous', ${h24Previous.startMs}::bigint, ${h24Previous.endMs}::bigint),
+      ('rolling:7d:current', ${d7Current.startMs}::bigint, ${d7Current.endMs}::bigint),
+      ('rolling:7d:previous', ${d7Previous.startMs}::bigint, ${d7Previous.endMs}::bigint),
+      ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
+      ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
+    )
+    SELECT p.period, r.agent, r.model,
+           COUNT(*)::int AS sessions,
+           ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
+           ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM periods p
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms
+    GROUP BY 1, 2, 3
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_models', rollingModels.map(r => ({
+    period: String(r.period),
+    dims: { agent: r.agent, model: r.model },
+    value: {
+      sessions: r.sessions,
+      completion_rate: r.completion_rate,
+      check_pass_rate: r.check_pass_rate,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  const rollingCategories = await sql`
+    WITH periods(period, start_ms, end_ms) AS (VALUES
+      ('rolling:24h:current', ${h24Current.startMs}::bigint, ${h24Current.endMs}::bigint),
+      ('rolling:24h:previous', ${h24Previous.startMs}::bigint, ${h24Previous.endMs}::bigint),
+      ('rolling:7d:current', ${d7Current.startMs}::bigint, ${d7Current.endMs}::bigint),
+      ('rolling:7d:previous', ${d7Previous.startMs}::bigint, ${d7Previous.endMs}::bigint),
+      ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
+      ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
+    )
+    SELECT p.period, category,
+           COUNT(*)::int AS events,
+           COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
+           ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM periods p
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms,
+         unnest(r.tool_category_sequence) AS category
+    GROUP BY 1, 2
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_tool_categories', rollingCategories.map(r => ({
+    period: String(r.period),
+    dims: { category: r.category },
+    value: {
+      events: r.events,
+      sessions: r.sessions,
+      completion_rate: r.completion_rate,
+      check_pass_rate: r.check_pass_rate,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  const rollingIntents = await sql`
+    WITH periods(period, start_ms, end_ms) AS (VALUES
+      ('rolling:24h:current', ${h24Current.startMs}::bigint, ${h24Current.endMs}::bigint),
+      ('rolling:24h:previous', ${h24Previous.startMs}::bigint, ${h24Previous.endMs}::bigint),
+      ('rolling:7d:current', ${d7Current.startMs}::bigint, ${d7Current.endMs}::bigint),
+      ('rolling:7d:previous', ${d7Previous.startMs}::bigint, ${d7Previous.endMs}::bigint),
+      ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
+      ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
+    )
+    SELECT p.period, r.intent,
+           COUNT(*)::int AS sessions,
+           ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
+           ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM periods p
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms
+    GROUP BY 1, 2
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_intents', rollingIntents.map(r => ({
+    period: String(r.period),
+    dims: { intent: r.intent },
+    value: {
+      sessions: r.sessions,
+      completion_rate: r.completion_rate,
+      check_pass_rate: r.check_pass_rate,
+    },
+    contributors: Number(r.contributors),
+  })))
+
+  const rollingWorkflows = await sql`
+    WITH periods(period, start_ms, end_ms) AS (VALUES
+      ('rolling:24h:current', ${h24Current.startMs}::bigint, ${h24Current.endMs}::bigint),
+      ('rolling:24h:previous', ${h24Previous.startMs}::bigint, ${h24Previous.endMs}::bigint),
+      ('rolling:7d:current', ${d7Current.startMs}::bigint, ${d7Current.endMs}::bigint),
+      ('rolling:7d:previous', ${d7Previous.startMs}::bigint, ${d7Previous.endMs}::bigint),
+      ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
+      ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
+    )
+    SELECT p.period, array_to_string(r.tool_category_sequence, '>') AS sequence,
+           COUNT(*)::int AS sessions,
+           ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
+           ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
+           COUNT(DISTINCT r.contributor_id)::int AS contributors
+    FROM periods p
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms
+    GROUP BY 1, 2
+    HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
+  await write('receipt_workflows', rollingWorkflows.map(r => ({
     period: String(r.period),
     dims: { sequence: r.sequence },
     value: {
