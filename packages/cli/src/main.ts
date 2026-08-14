@@ -22,7 +22,7 @@ import { DB_PATH, registerWallet, isValidAddress, loadConfig, setupWallet, getWa
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
 import { buildNetworkReceipts, summarizeNetworkReceipts } from './network-receipt.js'
-import { syncNetworkReceipts } from './network-sync.js'
+import { drainNetworkOutbox, enqueueEligibleNetworkReceipts } from './network-outbox.js'
 import { joinFoundingPanel } from './join.js'
 
 function openDb(commandName: string | undefined) {
@@ -122,18 +122,41 @@ try {
         console.log('Dry run only; nothing was uploaded. The server deduplicates receipt IDs during sync.')
         break
       }
-      console.log(`Uploading ${receipts.length} privacy-safe network receipt${receipts.length === 1 ? '' : 's'}...`)
-      const result = await syncNetworkReceipts({
-        token: config.network.token,
-        receipts,
-        apiUrl: config.network.api_url,
-      })
-      if (!result.ok) {
-        console.error(result.message)
-        process.exitCode = 1
-        break
+      enqueueEligibleNetworkReceipts(db)
+      console.log(`Uploading pending privacy-safe network receipts...`)
+      let synced = 0
+      let accepted = 0
+      let failed = 0
+      for (let batch = 0; batch < 100; batch++) {
+        const result = await drainNetworkOutbox(db, {
+          contributorId: config.contributor_id,
+          token: config.network.token,
+          apiUrl: config.network.api_url,
+        })
+        synced += result.synced
+        accepted += result.accepted
+        failed += result.retryScheduled
+        if (result.attempted === 0 || result.retryScheduled > 0) break
       }
-      console.log(`Synced: ${result.accepted} new, ${result.received - result.accepted} already present.`)
+      console.log(`Synced: ${accepted} new, ${synced - accepted} already present.`)
+      if (failed > 0) {
+        console.error(`${failed} receipt${failed === 1 ? '' : 's'} retained locally for automatic retry.`)
+        process.exitCode = 1
+      }
+      break
+    }
+    case '_sync-network-outbox': {
+      const config = loadConfig()
+      if (!config?.network) break
+      enqueueEligibleNetworkReceipts(db)
+      for (let batch = 0; batch < 100; batch++) {
+        const result = await drainNetworkOutbox(db, {
+          contributorId: config.contributor_id,
+          token: config.network.token,
+          apiUrl: config.network.api_url,
+        })
+        if (result.attempted === 0 || result.retryScheduled > 0) break
+      }
       break
     }
     case 'backfill-subjects': {
@@ -492,7 +515,7 @@ try {
         '  seed        Generate 20 realistic v4 demo sessions',
         '  my          Interactive dashboard — see exactly what you\'ve contributed',
         '  brief       Weekly top-3 coaching digest: pollen brief [--days 7] [--out <path>] [--open] [--send] [--to <email>]',
-        '  sync [--dry-run]  Preview or upload closed, privacy-safe network receipts',
+        '  sync [--dry-run]  Preview or retry privacy-safe network receipts',
         '  verify      Complete Orb-backed World ID verification',
         '  status      Show contributor identity + verification status',
         '  wallet      Set up a wallet (managed or bring-your-own)',

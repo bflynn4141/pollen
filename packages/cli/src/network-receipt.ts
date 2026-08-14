@@ -60,6 +60,25 @@ interface ToolRow {
   command_category: string | null
 }
 
+function buildReceipt(
+  contributorId: string,
+  session: ReceiptRow,
+  sessionTools: ToolRow[],
+): NetworkReceiptV1 {
+  return {
+    schema_version: 1,
+    receipt_id: deterministicReceiptId(contributorId, session.session_id),
+    observed_at: Math.trunc(session.ended_at),
+    intent: session.dominant_intent,
+    agent: session.source === 'codex' ? 'codex' : 'claude-code',
+    model: normalizeModel(session.model),
+    tool_category_sequence: sessionTools.slice(0, 64).map(tool => tool.tool_category),
+    duration_bucket: session.duration_bucket,
+    terminal_state: session.outcome,
+    check_result: checkResult(sessionTools),
+  }
+}
+
 function deterministicReceiptId(contributorId: string, sessionId: string): string {
   const bytes = createHash('sha256')
     .update(`pollen-receipt-v1\0${contributorId}\0${sessionId}`)
@@ -124,19 +143,36 @@ export function buildNetworkReceipts(
     toolsBySession.set(tool.session_id, rows)
   }
 
-  return sessions.map(session => {
-    const sessionTools = toolsBySession.get(session.session_id) ?? []
-    return {
-      schema_version: 1,
-      receipt_id: deterministicReceiptId(contributorId, session.session_id),
-      observed_at: session.ended_at,
-      intent: session.dominant_intent,
-      agent: session.source === 'codex' ? 'codex' : 'claude-code',
-      model: normalizeModel(session.model),
-      tool_category_sequence: sessionTools.slice(0, 64).map(tool => tool.tool_category),
-      duration_bucket: session.duration_bucket,
-      terminal_state: session.outcome,
-      check_result: checkResult(sessionTools),
-    }
-  })
+  return sessions.map(session => buildReceipt(
+    contributorId,
+    session,
+    toolsBySession.get(session.session_id) ?? [],
+  ))
+}
+
+/** Build one closed-schema receipt for a leased outbox session. */
+export function buildNetworkReceipt(
+  db: Database.Database,
+  contributorId: string,
+  sessionId: string,
+): NetworkReceiptV1 | null {
+  const session = db.prepare(`
+    SELECT session_id, model, source, ended_at, duration_bucket,
+           dominant_intent, outcome
+    FROM sessions
+    WHERE session_id = ?
+      AND ended_at IS NOT NULL
+      AND model IS NOT NULL
+      AND dominant_intent IS NOT NULL
+      AND duration_bucket IS NOT NULL
+      AND outcome IS NOT NULL
+  `).get(sessionId) as ReceiptRow | undefined
+  if (!session) return null
+  const tools = db.prepare(`
+    SELECT session_id, tool_category, success, command_category
+    FROM tool_events
+    WHERE session_id = ?
+    ORDER BY sequence_number
+  `).all(sessionId) as ToolRow[]
+  return buildReceipt(contributorId, session, tools)
 }

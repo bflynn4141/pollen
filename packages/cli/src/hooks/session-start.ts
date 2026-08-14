@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import { detectProjectType } from '../coarsen.js'
 import { getOrCreateContributorId } from '../config.js'
 import { finalizeStaleSessions } from '../finalize.js'
+import { enqueueEligibleNetworkReceipts } from '../network-outbox.js'
 import { insertSession } from '../store.js'
 import { maybeBuildNudge, maybeScheduleWeeklyBrief } from './brief-trigger.js'
 import type { HookInput } from '../types.js'
@@ -21,6 +22,7 @@ export function handleSessionStart(
   // Opportunistically close out sessions that never got a SessionEnd
   // (killed terminal, crash) so outcomes materialize without one.
   finalizeStaleSessions(db, { excludeSessionId: input.session_id })
+  enqueueEligibleNetworkReceipts(db)
 
   // `source` is the agent CLI identity (claude-code | codex); the hook
   // payload's own `source` field is the start TRIGGER (startup | clear |

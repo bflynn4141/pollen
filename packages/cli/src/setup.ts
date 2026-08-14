@@ -235,7 +235,7 @@ export async function runSetup(
   console.log('')
   console.log('  Next steps:')
   console.log('    pollen my         Inspect exactly what Pollen captured')
-  console.log('    pollen sync       Upload a closed network receipt')
+  console.log('    pollen sync       Check or retry automatic receipt delivery')
   console.log('    pollen status     Check contributor identity')
   console.log('')
 }
