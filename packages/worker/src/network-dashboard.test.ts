@@ -38,6 +38,23 @@ function snapshot(
       checkPassRate: 0.72,
       contributors: modelContributors,
     }],
+    mcpServers: [{
+      server: 'github',
+      calls: sessions * 2,
+      sessions,
+      successRate: 0.92,
+      latencyBucket: 'fast',
+      contributors: modelContributors,
+    }],
+    mcpTools: [{
+      server: 'github',
+      tool: 'create_issue',
+      calls: sessions,
+      sessions,
+      successRate: 0.88,
+      latencyBucket: 'moderate',
+      contributors: modelContributors,
+    }],
     intents: [{
       intent: 'feature_build',
       sessions,
@@ -96,7 +113,26 @@ describe('buildNetworkDashboard', () => {
       completionPct: 84,
       trendPct: 20,
     })
-    expect(dashboard.rankings.tools.entries[0].windows['24h']?.completionPct).toBe(80)
+    expect(dashboard.rankings.mcps.entries[0]).toMatchObject({
+      id: 'github',
+      label: 'GitHub',
+      secondary: 'MCP server',
+    })
+    expect(dashboard.rankings.mcps.entries[0].windows['24h']).toMatchObject({
+      volume: 48,
+      completionPct: 92,
+      latencyBucket: 'fast',
+    })
+    expect(dashboard.rankings.tools.entries[0]).toMatchObject({
+      id: 'github-create-issue',
+      iconId: 'github',
+      label: 'Create Issue',
+      secondary: 'GitHub',
+    })
+    expect(dashboard.rankings.tools.entries[0].windows['24h']).toMatchObject({
+      completionPct: 88,
+      latencyBucket: 'moderate',
+    })
     expect(dashboard.overview?.sessions).toBe(120)
   })
 

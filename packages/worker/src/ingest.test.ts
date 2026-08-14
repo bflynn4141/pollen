@@ -21,6 +21,19 @@ const validReceipt = {
   check_result: 'passed',
 }
 
+const validReceiptV2 = {
+  ...validReceipt,
+  schema_version: 2,
+  mcp_calls: [
+    {
+      server: 'github',
+      tool: 'create_issue',
+      success: true,
+      latency_bucket: 'fast',
+    },
+  ],
+}
+
 function dependencies(overrides: Partial<IngestDependencies> = {}): IngestDependencies {
   return {
     registerContributor: vi.fn(async () => true),
@@ -34,6 +47,20 @@ function dependencies(overrides: Partial<IngestDependencies> = {}): IngestDepend
 describe('network receipt validation', () => {
   it('accepts the closed, coarsened v1 schema', () => {
     expect(validateNetworkReceipt(validReceipt)).toEqual(validReceipt)
+  })
+
+  it('accepts closed MCP call summaries in the v2 schema', () => {
+    expect(validateNetworkReceipt(validReceiptV2)).toEqual(validReceiptV2)
+  })
+
+  it.each([
+    { server: 'internal customer', tool: 'lookup', success: true, latency_bucket: 'fast' },
+    { server: 'github', tool: 'create_issue', success: true, latency_bucket: 'precise:820ms' },
+    { server: 'github', tool: 'create_issue', success: true, latency_bucket: 'fast', arguments: '{}' },
+    { server: 'github', tool: 'create_issue', success: true, latency_bucket: 'fast', icon_url: 'https://tracker.test/icon' },
+  ])('rejects unsafe MCP call data %#', mcpCall => {
+    expect(() => validateNetworkReceipt({ ...validReceiptV2, mcp_calls: [mcpCall] }))
+      .toThrow()
   })
 
   it.each(['prompt', 'tool_arguments', 'source_code', 'transcript_path', 'response_summary']) (
@@ -185,6 +212,24 @@ describe('receipt ingest handlers', () => {
 
     expect(response.status).toBe(202)
     expect(deps.insertReceipts).toHaveBeenCalledWith('contributor-1', [validReceipt])
+  })
+
+  it('stores validated v2 MCP summaries under the authenticated contributor', async () => {
+    const deps = dependencies()
+    const response = await handleReceiptIngest(
+      new Request('https://api.pollen.test/api/v1/receipts', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer pln_${'a'.repeat(43)}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ receipts: [validReceiptV2] }),
+      }),
+      deps,
+    )
+
+    expect(response.status).toBe(202)
+    expect(deps.insertReceipts).toHaveBeenCalledWith('contributor-1', [validReceiptV2])
   })
 
   it('rate-limits a contributor after the daily receipt quota is exhausted', async () => {

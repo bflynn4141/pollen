@@ -39,6 +39,7 @@ export default async function DashboardPage() {
   const dashboard = await fetchNetworkDashboard()
   const sections: Array<{ id: RankingSection; label: string; icon: DashboardIconName }> = [
     { id: 'models', label: 'Models', icon: 'models' },
+    { id: 'mcps', label: 'MCPs', icon: 'tools' },
     { id: 'tools', label: 'Tools', icon: 'tools' },
     { id: 'workflows', label: 'Workflows', icon: 'workflow' },
     { id: 'intents', label: 'Intents', icon: 'intent' },
@@ -71,6 +72,7 @@ export default async function DashboardPage() {
           <Link href="/network" aria-label="Live production network"><span><DashboardIcon name="market" /></span>Live network</Link>
           <Link href="/dashboard" className={styles.navActive} aria-label="Market overview"><span><DashboardIcon name="market" /></span>Overview</Link>
           <Link href="/dashboard/models" aria-label="Model rankings"><span><DashboardIcon name="models" /></span>Models</Link>
+          <Link href="/dashboard/mcps" aria-label="MCP rankings"><span><DashboardIcon name="tools" /></span>MCPs</Link>
           <Link href="/dashboard/tools" aria-label="Tool rankings"><span><DashboardIcon name="tools" /></span>Tools</Link>
           <Link href="/dashboard/workflows" aria-label="Workflow rankings"><span><DashboardIcon name="workflow" /></span>Workflows</Link>
           <Link href="/dashboard/intents" aria-label="Intent rankings"><span><DashboardIcon name="intent" /></span>Intents</Link>
@@ -116,9 +118,9 @@ export default async function DashboardPage() {
               {tools.map(({ entry, metric }, index) => (
                 <div className={styles.toolRow} key={entry.id}>
                   <span className={styles.rank}>{index + 1}</span>
-                  <EntityIcon id={entry.id} />
+                  <EntityIcon id={entry.iconId ?? entry.id} />
                   <span className={styles.toolName}><strong>{entry.label}</strong><small>{entry.secondary}</small></span>
-                  <span className={styles.toolCalls}><strong>{number.format(metric.volume)}</strong><small>events</small></span>
+                  <span className={styles.toolCalls}><strong>{number.format(metric.volume)}</strong><small>calls</small></span>
                   <span className={styles.toolAdoption}>{metric.adoptionPct}%</span>
                 </div>
               ))}
@@ -131,7 +133,7 @@ export default async function DashboardPage() {
               <div className={styles.moversHead}><span>Entity</span><span>Market</span><span>Panel reach</span><span>Completion</span><span>24H change</span></div>
               {movers.map(({ section, entry, metric }) => (
                 <Link href={`/dashboard/${section.id}?window=24h`} className={styles.moverRow} key={`${section.id}-${entry.id}`}>
-                  <span className={styles.moverEntity}><EntityIcon id={entry.id} provider={entry.secondary} section={section.id} /><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></span>
+                  <span className={styles.moverEntity}><EntityIcon id={entry.iconId ?? entry.id} provider={entry.secondary} section={section.id} /><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></span>
                   <span className={styles.marketType}><DashboardIcon name={section.icon} size={11} />{section.label}</span>
                   <span className={styles.moverReach}><strong>{metric.adoptionPct}%</strong><i><b style={{ width: `${metric.adoptionPct}%` }} /></i></span>
                   <span className={styles.moverCompletion}>{metric.completionPct}%</span>

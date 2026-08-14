@@ -53,9 +53,14 @@ Neither path copies local tables. Each receipt contains only:
 - intent;
 - agent and model ID;
 - tool-category sequence;
+- canonical public MCP server/tool identifiers, success, and latency buckets;
 - duration bucket;
 - terminal state; and
 - check result.
+
+Unknown or custom MCP aliases are grouped as `private`; their original names
+do not leave the machine. Logos are resolved from Pollen's bundled registry,
+not supplied by contributor clients.
 
 The Worker independently rejects unknown fields, so raw content cannot be
 added accidentally by a future client change.

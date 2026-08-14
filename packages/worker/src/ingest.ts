@@ -22,10 +22,13 @@ const TOOL_CATEGORIES = new Set(['read', 'write', 'execute', 'search', 'web', 'i
 const DURATION_BUCKETS = new Set(['quick', 'short', 'medium', 'long', 'marathon'])
 const TERMINAL_STATES = new Set(['completed', 'abandoned', 'error_exit'])
 const CHECK_RESULTS = new Set(['passed', 'failed', 'not_run', 'unknown'])
-const RECEIPT_FIELDS = new Set([
+const MCP_LATENCY_BUCKETS = new Set(['instant', 'fast', 'moderate', 'slow', 'very_slow', 'unknown'])
+const RECEIPT_V1_FIELDS = new Set([
   'schema_version', 'receipt_id', 'observed_at', 'intent', 'agent', 'model',
   'tool_category_sequence', 'duration_bucket', 'terminal_state', 'check_result',
 ])
+const RECEIPT_V2_FIELDS = new Set([...RECEIPT_V1_FIELDS, 'mcp_calls'])
+const MCP_CALL_FIELDS = new Set(['server', 'tool', 'success', 'latency_bucket'])
 
 export interface NetworkReceiptV1 {
   schema_version: 1
@@ -40,12 +43,26 @@ export interface NetworkReceiptV1 {
   check_result: string
 }
 
+export interface NetworkMcpCallV2 {
+  server: string
+  tool: string
+  success: boolean
+  latency_bucket: string
+}
+
+export interface NetworkReceiptV2 extends Omit<NetworkReceiptV1, 'schema_version'> {
+  schema_version: 2
+  mcp_calls: NetworkMcpCallV2[]
+}
+
+export type NetworkReceipt = NetworkReceiptV1 | NetworkReceiptV2
+
 export interface IngestDependencies {
   registerContributor(inviteHash: string, contributorId: string, tokenHash: string): Promise<boolean>
   authenticateTokenHash(tokenHash: string): Promise<string | null>
   insertReceipts(
     contributorId: string,
-    receipts: NetworkReceiptV1[],
+    receipts: NetworkReceipt[],
   ): Promise<{ accepted: number; limited: boolean }>
   deleteContributor(tokenHash: string): Promise<string | null>
 }
@@ -64,15 +81,18 @@ function assertEnum(value: unknown, allowed: Set<string>, field: string): assert
   }
 }
 
-export function validateNetworkReceipt(value: unknown): NetworkReceiptV1 {
+export function validateNetworkReceipt(value: unknown): NetworkReceipt {
   if (!isRecord(value)) throw new Error('receipt must be an object')
-  for (const field of Object.keys(value)) {
-    if (!RECEIPT_FIELDS.has(field)) throw new Error(`unknown field: ${field}`)
+  if (value.schema_version !== 1 && value.schema_version !== 2) {
+    throw new Error('unsupported schema_version')
   }
-  for (const field of RECEIPT_FIELDS) {
+  const receiptFields = value.schema_version === 2 ? RECEIPT_V2_FIELDS : RECEIPT_V1_FIELDS
+  for (const field of Object.keys(value)) {
+    if (!receiptFields.has(field)) throw new Error(`unknown field: ${field}`)
+  }
+  for (const field of receiptFields) {
     if (!(field in value)) throw new Error(`missing field: ${field}`)
   }
-  if (value.schema_version !== 1) throw new Error('unsupported schema_version')
   if (typeof value.receipt_id !== 'string' || !UUID_RE.test(value.receipt_id)) {
     throw new Error('invalid receipt_id')
   }
@@ -99,7 +119,31 @@ export function validateNetworkReceipt(value: unknown): NetworkReceiptV1 {
   assertEnum(value.duration_bucket, DURATION_BUCKETS, 'duration_bucket')
   assertEnum(value.terminal_state, TERMINAL_STATES, 'terminal_state')
   assertEnum(value.check_result, CHECK_RESULTS, 'check_result')
-  return value as unknown as NetworkReceiptV1
+  if (value.schema_version === 2) {
+    if (!Array.isArray(value.mcp_calls) || value.mcp_calls.length > 64) {
+      throw new Error('invalid mcp_calls')
+    }
+    for (const call of value.mcp_calls) validateMcpCall(call)
+  }
+  return value as unknown as NetworkReceipt
+}
+
+function validateMcpCall(value: unknown): asserts value is NetworkMcpCallV2 {
+  if (!isRecord(value)) throw new Error('invalid mcp_call')
+  if (Object.keys(value).some(field => !MCP_CALL_FIELDS.has(field))) {
+    throw new Error('unknown mcp_call field')
+  }
+  if ([...MCP_CALL_FIELDS].some(field => !(field in value))) {
+    throw new Error('missing mcp_call field')
+  }
+  if (typeof value.server !== 'string' || !/^[a-z0-9][a-z0-9-]{0,47}$/.test(value.server)) {
+    throw new Error('invalid mcp_call server')
+  }
+  if (typeof value.tool !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(value.tool)) {
+    throw new Error('invalid mcp_call tool')
+  }
+  if (typeof value.success !== 'boolean') throw new Error('invalid mcp_call success')
+  assertEnum(value.latency_bucket, MCP_LATENCY_BUCKETS, 'mcp_call latency_bucket')
 }
 
 function randomToken(): string {
@@ -172,7 +216,7 @@ export async function handleReceiptIngest(
     return json({ error: 'invalid_batch_size' }, 400)
   }
 
-  let receipts: NetworkReceiptV1[]
+  let receipts: NetworkReceipt[]
   try {
     receipts = body.receipts.map(validateNetworkReceipt)
   } catch (error) {
@@ -274,13 +318,15 @@ export function createIngestDependencies(databaseUrl: string): IngestDependencie
           ), inserted AS (
             INSERT INTO network_receipts (
               receipt_id, contributor_id, observed_at, intent, agent, model,
-              tool_category_sequence, duration_bucket, terminal_state, check_result
+              tool_category_sequence, duration_bucket, terminal_state, check_result,
+              mcp_calls
             )
             SELECT
               ${receipt.receipt_id}, ${contributorId}, ${receipt.observed_at},
               ${receipt.intent}, ${receipt.agent}, ${receipt.model},
               ${receipt.tool_category_sequence}, ${receipt.duration_bucket},
-              ${receipt.terminal_state}, ${receipt.check_result}
+              ${receipt.terminal_state}, ${receipt.check_result},
+              ${JSON.stringify(receipt.schema_version === 2 ? receipt.mcp_calls : [])}::jsonb
             FROM quota
             WHERE receipts_24h < ${MAX_RECEIPTS_PER_DAY}
             ON CONFLICT (contributor_id, receipt_id) DO NOTHING

@@ -5,7 +5,7 @@ export const RANKING_WINDOWS = [
 ] as const
 
 export type RankingWindow = typeof RANKING_WINDOWS[number]['id']
-export type RankingSection = 'models' | 'tools' | 'workflows' | 'intents'
+export type RankingSection = 'models' | 'mcps' | 'tools' | 'workflows' | 'intents'
 export type NetworkStatus = 'live' | 'warming_up' | 'unavailable'
 
 export interface ReceiptOverview {
@@ -24,11 +24,21 @@ interface OutcomeRank {
   contributors: number
 }
 
+interface McpOutcomeRank {
+  calls: number
+  sessions: number
+  successRate: number
+  latencyBucket: string
+  contributors: number
+}
+
 export interface NetworkPeriodSnapshot {
   period: string
   overview: ReceiptOverview
   models: Array<OutcomeRank & { agent: string; model: string }>
   toolCategories: Array<OutcomeRank & { category: string; events: number }>
+  mcpServers: Array<McpOutcomeRank & { server: string }>
+  mcpTools: Array<McpOutcomeRank & { server: string; tool: string }>
   intents: Array<OutcomeRank & { intent: string }>
   workflows: Array<OutcomeRank & { sequence: string[] }>
 }
@@ -50,10 +60,12 @@ export interface RankingMetric {
   volume: number
   completionPct: number
   trendPct: number | null
+  latencyBucket?: string
 }
 
 export interface RankingEntry {
   id: string
+  iconId?: string
   label: string
   secondary: string
   sequence?: string[]
@@ -84,11 +96,18 @@ export const RANKING_SECTION_META: Record<RankingSection, Omit<RankingDefinition
     volumeLabel: 'Model runs',
     adoptionLabel: 'Adoption',
   },
+  mcps: {
+    label: 'MCP rankings',
+    singular: 'MCP server',
+    description: 'Third-party MCP server adoption, reliability, and observed latency.',
+    volumeLabel: 'Calls',
+    adoptionLabel: 'Adoption',
+  },
   tools: {
-    label: 'Tool rankings',
-    singular: 'Tool category',
-    description: 'Coarsened tool categories used across contributor sessions.',
-    volumeLabel: 'Tool events',
+    label: 'Tool call rankings',
+    singular: 'Tool call',
+    description: 'Individual third-party MCP tools called across contributor sessions.',
+    volumeLabel: 'Calls',
     adoptionLabel: 'Adoption',
   },
   workflows: {
@@ -121,6 +140,16 @@ const title = (value: string) => value
   .replace(/\b\w/g, character => character.toUpperCase())
   .replace(/^Gpt\b/, 'GPT')
 
+const mcpLabel = (value: string) => ({
+  github: 'GitHub',
+  gmail: 'Gmail',
+  posthog: 'PostHog',
+  playwright: 'Playwright',
+  sentry: 'Sentry',
+  supabase: 'Supabase',
+  vercel: 'Vercel',
+}[value] ?? title(value))
+
 function modelLabel(model: string): string {
   return title(model)
     .replace(/\b(\d) (\d)\b/g, '$1.$2')
@@ -151,6 +180,7 @@ function metric(
   currentEligible: number,
   previousEligible: number,
   volume: number,
+  latencyBucket?: string,
 ): RankingMetric {
   const currentAdoption = adoption(current.contributors, currentEligible)
   const previousAdoption = previous ? adoption(previous.contributors, previousEligible) : null
@@ -161,6 +191,7 @@ function metric(
     volume,
     completionPct: round1(current.completionRate * 100),
     trendPct: previousAdoption == null ? null : round1(currentAdoption - previousAdoption),
+    ...(latencyBucket ? { latencyBucket } : {}),
   }
 }
 
@@ -171,6 +202,8 @@ type RawEntry = OutcomeRank & {
   secondary: string
   volume: number
   sequence?: string[]
+  latencyBucket?: string
+  iconId?: string
 }
 
 function rawEntries(section: RankingSection, snapshot: NetworkPeriodSnapshot): RawEntry[] {
@@ -182,13 +215,28 @@ function rawEntries(section: RankingSection, snapshot: NetworkPeriodSnapshot): R
     secondary: providerFor(item.agent),
     volume: item.sessions,
   }))
-  if (section === 'tools') return snapshot.toolCategories.map(item => ({
+  if (section === 'mcps') return (snapshot.mcpServers ?? []).map(item => ({
     ...item,
-    key: item.category,
-    id: categoryIconId[item.category] ?? slug(item.category),
-    label: title(item.category),
-    secondary: 'Capability',
-    volume: item.events,
+    completionRate: item.successRate,
+    checkPassRate: item.successRate,
+    key: item.server,
+    id: item.server,
+    label: mcpLabel(item.server),
+    secondary: 'MCP server',
+    volume: item.calls,
+    latencyBucket: item.latencyBucket,
+  }))
+  if (section === 'tools') return (snapshot.mcpTools ?? []).map(item => ({
+    ...item,
+    completionRate: item.successRate,
+    checkPassRate: item.successRate,
+    key: `${item.server}\0${item.tool}`,
+    id: slug(`${item.server}-${item.tool}`),
+    iconId: item.server,
+    label: title(item.tool),
+    secondary: mcpLabel(item.server),
+    volume: item.calls,
+    latencyBucket: item.latencyBucket,
   }))
   if (section === 'intents') return snapshot.intents.map(item => ({
     ...item,
@@ -222,6 +270,7 @@ function buildSection(section: RankingSection, response: NetworkApiResponse): Ra
         id: item.id,
         label: item.label,
         secondary: item.secondary,
+        ...(item.iconId ? { iconId: item.iconId } : {}),
         ...(item.sequence ? { sequence: item.sequence } : {}),
         windows: emptyWindows(),
       }
@@ -231,6 +280,7 @@ function buildSection(section: RankingSection, response: NetworkApiResponse): Ra
         pair.current.overview.contributors,
         pair.previous?.overview.contributors ?? 0,
         item.volume,
+        item.latencyBucket,
       )
       entries.set(item.key, entry)
     }
@@ -245,6 +295,7 @@ function emptyDashboard(status: NetworkStatus, kAnonymity = 5): NetworkDashboard
     overview: null,
     rankings: {
       models: { ...RANKING_SECTION_META.models, entries: [] },
+      mcps: { ...RANKING_SECTION_META.mcps, entries: [] },
       tools: { ...RANKING_SECTION_META.tools, entries: [] },
       workflows: { ...RANKING_SECTION_META.workflows, entries: [] },
       intents: { ...RANKING_SECTION_META.intents, entries: [] },
@@ -260,6 +311,7 @@ export function buildNetworkDashboard(response: NetworkApiResponse): NetworkDash
     overview: response.windows['7d'].current?.overview ?? null,
     rankings: {
       models: buildSection('models', response),
+      mcps: buildSection('mcps', response),
       tools: buildSection('tools', response),
       workflows: buildSection('workflows', response),
       intents: buildSection('intents', response),

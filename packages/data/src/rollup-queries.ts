@@ -75,6 +75,7 @@ export interface ReceiptOverview {
   period: string
   sessions: number
   categoryEvents: number
+  mcpCalls: number
   completionRate: number
   checkPassRate: number
   contributors: number
@@ -98,6 +99,21 @@ export interface ReceiptCategoryRank {
   contributors: number
 }
 
+export type ReceiptMcpLatencyBucket = 'instant' | 'fast' | 'moderate' | 'slow' | 'very_slow' | 'unknown'
+
+export interface ReceiptMcpServerRank {
+  server: string
+  calls: number
+  sessions: number
+  successRate: number
+  latencyBucket: ReceiptMcpLatencyBucket
+  contributors: number
+}
+
+export interface ReceiptMcpToolRank extends ReceiptMcpServerRank {
+  tool: string
+}
+
 export interface ReceiptIntentRank {
   intent: string
   sessions: number
@@ -119,6 +135,8 @@ export interface ReceiptNetworkSnapshot {
   overview: ReceiptOverview
   models: ReceiptModelRank[]
   toolCategories: ReceiptCategoryRank[]
+  mcpServers: ReceiptMcpServerRank[]
+  mcpTools: ReceiptMcpToolRank[]
   intents: ReceiptIntentRank[]
   workflows: ReceiptWorkflowRank[]
 }
@@ -287,10 +305,12 @@ export async function readOverview(week: string): Promise<NetworkOverview | null
  * must render a warm-up state rather than inspect raw receipt counts.
  */
 export async function readReceiptNetwork(period: string): Promise<ReceiptNetworkSnapshot | null> {
-  const [overviewCells, modelCells, categoryCells, intentCells, workflowCells] = await Promise.all([
+  const [overviewCells, modelCells, categoryCells, mcpServerCells, mcpToolCells, intentCells, workflowCells] = await Promise.all([
     readCells('receipt_overview', period),
     readCells('receipt_models', period),
     readCells('receipt_tool_categories', period),
+    readCells('receipt_mcp_servers', period),
+    readCells('receipt_mcp_tools', period),
     readCells('receipt_intents', period),
     readCells('receipt_workflows', period),
   ])
@@ -298,12 +318,19 @@ export async function readReceiptNetwork(period: string): Promise<ReceiptNetwork
   if (!overview) return null
 
   const rate = (cell: CellRow, key: string) => Number(cell.value[key] ?? 0)
+  const latencyBucket = (cell: CellRow): ReceiptMcpLatencyBucket => {
+    const buckets: ReceiptMcpLatencyBucket[] = ['instant', 'fast', 'moderate', 'slow', 'very_slow', 'unknown']
+    return buckets.reduce((best, bucket) =>
+      rate(cell, `latency_${bucket}`) > rate(cell, `latency_${best}`) ? bucket : best,
+    'unknown')
+  }
   return {
     period,
     overview: {
       period,
       sessions: Number(overview.value.sessions),
       categoryEvents: Number(overview.value.category_events),
+      mcpCalls: Number(overview.value.mcp_calls ?? 0),
       completionRate: rate(overview, 'completion_rate'),
       checkPassRate: rate(overview, 'check_pass_rate'),
       contributors: overview.contributors,
@@ -324,6 +351,23 @@ export async function readReceiptNetwork(period: string): Promise<ReceiptNetwork
       checkPassRate: rate(cell, 'check_pass_rate'),
       contributors: cell.contributors,
     })).sort((a, b) => b.events - a.events),
+    mcpServers: mcpServerCells.map(cell => ({
+      server: cell.dims.server,
+      calls: Number(cell.value.calls),
+      sessions: Number(cell.value.sessions),
+      successRate: rate(cell, 'success_rate'),
+      latencyBucket: latencyBucket(cell),
+      contributors: cell.contributors,
+    })).sort((a, b) => b.calls - a.calls),
+    mcpTools: mcpToolCells.map(cell => ({
+      server: cell.dims.server,
+      tool: cell.dims.tool,
+      calls: Number(cell.value.calls),
+      sessions: Number(cell.value.sessions),
+      successRate: rate(cell, 'success_rate'),
+      latencyBucket: latencyBucket(cell),
+      contributors: cell.contributors,
+    })).sort((a, b) => b.calls - a.calls),
     intents: intentCells.map(cell => ({
       intent: cell.dims.intent,
       sessions: Number(cell.value.sessions),

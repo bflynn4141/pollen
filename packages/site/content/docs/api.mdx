@@ -48,7 +48,7 @@ Latest two published weeks. Cached 5 minutes (`Cache-Control: public, max-age=30
 | `GET /trending/tools` | Trending tools: calls, sessions, success rate, week-over-week change, `new` flags |
 | `GET /trending/mcp` | MCP server ranking: calls, sessions, success rate |
 | `GET /overview` | Network totals: tool calls, sessions, distinct tools/servers, contributors |
-| `GET /network` | Privacy-closed production receipt snapshot: models, tool categories, intents, workflows, and outcomes |
+| `GET /network` | Privacy-closed production receipt snapshot: models, MCP servers/tools, tool categories, intents, workflows, and outcomes |
 
 ```bash
 curl https://pollen-network.vercel.app/api/v1/network
@@ -132,7 +132,9 @@ safe to cite in posts, papers, and changelogs.
 
 Contributors run the [Pollen CLI hook](/docs/quickstart), which converts local
 sessions into a closed receipt schema (agent, model, coarse intent, tool
-category sequence, duration bucket, terminal state, and check result). Raw
+category sequence, canonical public MCP server/tool identifiers, success and
+latency buckets, duration bucket, terminal state, and check result). Unknown
+or custom MCP aliases are grouped as `private`. Raw
 prompts, tool arguments, commands, paths, source code, and output are never in
 the production receipt. Founding-panel participation may make contributors
 eligible for future rewards; it does not guarantee a payout.
