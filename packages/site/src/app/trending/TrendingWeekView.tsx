@@ -204,7 +204,7 @@ export default function TrendingWeekView({ week, weeks, overview, tools, mcpServ
         <p className="mt-3">
           Get this data as JSON:{' '}
           <code className="font-[family-name:var(--font-mono)]" style={{ color: 'var(--t-accent)' }}>
-            GET api.pollen.id/trending/tools
+            GET pollen-api.bflynn4141.workers.dev/trending/tools
           </code>{' '}
           (free) — full history via the paid x402 endpoints.{' '}
           <Link href="/docs/api" style={{ color: 'var(--t-accent)' }}>API docs →</Link>

@@ -1,0 +1,14 @@
+node_modules
+.next
+.env
+.env.*
+!.env*.example
+.turbo
+dist
+out
+.vercel
+.gstack
+.wrangler
+.playwright-cli
+output
+TODOS.md

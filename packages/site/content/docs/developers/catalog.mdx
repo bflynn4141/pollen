@@ -1,0 +1,42 @@
+---
+title: Data Catalog
+description: Pollen product schemas, privacy rules, provenance, freshness, free previews, and paid resources.
+---
+
+# Data Catalog
+
+The live machine-readable catalog is available at `GET /catalog`. It is the source of truth for current route prices and x402 headers.
+
+## Product
+
+Pollen Prompt Intelligence is aggregated from opt-in coding-agent activity. Published dimensions include:
+
+- coarse intent
+- agent and model
+- tool-category sequence
+- canonical public MCP server and tool identifiers
+- duration and latency buckets
+- terminal state and check result
+
+Pollen excludes prompt text, source code, paths, shell output, tool arguments and results, and credentials.
+
+## Provenance
+
+Local hooks create a versioned receipt from a closed schema. The ingestion worker rejects unknown fields. Rollup jobs suppress any cell with fewer than five contributors before storing it in the public rollup table. API handlers read that table, not raw receipts.
+
+## Freshness
+
+- Rollup target: every 15 minutes
+- Time zone: UTC
+- Historical granularity: weekly cells
+- Older history: frozen outside the rolling recompute window
+
+## Coverage states
+
+`live` means at least one privacy-qualified public window exists. `warming_up` means no window currently meets k=5. Warming up is a valid privacy state, not missing-data concealment.
+
+Pollen does not charge for a paid query that produces no published rows. Such a request returns HTTP `425`, `charged: false`, and a link to the free network preview.
+
+## Resources
+
+See [Aggregate API](/docs/api) for response shapes and [x402 v2](/docs/developers/x402) for payment integration.

@@ -1,11 +1,13 @@
 import type Database from 'better-sqlite3'
 import { uploadNetworkReceipts } from './network-client.js'
-import { buildNetworkReceipt, type NetworkReceiptV2 } from './network-receipt.js'
+import { buildNetworkReceipt, type NetworkReceipt } from './network-receipt.js'
 
 const BATCH_SIZE = 100
 const LEASE_MS = 5 * 60_000
 const BASE_RETRY_MS = 30_000
 const MAX_RETRY_MS = 60 * 60_000
+const DEFAULT_WORKER_RUNTIME_MS = 5 * 60_000
+const DEFAULT_WORKER_POLL_MS = 60_000
 
 interface OutboxRow {
   session_id: string
@@ -14,7 +16,7 @@ interface OutboxRow {
 
 type UploadReceipts = (
   token: string,
-  receipts: NetworkReceiptV2[],
+  receipts: NetworkReceipt[],
   apiUrl?: string,
 ) => Promise<{ accepted: number; received: number }>
 
@@ -26,11 +28,25 @@ interface DrainOptions {
   upload?: UploadReceipts
 }
 
+interface WorkerOptions extends Omit<DrainOptions, 'now'> {
+  now?: () => number
+  sleep?: (milliseconds: number) => Promise<void>
+  maxRuntimeMs?: number
+  maxPollMs?: number
+}
+
 export interface NetworkOutboxResult {
   attempted: number
   synced: number
   accepted: number
   retryScheduled: number
+}
+
+export interface NetworkOutboxWorkerResult {
+  attempted: number
+  synced: number
+  accepted: number
+  pending: number
 }
 
 /** Add every newly completed, receipt-eligible session to the local outbox. */
@@ -50,6 +66,23 @@ export function enqueueEligibleNetworkReceipts(
       AND duration_bucket IS NOT NULL
       AND outcome IS NOT NULL
   `).run(now, now).changes
+}
+
+/** Re-open a previously synced receipt after its local numeric aggregates change. */
+export function requeueNetworkReceipt(
+  db: Database.Database,
+  sessionId: string,
+  now = Date.now(),
+): number {
+  return db.prepare(`
+    UPDATE network_receipt_outbox
+    SET synced_at = NULL,
+        next_attempt_at = ?,
+        lease_until = NULL,
+        last_error = NULL
+    WHERE session_id = ?
+      AND synced_at IS NOT NULL
+  `).run(now, sessionId).changes
 }
 
 function leaseReadyRows(db: Database.Database, now: number): OutboxRow[] {
@@ -134,6 +167,64 @@ export async function drainNetworkOutbox(
     }))()
     return { attempted: rows.length, synced: 0, accepted: 0, retryScheduled: rows.length }
   }
+}
+
+function getNextNetworkAttemptAt(db: Database.Database): number | null {
+  const row = db.prepare(`
+    SELECT MIN(next_attempt_at) AS next_attempt_at
+    FROM network_receipt_outbox
+    WHERE synced_at IS NULL
+  `).get() as { next_attempt_at: number | null }
+  return row.next_attempt_at
+}
+
+/**
+ * Drain immediately while healthy. After a failure, remain alive for at most
+ * five minutes and wake only when the durable backoff says work is due. This
+ * provides automatic retries without a permanent daemon or idle network
+ * polling on contributor machines.
+ */
+export async function runNetworkOutboxWorker(
+  db: Database.Database,
+  options: WorkerOptions,
+): Promise<NetworkOutboxWorkerResult> {
+  const now = options.now ?? Date.now
+  const sleep = options.sleep ?? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)))
+  const deadline = now() + (options.maxRuntimeMs ?? DEFAULT_WORKER_RUNTIME_MS)
+  const maxPollMs = options.maxPollMs ?? DEFAULT_WORKER_POLL_MS
+  let attempted = 0
+  let synced = 0
+  let accepted = 0
+
+  for (let iteration = 0; iteration < 1_000; iteration++) {
+    const current = now()
+    const result = await drainNetworkOutbox(db, {
+      contributorId: options.contributorId,
+      token: options.token,
+      apiUrl: options.apiUrl,
+      upload: options.upload,
+      now: current,
+    })
+    attempted += result.attempted
+    synced += result.synced
+    accepted += result.accepted
+
+    if (result.attempted > 0 && result.retryScheduled === 0) continue
+
+    const nextAttempt = getNextNetworkAttemptAt(db)
+    if (nextAttempt == null || current >= deadline) break
+    const waitMs = Math.min(
+      Math.max(nextAttempt - current, 0),
+      maxPollMs,
+      Math.max(deadline - current, 0),
+    )
+    // A due row with no attempt is leased by another worker. Exit rather than
+    // spin; that worker owns delivery and the receipt lease is crash-safe.
+    if (waitMs <= 0) break
+    await sleep(waitMs)
+  }
+
+  return { attempted, synced, accepted, pending: getNetworkOutboxStatus(db).pending }
 }
 
 export function getNetworkOutboxStatus(

@@ -4,21 +4,30 @@
  *
  * Usage:
  *   pollen-agent payout [--epoch N] [--resume] [--dry-run] [--preflight]
+ *   pollen-agent active-revenue-plan --epoch N --pool-atomic N --snapshot-block N
  *
  * Env: SPLITS_API_KEY, SPLITS_SUBACCOUNT (name or 0x address),
  *      SPLITS_SIGNER_KEY (optional; imported into the local keystore for
  *      headless signing on fresh runners), NEON_DATABASE_URL,
  *      POLLEN_TOKEN_ADDRESS, BASE_RPC_URL.
  *
- * x402 revenue does NOT flow through this agent: X402_PAY_TO points at the
- * existing Split contract, which distributes it directly.
+ * This agent does not settle x402 payments. V2 payments go through the deployed
+ * settlement contract. The V3 planning command is read-only and cannot publish
+ * a root or move revenue.
  */
-import type { Address } from 'viem'
+import { createPublicClient, http, type Address } from 'viem'
+import { base } from 'viem/chains'
+import {
+  createActiveRevenueSourceStore,
+  prepareActiveRevenuePlan,
+} from './active-revenue-plan.js'
+import { stringifyActiveRevenueArtifact } from './active-revenue-artifact.js'
 import { createNeonStore } from './db.js'
 import { createSplitsMintChain } from './mint.js'
 import { PayoutAbort, runPayout } from './payout.js'
 import { runPreflight } from './preflight.js'
 import { SplitsMcpDriver, ensureLocalSignerKey, resolveSubaccount } from './splits.js'
+import type { PollenSnapshotClient } from './pollen-snapshot.js'
 
 function usage(): never {
   console.error([
@@ -27,8 +36,50 @@ function usage(): never {
     'Commands:',
     '  payout [--epoch N] [--resume] [--dry-run]   Mint the weekly pro-rata payout for the just-closed epoch',
     '  payout --preflight                          Validate Splits auth, subaccount, and MINTER_ROLE without proposing',
+    '  active-revenue-plan --epoch N --pool-atomic N --snapshot-block N',
+    '                                               Print a read-only V3 Merkle draft; never writes or publishes',
   ].join('\n'))
   process.exit(1)
+}
+
+interface ActiveRevenuePlanFlags {
+  epoch: number
+  poolAtomicUsdc: bigint
+  snapshotBlock: bigint
+}
+
+function parseRequiredInteger(value: string | undefined, name: string): bigint {
+  try {
+    const parsed = BigInt(value ?? '')
+    if (parsed <= BigInt(0)) throw new Error('not positive')
+    return parsed
+  } catch {
+    console.error(`${name} expects a positive integer, got: ${value}`)
+    process.exit(1)
+  }
+}
+
+function parseActiveRevenuePlanFlags(argv: string[]): ActiveRevenuePlanFlags {
+  let epoch: number | undefined
+  let poolAtomicUsdc: bigint | undefined
+  let snapshotBlock: bigint | undefined
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    const value = argv[++i]
+    if (arg === '--epoch') epoch = Number(value)
+    else if (arg === '--pool-atomic') poolAtomicUsdc = parseRequiredInteger(value, arg)
+    else if (arg === '--snapshot-block') snapshotBlock = parseRequiredInteger(value, arg)
+    else {
+      console.error(`Unknown active-revenue-plan flag: ${arg}`)
+      process.exit(1)
+    }
+  }
+  if (!Number.isInteger(epoch) || (epoch ?? 0) < 1) {
+    console.error(`--epoch expects a 1-based integer, got: ${epoch}`)
+    process.exit(1)
+  }
+  if (poolAtomicUsdc === undefined || snapshotBlock === undefined) usage()
+  return { epoch: epoch!, poolAtomicUsdc, snapshotBlock }
 }
 
 interface Flags {
@@ -123,6 +174,22 @@ const [, , command, ...rest] = process.argv
       } finally {
         driver.close()
       }
+      break
+    }
+    case 'active-revenue-plan': {
+      const flags = parseActiveRevenuePlanFlags(rest)
+      const rpcUrl = process.env.BASE_ARCHIVE_RPC_URL ?? requireEnv('BASE_RPC_URL')
+      const client = createPublicClient({ chain: base, transport: http(rpcUrl) })
+      const artifact = await prepareActiveRevenuePlan({
+        sourceStore: createActiveRevenueSourceStore(requireEnv('NEON_DATABASE_URL')),
+        snapshotClient: client as unknown as PollenSnapshotClient,
+      }, {
+        distributionEpoch: flags.epoch,
+        poolAtomicUsdc: flags.poolAtomicUsdc,
+        tokenAddress: requireEnv('POLLEN_TOKEN_ADDRESS'),
+        snapshotBlock: flags.snapshotBlock,
+      })
+      process.stdout.write(stringifyActiveRevenueArtifact(artifact))
       break
     }
     default:

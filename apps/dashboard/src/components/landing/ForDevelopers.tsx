@@ -56,7 +56,7 @@ export default function ForDevelopers() {
             <span style={{ color: '#A09A94' }}> -X GET \</span>
           </div>
           <div>
-            <span style={{ color: '#A09A94' }}>  &quot;https://api.pollen.id/intents?period=7d&quot;</span>
+            <span style={{ color: '#A09A94' }}>  &quot;https://pollen-api.bflynn4141.workers.dev/intents?period=7d&quot;</span>
           </div>
           <div className="mt-4" style={{ color: 'var(--color-terminal-dim)' }}>
             {'// Response (x402 payment: $0.001)'}

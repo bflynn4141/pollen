@@ -1,18 +1,25 @@
 # pollen-api (Cloudflare Worker)
 
-Public trending API served at **api.pollen.id**, plus the two cron jobs
-(rollup recompute every 6h; epoch-close scoring Tuesdays 00:10 UTC). Moved off
+Public aggregate API at **pollen-api.bflynn4141.workers.dev**, plus the two cron jobs
+(rollup recompute every 15m; epoch-close scoring Tuesdays 00:10 UTC). Moved off
 Vercel so the site stays Hobby-plan-safe; same architecture as
 prompt-trends' backend (Hono + @neondatabase/serverless + cron triggers).
 
-- **Free** (`Cache-Control: public, max-age=300`): `GET /trending/tools`,
-  `GET /trending/mcp`, `GET /overview`
-- **Paid via x402, USDC on Base** (`Cache-Control: no-store`):
+This Worker-owned hostname is the verified production origin. Do not configure
+`pollen.id`; it serves an unrelated product. See
+`../../docs/PRODUCTION-DNS-RUNBOOK.md` before adding any future custom domain.
+
+- **Free** (`Cache-Control: public, max-age=300`): `GET /catalog`,
+  `GET /network`, `GET /trending/tools`, `GET /trending/mcp`, `GET /overview`,
+  and `GET /active-revenue/claims/:wallet`
+- **Paid via x402 v2, USDC on Base** (`Cache-Control: no-store`):
   `GET /tools/history?tool=` ($0.01), `GET /mcp/history?server=` ($0.01),
   `GET /grid` ($0.05), `GET /export` ($0.25)
+- Paid endpoints return HTTP 425 with `charged: false` and do not settle when
+  no privacy-qualified rows are available.
 - All endpoints also answer under an `/api/v1` prefix.
 - **Admin** (Bearer `ADMIN_SECRET`): `POST /admin/run/rollups`,
-  `POST /admin/run/epoch-close[?epoch=N][&force=1]`
+  `POST /admin/run/epoch-close[?epoch=N][&force=1]`, and `GET /admin/health`
 
 ## Epoch scoring v2
 
@@ -48,8 +55,7 @@ raw-table path and runs only from cron/admin.
 ## Deploy runbook
 
 ```bash
-# 0. one-time: authenticate wrangler with the Cloudflare account that owns
-#    the pollen.id zone
+# 0. one-time: authenticate wrangler with the account that owns pollen-api
 npx wrangler login
 
 cd packages/worker
@@ -57,6 +63,9 @@ cd packages/worker
 # 1. secrets (prompted for each value)
 npx wrangler secret put NEON_DATABASE_URL
 npx wrangler secret put ADMIN_SECRET
+# Set the GitHub Actions repository secret WORKER_ADMIN_SECRET to this same
+# ADMIN_SECRET value. Production health intentionally fails with an actionable
+# authentication error when the two stores drift.
 # Gas-funded EOA used only to relay signed USDC authorizations through
 # PollenSettlementV2. The buyer supplies the USDC; this key pays Base gas.
 npx wrangler secret put X402_RELAYER_KEY
@@ -64,26 +73,24 @@ npx wrangler secret put X402_RELAYER_KEY
 # 2. vars: edit wrangler.toml
 #    - X402_PAY_TO   = PollenSettlementV2 on Base mainnet (required)
 #    - BASE_RPC_URL  = Base mainnet RPC
+#    - ACTIVE_REVENUE_CUTOVER_STATUS remains unset until a separately approved
+#      V3 deployment and settlement cutover; only then set it to `live`
 
-# 3. deploy (also provisions the api.pollen.id custom domain + crons)
+# 3. deploy the Worker and its crons
 npx wrangler deploy
 
-# 4. DNS: pollen.id must be a zone on this Cloudflare account. The
-#    `custom_domain = true` route creates the proxied api.pollen.id record
-#    automatically; verify under Workers & Pages → pollen-api → Settings →
-#    Domains & Routes (and remove any old api.pollen.id record pointing at
-#    Vercel).
-
-# 5. smoke test
-curl -i https://api.pollen.id/trending/tools            # 200, max-age=300
-curl -i https://api.pollen.id/grid                      # 402 x402 challenge
-curl -X POST https://api.pollen.id/admin/run/rollups \
+# 4. smoke test
+curl -i https://pollen-api.bflynn4141.workers.dev/catalog                   # 200, x402 v2 catalog
+curl -i https://pollen-api.bflynn4141.workers.dev/trending/tools            # 200, max-age=300
+curl -i https://pollen-api.bflynn4141.workers.dev/grid                      # 402, PAYMENT-REQUIRED
+curl -X POST https://pollen-api.bflynn4141.workers.dev/admin/run/rollups \
   -H "Authorization: Bearer $ADMIN_SECRET"              # first backfill
 
 # local dev
 npx wrangler dev
-# manual cron test against wrangler dev:
-curl "http://localhost:8787/__scheduled?cron=*/15+*+*+*+*"
+# manual cron tests against wrangler dev:
+curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=*/15+*+*+*+*"
+curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=10+0+*+*+TUE"
 ```
 
 ## Verification without deploying

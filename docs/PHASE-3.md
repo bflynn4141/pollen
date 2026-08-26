@@ -1,5 +1,10 @@
 # Phase 3: Query API
 
+> Historical phase plan. Endpoint names, prices, payment headers, data shapes,
+> and product claims below are superseded by `packages/worker/src/buyer-catalog.ts`
+> and `packages/site/content/docs/api.mdx`. The implemented API uses x402 v2,
+> closed aggregate schemas, and k=5 publication.
+
 > **Goal:** Buyers can access Pollen intelligence through a structured REST API with x402 payments.
 >
 > **Duration:** 2 weeks

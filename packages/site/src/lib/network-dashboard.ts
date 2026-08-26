@@ -7,6 +7,7 @@ export const RANKING_WINDOWS = [
 export type RankingWindow = typeof RANKING_WINDOWS[number]['id']
 export type RankingSection = 'models' | 'mcps' | 'tools' | 'workflows' | 'intents'
 export type NetworkStatus = 'live' | 'warming_up' | 'unavailable'
+export type DashboardScope = 'network' | 'personal'
 
 export interface ReceiptOverview {
   period: string
@@ -22,6 +23,14 @@ interface OutcomeRank {
   completionRate: number
   checkPassRate: number
   contributors: number
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  reasoningTokens?: number
+  tokenizedSessions?: number
+  reasoningSessions?: number
+  tokenizedEvents?: number
+  calls?: number
 }
 
 interface McpOutcomeRank {
@@ -30,6 +39,12 @@ interface McpOutcomeRank {
   successRate: number
   latencyBucket: string
   contributors: number
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  reasoningTokens?: number
+  tokenizedSessions?: number
+  tokenizedEvents?: number
 }
 
 export interface NetworkPeriodSnapshot {
@@ -44,7 +59,8 @@ export interface NetworkPeriodSnapshot {
 }
 
 export interface NetworkApiResponse {
-  source: 'network_receipts'
+  source: 'network_receipts' | 'local_activity'
+  scope?: DashboardScope
   k_anonymity: number
   status: 'live' | 'warming_up'
   windows: Record<RankingWindow, {
@@ -61,6 +77,15 @@ export interface RankingMetric {
   completionPct: number
   trendPct: number | null
   latencyBucket?: string
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  cachedInputTokens?: number
+  reasoningTokens?: number
+  tokenizedSessions?: number
+  reasoningSessions?: number
+  calls?: number
+  tokenizedEvents?: number
 }
 
 export interface RankingEntry {
@@ -83,9 +108,12 @@ export interface RankingDefinition {
 
 export interface NetworkDashboard {
   status: NetworkStatus
+  scope: DashboardScope
+  availableScopes: DashboardScope[]
   kAnonymity: number
   overview: ReceiptOverview | null
   rankings: Record<RankingSection, RankingDefinition>
+  mcpTools: RankingDefinition
 }
 
 export const RANKING_SECTION_META: Record<RankingSection, Omit<RankingDefinition, 'entries'>> = {
@@ -100,15 +128,15 @@ export const RANKING_SECTION_META: Record<RankingSection, Omit<RankingDefinition
     label: 'MCP rankings',
     singular: 'MCP server',
     description: 'Third-party MCP server adoption, reliability, and observed latency.',
-    volumeLabel: 'Calls',
-    adoptionLabel: 'Adoption',
+    volumeLabel: 'Attributed tokens',
+    adoptionLabel: 'Compute share',
   },
   tools: {
-    label: 'Tool call rankings',
-    singular: 'Tool call',
-    description: 'Individual third-party MCP tools called across contributor sessions.',
-    volumeLabel: 'Calls',
-    adoptionLabel: 'Adoption',
+    label: 'Tool rankings',
+    singular: 'Tool category',
+    description: 'Coarsened tool categories used across contributor sessions.',
+    volumeLabel: 'Attributed tokens',
+    adoptionLabel: 'Compute share',
   },
   workflows: {
     label: 'Workflow rankings',
@@ -124,6 +152,14 @@ export const RANKING_SECTION_META: Record<RankingSection, Omit<RankingDefinition
     volumeLabel: 'Classified sessions',
     adoptionLabel: 'Panel reach',
   },
+}
+
+const MCP_TOOL_META: Omit<RankingDefinition, 'entries'> = {
+  label: 'MCP tool calls',
+  singular: 'MCP tool',
+  description: 'Individual third-party tools called through MCP servers.',
+  volumeLabel: 'Attributed tokens',
+  adoptionLabel: 'Compute share',
 }
 
 const emptyWindows = (): Record<RankingWindow, RankingMetric | null> => ({
@@ -181,16 +217,39 @@ function metric(
   previousEligible: number,
   volume: number,
   latencyBucket?: string,
+  personalShare?: {
+    currentTotal: number
+    previousVolume: number | null
+    previousTotal: number
+  },
+  isPersonal = false,
 ): RankingMetric {
-  const currentAdoption = adoption(current.contributors, currentEligible)
-  const previousAdoption = previous ? adoption(previous.contributors, previousEligible) : null
+  const currentAdoption = personalShare
+    ? adoption(volume, personalShare.currentTotal)
+    : adoption(current.contributors, currentEligible)
+  const previousAdoption = previous
+    ? personalShare
+      ? adoption(personalShare.previousVolume ?? 0, personalShare.previousTotal)
+      : adoption(previous.contributors, previousEligible)
+    : null
   return {
-    eligibleContributors: currentEligible,
-    contributors: current.contributors,
+    eligibleContributors: isPersonal ? 1 : currentEligible,
+    contributors: isPersonal ? 1 : current.contributors,
     adoptionPct: currentAdoption,
     volume,
     completionPct: round1(current.completionRate * 100),
     trendPct: previousAdoption == null ? null : round1(currentAdoption - previousAdoption),
+    ...(current.inputTokens != null || current.outputTokens != null ? {
+      inputTokens: current.inputTokens ?? 0,
+      outputTokens: current.outputTokens ?? 0,
+      totalTokens: (current.inputTokens ?? 0) + (current.outputTokens ?? 0),
+      cachedInputTokens: current.cachedInputTokens ?? 0,
+      ...(current.reasoningTokens != null ? { reasoningTokens: current.reasoningTokens } : {}),
+      tokenizedSessions: current.tokenizedSessions ?? 0,
+      tokenizedEvents: current.tokenizedEvents ?? 0,
+      reasoningSessions: current.reasoningSessions ?? 0,
+    } : {}),
+    ...(current.calls != null ? { calls: current.calls } : {}),
     ...(latencyBucket ? { latencyBucket } : {}),
   }
 }
@@ -223,20 +282,21 @@ function rawEntries(section: RankingSection, snapshot: NetworkPeriodSnapshot): R
     id: item.server,
     label: mcpLabel(item.server),
     secondary: 'MCP server',
-    volume: item.calls,
+    volume: item.inputTokens != null || item.outputTokens != null
+      ? (item.inputTokens ?? 0) + (item.outputTokens ?? 0)
+      : item.calls,
     latencyBucket: item.latencyBucket,
   }))
-  if (section === 'tools') return (snapshot.mcpTools ?? []).map(item => ({
+  if (section === 'tools') return snapshot.toolCategories.map(item => ({
     ...item,
-    completionRate: item.successRate,
-    checkPassRate: item.successRate,
-    key: `${item.server}\0${item.tool}`,
-    id: slug(`${item.server}-${item.tool}`),
-    iconId: item.server,
-    label: title(item.tool),
-    secondary: mcpLabel(item.server),
-    volume: item.calls,
-    latencyBucket: item.latencyBucket,
+    calls: item.events,
+    key: item.category,
+    id: categoryIconId[item.category] ?? slug(item.category),
+    label: title(item.category),
+    secondary: 'Capability',
+    volume: item.inputTokens != null || item.outputTokens != null
+      ? (item.inputTokens ?? 0) + (item.outputTokens ?? 0)
+      : item.events,
   }))
   if (section === 'intents') return snapshot.intents.map(item => ({
     ...item,
@@ -257,15 +317,42 @@ function rawEntries(section: RankingSection, snapshot: NetworkPeriodSnapshot): R
   }))
 }
 
-function buildSection(section: RankingSection, response: NetworkApiResponse): RankingDefinition {
+function rawMcpToolEntries(snapshot: NetworkPeriodSnapshot): RawEntry[] {
+  return (snapshot.mcpTools ?? []).map(item => ({
+    ...item,
+    completionRate: item.successRate,
+    checkPassRate: item.successRate,
+    key: `${item.server}\0${item.tool}`,
+    id: slug(`${item.server}-${item.tool}`),
+    iconId: item.server,
+    label: title(item.tool),
+    secondary: mcpLabel(item.server),
+    volume: item.inputTokens != null || item.outputTokens != null
+      ? (item.inputTokens ?? 0) + (item.outputTokens ?? 0)
+      : item.calls,
+    latencyBucket: item.latencyBucket,
+  }))
+}
+
+function buildRanking(
+  metadata: Omit<RankingDefinition, 'entries'>,
+  response: NetworkApiResponse,
+  entriesForSnapshot: (snapshot: NetworkPeriodSnapshot) => RawEntry[],
+  useVolumeShare = false,
+): RankingDefinition {
   const entries = new Map<string, RankingEntry>()
   for (const window of RANKING_WINDOWS) {
     const pair = response.windows[window.id]
     if (!pair.current) continue
+    const currentItems = entriesForSnapshot(pair.current)
+    const previousItems = pair.previous ? entriesForSnapshot(pair.previous) : []
     const previous = pair.previous
-      ? new Map(rawEntries(section, pair.previous).map(item => [item.key, item]))
+      ? new Map(previousItems.map(item => [item.key, item]))
       : new Map<string, RawEntry>()
-    for (const item of rawEntries(section, pair.current)) {
+    const currentTotal = currentItems.reduce((sum, item) => sum + item.volume, 0)
+    const previousTotal = previousItems.reduce((sum, item) => sum + item.volume, 0)
+    for (const item of currentItems) {
+      const previousItem = previous.get(item.key)
       const entry = entries.get(item.key) ?? {
         id: item.id,
         label: item.label,
@@ -276,21 +363,38 @@ function buildSection(section: RankingSection, response: NetworkApiResponse): Ra
       }
       entry.windows[window.id] = metric(
         item,
-        previous.get(item.key),
+        previousItem,
         pair.current.overview.contributors,
         pair.previous?.overview.contributors ?? 0,
         item.volume,
         item.latencyBucket,
+        response.scope === 'personal' || useVolumeShare ? {
+          currentTotal,
+          previousVolume: previousItem?.volume ?? null,
+          previousTotal,
+        } : undefined,
+        response.scope === 'personal',
       )
       entries.set(item.key, entry)
     }
   }
-  return { ...RANKING_SECTION_META[section], entries: [...entries.values()] }
+  return { ...metadata, entries: [...entries.values()] }
 }
 
-function emptyDashboard(status: NetworkStatus, kAnonymity = 5): NetworkDashboard {
+function buildSection(section: RankingSection, response: NetworkApiResponse): RankingDefinition {
+  return buildRanking(
+    RANKING_SECTION_META[section],
+    response,
+    snapshot => rawEntries(section, snapshot),
+    section === 'mcps' || section === 'tools',
+  )
+}
+
+function emptyDashboard(status: NetworkStatus, kAnonymity = 5, scope: DashboardScope = 'network'): NetworkDashboard {
   return {
     status,
+    scope,
+    availableScopes: [],
     kAnonymity,
     overview: null,
     rankings: {
@@ -300,13 +404,17 @@ function emptyDashboard(status: NetworkStatus, kAnonymity = 5): NetworkDashboard
       workflows: { ...RANKING_SECTION_META.workflows, entries: [] },
       intents: { ...RANKING_SECTION_META.intents, entries: [] },
     },
+    mcpTools: { ...MCP_TOOL_META, entries: [] },
   }
 }
 
 export function buildNetworkDashboard(response: NetworkApiResponse): NetworkDashboard {
-  if (response.status !== 'live') return emptyDashboard('warming_up', response.k_anonymity)
+  const scope = response.scope ?? 'network'
+  if (response.status !== 'live') return emptyDashboard('warming_up', response.k_anonymity, scope)
   return {
     status: 'live',
+    scope,
+    availableScopes: [scope],
     kAnonymity: response.k_anonymity,
     overview: response.windows['7d'].current?.overview ?? null,
     rankings: {
@@ -316,6 +424,7 @@ export function buildNetworkDashboard(response: NetworkApiResponse): NetworkDash
       workflows: buildSection('workflows', response),
       intents: buildSection('intents', response),
     },
+    mcpTools: buildRanking(MCP_TOOL_META, response, rawMcpToolEntries, true),
   }
 }
 
@@ -345,4 +454,44 @@ export async function fetchNetworkDashboard(
   } catch {
     return emptyDashboard('unavailable')
   }
+}
+
+export function isDashboardScope(value: string | string[] | undefined): value is DashboardScope {
+  return value === 'network' || value === 'personal'
+}
+
+export function selectDashboard(
+  requestedScope: DashboardScope | undefined,
+  network: NetworkDashboard,
+  personal?: NetworkDashboard,
+): NetworkDashboard {
+  const availableScopes: DashboardScope[] = [
+    ...(personal ? ['personal' as const] : []),
+    'network',
+  ]
+  const selected = requestedScope === 'personal' && personal
+    ? personal
+    : requestedScope === 'network'
+      ? network
+      : network.status === 'live'
+        ? network
+        : personal?.status === 'live'
+          ? personal
+          : network
+
+  return { ...selected, availableScopes }
+}
+
+function canReadPersonalActivity(): boolean {
+  if (process.env.VERCEL === '1') return false
+  return process.env.NODE_ENV === 'development' || process.env.POLLEN_LOCAL_DATA === '1'
+}
+
+export async function fetchDashboard(requestedScope?: DashboardScope): Promise<NetworkDashboard> {
+  const networkPromise = fetchNetworkDashboard()
+  const personalPromise = canReadPersonalActivity()
+    ? import('./personal-dashboard').then(({ fetchPersonalDashboard }) => fetchPersonalDashboard())
+    : Promise.resolve(undefined)
+  const [network, personal] = await Promise.all([networkPromise, personalPromise])
+  return selectDashboard(requestedScope, network, personal)
 }

@@ -28,7 +28,17 @@ const RECEIPT_V1_FIELDS = new Set([
   'tool_category_sequence', 'duration_bucket', 'terminal_state', 'check_result',
 ])
 const RECEIPT_V2_FIELDS = new Set([...RECEIPT_V1_FIELDS, 'mcp_calls'])
+const RECEIPT_V3_FIELDS = new Set([...RECEIPT_V2_FIELDS, 'token_usage'])
+const RECEIPT_V4_FIELDS = new Set([...RECEIPT_V3_FIELDS, 'tool_attributions'])
 const MCP_CALL_FIELDS = new Set(['server', 'tool', 'success', 'latency_bucket'])
+const ATTRIBUTED_TOKEN_FIELDS = new Set([
+  'input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens',
+])
+const MCP_CALL_V4_FIELDS = new Set([...MCP_CALL_FIELDS, ...ATTRIBUTED_TOKEN_FIELDS])
+const TOKEN_USAGE_FIELDS = new Set([
+  'input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens',
+])
+const MAX_SESSION_TOKENS = 1_000_000_000_000
 
 export interface NetworkReceiptV1 {
   schema_version: 1
@@ -55,7 +65,38 @@ export interface NetworkReceiptV2 extends Omit<NetworkReceiptV1, 'schema_version
   mcp_calls: NetworkMcpCallV2[]
 }
 
-export type NetworkReceipt = NetworkReceiptV1 | NetworkReceiptV2
+export interface NetworkTokenUsageV3 {
+  input_tokens: number | null
+  output_tokens: number | null
+  cached_input_tokens: number | null
+  reasoning_tokens: number | null
+}
+
+export interface NetworkReceiptV3 extends Omit<NetworkReceiptV2, 'schema_version'> {
+  schema_version: 3
+  token_usage: NetworkTokenUsageV3
+}
+
+export interface NetworkAttributedTokensV4 {
+  input_tokens: number | null
+  output_tokens: number | null
+  cached_input_tokens: number | null
+  reasoning_tokens: number | null
+}
+
+export interface NetworkMcpCallV4 extends NetworkMcpCallV2, NetworkAttributedTokensV4 {}
+
+export interface NetworkToolAttributionV4 extends NetworkAttributedTokensV4 {
+  category: string
+}
+
+export interface NetworkReceiptV4 extends Omit<NetworkReceiptV3, 'schema_version' | 'mcp_calls'> {
+  schema_version: 4
+  mcp_calls: NetworkMcpCallV4[]
+  tool_attributions: NetworkToolAttributionV4[]
+}
+
+export type NetworkReceipt = NetworkReceiptV1 | NetworkReceiptV2 | NetworkReceiptV3 | NetworkReceiptV4
 
 export interface IngestDependencies {
   registerContributor(inviteHash: string, contributorId: string, tokenHash: string): Promise<boolean>
@@ -83,10 +124,13 @@ function assertEnum(value: unknown, allowed: Set<string>, field: string): assert
 
 export function validateNetworkReceipt(value: unknown): NetworkReceipt {
   if (!isRecord(value)) throw new Error('receipt must be an object')
-  if (value.schema_version !== 1 && value.schema_version !== 2) {
+  if (value.schema_version !== 1 && value.schema_version !== 2 && value.schema_version !== 3 && value.schema_version !== 4) {
     throw new Error('unsupported schema_version')
   }
-  const receiptFields = value.schema_version === 2 ? RECEIPT_V2_FIELDS : RECEIPT_V1_FIELDS
+  const receiptFields = value.schema_version === 4
+    ? RECEIPT_V4_FIELDS
+    : value.schema_version === 3 ? RECEIPT_V3_FIELDS
+    : value.schema_version === 2 ? RECEIPT_V2_FIELDS : RECEIPT_V1_FIELDS
   for (const field of Object.keys(value)) {
     if (!receiptFields.has(field)) throw new Error(`unknown field: ${field}`)
   }
@@ -109,31 +153,94 @@ export function validateNetworkReceipt(value: unknown): NetworkReceipt {
   ) {
     throw new Error('invalid model')
   }
+  const toolCategorySequence = value.tool_category_sequence
   if (
-    !Array.isArray(value.tool_category_sequence)
-    || value.tool_category_sequence.length > 64
-    || !value.tool_category_sequence.every(tool => typeof tool === 'string' && TOOL_CATEGORIES.has(tool))
+    !Array.isArray(toolCategorySequence)
+    || toolCategorySequence.length > 64
+    || !toolCategorySequence.every(tool => typeof tool === 'string' && TOOL_CATEGORIES.has(tool))
   ) {
     throw new Error('invalid tool_category_sequence')
   }
   assertEnum(value.duration_bucket, DURATION_BUCKETS, 'duration_bucket')
   assertEnum(value.terminal_state, TERMINAL_STATES, 'terminal_state')
   assertEnum(value.check_result, CHECK_RESULTS, 'check_result')
-  if (value.schema_version === 2) {
+  if (value.schema_version >= 2) {
     if (!Array.isArray(value.mcp_calls) || value.mcp_calls.length > 64) {
       throw new Error('invalid mcp_calls')
     }
-    for (const call of value.mcp_calls) validateMcpCall(call)
+    for (const call of value.mcp_calls) validateMcpCall(call, value.schema_version === 4)
+  }
+  if (value.schema_version === 3 || value.schema_version === 4) validateTokenUsage(value.token_usage)
+  if (value.schema_version === 4) {
+    if (!Array.isArray(value.tool_attributions) || value.tool_attributions.length > 64) {
+      throw new Error('invalid tool_attributions')
+    }
+    if (value.tool_attributions.length !== toolCategorySequence.length) {
+      throw new Error('tool attribution sequence mismatch')
+    }
+    value.tool_attributions.forEach((attribution, index) => {
+      validateToolAttribution(attribution)
+      if (attribution.category !== toolCategorySequence[index]) {
+        throw new Error('tool attribution category mismatch')
+      }
+    })
   }
   return value as unknown as NetworkReceipt
 }
 
-function validateMcpCall(value: unknown): asserts value is NetworkMcpCallV2 {
+function validateTokenUsage(value: unknown): asserts value is NetworkTokenUsageV3 {
+  if (!isRecord(value)) throw new Error('invalid token_usage')
+  if (Object.keys(value).some(field => !TOKEN_USAGE_FIELDS.has(field))) {
+    throw new Error('unknown token_usage field')
+  }
+  if ([...TOKEN_USAGE_FIELDS].some(field => !(field in value))) {
+    throw new Error('missing token_usage field')
+  }
+  for (const field of TOKEN_USAGE_FIELDS) {
+    const tokens = value[field]
+    if (tokens !== null && (!Number.isSafeInteger(tokens) || Number(tokens) < 0 || Number(tokens) > MAX_SESSION_TOKENS)) {
+      throw new Error(`invalid token_usage ${field}`)
+    }
+  }
+  const input = value.input_tokens as number | null
+  const output = value.output_tokens as number | null
+  const cached = value.cached_input_tokens as number | null
+  const reasoning = value.reasoning_tokens as number | null
+  if (cached !== null && (input === null || cached > input)) throw new Error('invalid cached token subset')
+  if (reasoning !== null && (output === null || reasoning > output)) throw new Error('invalid reasoning token subset')
+}
+
+function validateAttributedTokens(value: Record<string, unknown>): void {
+  for (const field of ATTRIBUTED_TOKEN_FIELDS) {
+    if (!(field in value)) throw new Error(`missing attributed token field: ${field}`)
+    const tokens = value[field]
+    if (tokens !== null && (!Number.isSafeInteger(tokens) || Number(tokens) < 0 || Number(tokens) > MAX_SESSION_TOKENS)) {
+      throw new Error(`invalid attributed token ${field}`)
+    }
+  }
+  const input = value.input_tokens as number | null
+  const output = value.output_tokens as number | null
+  const cached = value.cached_input_tokens as number | null
+  const reasoning = value.reasoning_tokens as number | null
+  if (cached !== null && (input === null || cached > input)) throw new Error('invalid attributed cached token subset')
+  if (reasoning !== null && (output === null || reasoning > output)) throw new Error('invalid attributed reasoning token subset')
+}
+
+function validateToolAttribution(value: unknown): asserts value is NetworkToolAttributionV4 {
+  if (!isRecord(value)) throw new Error('invalid tool attribution')
+  const fields = new Set(['category', ...ATTRIBUTED_TOKEN_FIELDS])
+  if (Object.keys(value).some(field => !fields.has(field))) throw new Error('unknown tool attribution field')
+  assertEnum(value.category, TOOL_CATEGORIES, 'tool attribution category')
+  validateAttributedTokens(value)
+}
+
+function validateMcpCall(value: unknown, withTokens = false): asserts value is NetworkMcpCallV2 | NetworkMcpCallV4 {
   if (!isRecord(value)) throw new Error('invalid mcp_call')
-  if (Object.keys(value).some(field => !MCP_CALL_FIELDS.has(field))) {
+  const fields = withTokens ? MCP_CALL_V4_FIELDS : MCP_CALL_FIELDS
+  if (Object.keys(value).some(field => !fields.has(field))) {
     throw new Error('unknown mcp_call field')
   }
-  if ([...MCP_CALL_FIELDS].some(field => !(field in value))) {
+  if ([...fields].some(field => !(field in value))) {
     throw new Error('missing mcp_call field')
   }
   if (typeof value.server !== 'string' || !/^[a-z0-9][a-z0-9-]{0,47}$/.test(value.server)) {
@@ -144,6 +251,7 @@ function validateMcpCall(value: unknown): asserts value is NetworkMcpCallV2 {
   }
   if (typeof value.success !== 'boolean') throw new Error('invalid mcp_call success')
   assertEnum(value.latency_bucket, MCP_LATENCY_BUCKETS, 'mcp_call latency_bucket')
+  if (withTokens) validateAttributedTokens(value)
 }
 
 function randomToken(): string {
@@ -309,6 +417,11 @@ export function createIngestDependencies(databaseUrl: string): IngestDependencie
       let accepted = 0
       let limited = false
       for (const receipt of receipts) {
+        const mcpCalls = receipt.schema_version === 1 ? [] : receipt.mcp_calls
+        const tokenUsage = receipt.schema_version === 3 || receipt.schema_version === 4
+          ? receipt.token_usage
+          : null
+        const toolAttributions = receipt.schema_version === 4 ? receipt.tool_attributions : []
         const rows = await sql`
           WITH quota AS (
             SELECT COUNT(*)::int AS receipts_24h
@@ -319,17 +432,29 @@ export function createIngestDependencies(databaseUrl: string): IngestDependencie
             INSERT INTO network_receipts (
               receipt_id, contributor_id, observed_at, intent, agent, model,
               tool_category_sequence, duration_bucket, terminal_state, check_result,
-              mcp_calls
+              mcp_calls, input_tokens, output_tokens, cached_input_tokens, reasoning_tokens,
+              tool_attributions
             )
             SELECT
               ${receipt.receipt_id}, ${contributorId}, ${receipt.observed_at},
               ${receipt.intent}, ${receipt.agent}, ${receipt.model},
               ${receipt.tool_category_sequence}, ${receipt.duration_bucket},
               ${receipt.terminal_state}, ${receipt.check_result},
-              ${JSON.stringify(receipt.schema_version === 2 ? receipt.mcp_calls : [])}::jsonb
+              ${JSON.stringify(mcpCalls)}::jsonb,
+              ${tokenUsage?.input_tokens ?? null},
+              ${tokenUsage?.output_tokens ?? null},
+              ${tokenUsage?.cached_input_tokens ?? null},
+              ${tokenUsage?.reasoning_tokens ?? null},
+              ${JSON.stringify(toolAttributions)}::jsonb
             FROM quota
             WHERE receipts_24h < ${MAX_RECEIPTS_PER_DAY}
-            ON CONFLICT (contributor_id, receipt_id) DO NOTHING
+            ON CONFLICT (contributor_id, receipt_id) DO UPDATE SET
+              input_tokens = COALESCE(EXCLUDED.input_tokens, network_receipts.input_tokens),
+              output_tokens = COALESCE(EXCLUDED.output_tokens, network_receipts.output_tokens),
+              cached_input_tokens = COALESCE(EXCLUDED.cached_input_tokens, network_receipts.cached_input_tokens),
+              reasoning_tokens = COALESCE(EXCLUDED.reasoning_tokens, network_receipts.reasoning_tokens),
+              mcp_calls = CASE WHEN jsonb_array_length(EXCLUDED.mcp_calls) > 0 THEN EXCLUDED.mcp_calls ELSE network_receipts.mcp_calls END,
+              tool_attributions = CASE WHEN jsonb_array_length(EXCLUDED.tool_attributions) > 0 THEN EXCLUDED.tool_attributions ELSE network_receipts.tool_attributions END
             RETURNING receipt_id
           )
           SELECT

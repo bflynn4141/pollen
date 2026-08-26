@@ -21,7 +21,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Verify production automation configuration
+        run: node --test scripts/automation-config.test.mjs
       - run: pnpm test
       - run: pnpm build
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Verify contracts, Merkle vectors, fuzzing, and invariants
+        working-directory: contracts
+        run: |
+          forge fmt --check src/PollenActiveRevenueVault.sol src/PollenSettlementV3.sol test/PollenActiveRevenueVault.t.sol test/PollenSettlementV3.t.sol test/PollenActiveRevenueVaultInvariant.t.sol script/DeployV3.s.sol
+          forge build
+          forge test --force
       - name: Verify publish artifact
         run: pnpm --filter @pollen/cli exec npm pack --dry-run --ignore-scripts

@@ -6,43 +6,39 @@ const USE_CASES = [
   {
     icon: '\u2261',
     title: 'Market Intelligence',
-    desc: 'Track what developers are building in real-time across 12,000+ sessions.',
+    desc: 'Track privacy-qualified changes in models, intents, tools, and workflows.',
   },
   {
     icon: '\u2298',
     title: 'Competitive Analysis',
-    desc: 'Monitor emerging tools, frameworks, and protocols before they trend.',
+    desc: 'Compare published adoption and outcome patterns without exposing individual sessions.',
   },
   {
     icon: '\u2191',
     title: 'Product Research',
-    desc: 'Validate demand before you build. See what developers actually search for.',
+    desc: 'Use contributor-backed aggregate signals as one input to product decisions.',
   },
   {
     icon: '\u2261',
-    title: 'Content Strategy',
-    desc: 'Create content developers actually search for. Data-driven editorial planning.',
+    title: 'Agent Evaluation',
+    desc: 'Study tool-category sequences and observable outcomes across privacy-safe cohorts.',
   },
 ]
 
-const REQUEST_CODE = `curl https://api.pollen.id/v1/topics \\
-  -H "X-402-Payment: <payment-proof>" \\
-  -d '{"period": "7d", "limit": 10}'
+const REQUEST_CODE = `# Inspect the product before paying
+curl https://pollen-api.bflynn4141.workers.dev/catalog
 
-# Also available: /v1/tools, /v1/commands, /v1/models`
+# Paid route: first request returns x402 v2
+curl -i https://pollen-api.bflynn4141.workers.dev/grid`
 
 const RESPONSE_CODE = `{
-  "topics": [
-    { "name": "epstein files",
-      "volume": 2847, "trend": "+342%" },
-    { "name": "polymarket",
-      "volume": 2291, "trend": "+89%" },
-    { "name": "mcp server",
-      "volume": 1834, "trend": "+156%" }
-  ],
-  "period": "7d",
-  "total_sessions": 12847,
-  "cost": "$0.001"
+  "x402Version": 2,
+  "resource": { "url": ".../grid" },
+  "accepts": [{
+    "scheme": "exact",
+    "network": "eip155:8453",
+    "amount": "50000"
+  }]
 }`
 
 export function ForDevelopers() {
@@ -81,9 +77,9 @@ export function ForDevelopers() {
               margin: isMobile ? undefined : '0 auto',
             }}
           >
-            REST API access to the world&apos;s largest anonymized dataset of developer topics, tool
-            usage, command patterns, and model preferences. Pay per query via x402 — no API
-            keys, no signup. All revenue flows on-chain directly to token holders.
+            Query privacy-safe, contributor-backed aggregates through a documented REST API.
+            Inspect free previews and the machine-readable catalog first, then pay per published
+            result with x402 v2 and USDC on Base. No API key is required for reads.
           </p>
         </div>
 
@@ -179,7 +175,7 @@ export function ForDevelopers() {
             View API Docs
           </a>
           <p style={{ fontSize: 13, fontFamily: 'monospace', color: 'var(--text-muted)', textAlign: 'center' }}>
-            Pay per query via x402. No API keys. Revenue flows directly to contributors.
+            V2 currently rewards all holders. The approved, not-yet-live V3 path rewards recent verified contributors who held POLLEN.
           </p>
         </div>
       </div>

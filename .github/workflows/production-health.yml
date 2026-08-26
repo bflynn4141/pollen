@@ -17,12 +17,47 @@ jobs:
 
       - name: Check scoring pipeline and x402 relayer
         env:
-          WORKER_ADMIN_SECRET: ${{ secrets.WORKER_ADMIN_SECRET }}
+          # This repository secret must contain exactly the same value as the
+          # Cloudflare Worker secret named ADMIN_SECRET.
+          ADMIN_SECRET: ${{ secrets.WORKER_ADMIN_SECRET }}
+          HEALTH_URL: https://pollen-api.bflynn4141.workers.dev/admin/health
         run: |
-          body=$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer ${WORKER_ADMIN_SECRET}" \
-            https://pollen-api.bflynn4141.workers.dev/admin/health)
-          jq -e '.ok == true and .epoch.epoch_scores > 0 and .relayer.healthy == true' <<<"${body}" >/dev/null
+          if [[ -z "${ADMIN_SECRET}" ]]; then
+            echo "::error::GitHub Actions secret WORKER_ADMIN_SECRET is missing. It must match the Worker secret ADMIN_SECRET."
+            exit 1
+          fi
+
+          response_file="${RUNNER_TEMP}/pollen-admin-health.json"
+          if ! status=$(curl --silent --show-error \
+            --output "${response_file}" \
+            --write-out '%{http_code}' \
+            -H "Authorization: Bearer ${ADMIN_SECRET}" \
+            "${HEALTH_URL}"); then
+            echo "::error::Admin health request failed before receiving an HTTP response from ${HEALTH_URL}."
+            exit 1
+          fi
+
+          if [[ "${status}" == "401" || "${status}" == "403" ]]; then
+            echo "::error::Admin health authentication failed (HTTP ${status}). GitHub Actions secret WORKER_ADMIN_SECRET must exactly match the Worker secret ADMIN_SECRET; update them together."
+            exit 1
+          fi
+          if ! jq -e . "${response_file}" >/dev/null; then
+            echo "::error::Admin health returned invalid JSON (HTTP ${status})."
+            exit 1
+          fi
+          if [[ "${status}" != "200" && "${status}" != "503" ]]; then
+            echo "::error::Admin health returned unexpected HTTP ${status}."
+            exit 1
+          fi
+
+          body=$(<"${response_file}")
+          if ! jq -e '.ok == true and .epoch.epoch_scores > 0 and .relayer.healthy == true' <<<"${body}" >/dev/null; then
+            epoch=$(jq -r '.epoch.epoch // "unknown"' <<<"${body}")
+            scores=$(jq -r '.epoch.epoch_scores // "unknown"' <<<"${body}")
+            relayer=$(jq -r '.relayer.healthy // "unknown"' <<<"${body}")
+            echo "::error::Production health is not ready: epoch=${epoch}, epoch_scores=${scores}, relayer_healthy=${relayer}. Verify the Cloudflare Tuesday epoch-close trigger; an authorized operator can backfill with POST /admin/run/epoch-close?epoch=${epoch}."
+            exit 1
+          fi
           if ! jq -e '.epoch.payout_ready == true' <<<"${body}" >/dev/null; then
             current=$(jq -r '.epoch.payout_eligible_contributors' <<<"${body}")
             required=$(jq -r '.epoch.required_payout_eligible_contributors' <<<"${body}")

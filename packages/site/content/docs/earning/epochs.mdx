@@ -1,53 +1,26 @@
 ---
 title: Epochs
-description: Pollen distributes tokens in fixed epochs. Each epoch scores all contributions and distributes POLLEN proportionally.
+description: How weekly Pollen scoring and automatic POLLEN payouts work.
 ---
-
-import { Callout } from 'fumadocs-ui/components/callout'
 
 # Epochs
 
-POLLEN tokens are distributed in **epochs** — fixed scoring periods that batch contributions together.
+PollenTokenV2 uses one-week, 1-based epochs. Epochs close Tuesdays at 00:00 UTC. The Worker schedules epoch scoring shortly after the boundary, and the payout job uses the resulting score rows.
 
-## How epochs work
+## Scoring
 
-1. An epoch has a start and end time
-2. All contributions synced during that window are scored
-3. Each contributor's total IVS is calculated
-4. POLLEN tokens are distributed proportionally: your share = your IVS / total IVS × epoch allocation
-5. After the epoch closes, tokens become claimable
+The current receipt-backed formula includes capped receipt volume, capped tool-category steps, completion signals, and check signals. The score output also reports active days and diversity counts for transparency.
 
-## Epoch timing
+## Payout safety gates
 
-Epochs run on a regular cadence. Check the current epoch status:
+- Only the just-closed epoch can be minted by the contract.
+- At least five contributors must have a score, World ID verification, and a valid wallet binding.
+- A dry run performs no database writes and sends no transaction.
+- Existing payout rows prevent accidental duplicate execution.
+- In-flight multisig proposals are persisted so a retry reconciles rather than replaces them.
 
-```bash
-npx @pollen/cli earnings
-```
+Payouts are pushed directly to eligible wallets. Run `pollen earnings` to view your score and recorded status.
 
-This shows:
-- Current epoch number and progress
-- Your accumulated IVS for the current epoch
-- Claimable tokens from completed epochs
+## Future V3 revenue epoch
 
-## Scoring within an epoch
-
-Your IVS for an epoch is the sum of all your contribution scores:
-
-- Each `contributions` row gets a base score from topic + intent classification
-- Tool events add score based on diversity and success rate
-- Session arcs multiply the score when they have clear structure
-- Duplicate or low-entropy contributions are down-weighted
-
-## Sync before epoch close
-
-<Callout type="warn">
-  Your data only counts if synced before the epoch closes. Run `pollen sync` regularly.
-</Callout>
-
-Your data only counts if it's synced to Neon before the epoch closes. Run `pollen sync` regularly — or set up a cron job:
-
-```bash
-# Sync every 6 hours
-0 */6 * * * pollen sync
-```
+The implemented, not-yet-live active-holder path reuses the same closed-epoch boundaries. Its revenue eligibility looks back across the just-closed epoch and the three prior closed epochs, then reads POLLEN balances at the last Base block at or before the closing boundary. This snapshot prevents transfers after close from changing that epoch's revenue weights.

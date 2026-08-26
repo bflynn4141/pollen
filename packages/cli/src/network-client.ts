@@ -1,4 +1,4 @@
-import type { NetworkReceiptV2 } from './network-receipt.js'
+import type { NetworkReceipt } from './network-receipt.js'
 
 export const DEFAULT_NETWORK_API_URL = process.env.POLLEN_API_URL
   ?? 'https://pollen-api.bflynn4141.workers.dev'
@@ -48,7 +48,7 @@ export async function registerNetworkContributor(
 
 export async function uploadNetworkReceipts(
   token: string,
-  receipts: NetworkReceiptV2[],
+  receipts: NetworkReceipt[],
   apiUrl = DEFAULT_NETWORK_API_URL,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ accepted: number; received: number }> {

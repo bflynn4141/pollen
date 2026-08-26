@@ -1,0 +1,48 @@
+---
+title: What Leaves Your Device
+description: The Pollen consent boundary, receipt schema, privacy protections, and contributor controls.
+---
+
+# What Leaves Your Device
+
+Participation is opt-in and invite-gated during the founding-panel beta. Local hooks summarize completed coding-agent sessions into a closed receipt. You can inspect the local record before contributing with `pollen my` and preview queued uploads with `pollen sync --dry-run`.
+
+## Included in a network receipt
+
+- receipt version and random receipt identifier
+- observation time
+- coarse intent
+- agent and model identifiers
+- coarse tool-category sequence
+- canonical public MCP server and tool identifiers
+- token and latency buckets when available
+- duration bucket, terminal state, and check result
+
+Custom or unknown MCP aliases are grouped as `private`.
+
+## Never included
+
+- prompt or conversation text
+- source code or file contents
+- file and transcript paths
+- tool arguments or results
+- shell commands or output
+- credentials, API keys, or environment-variable values
+
+The server rejects unknown fields rather than storing them. Public endpoints read only precomputed rollups, and a rollup cell must include at least five distinct contributors.
+
+## Controls
+
+```bash
+pollen pause
+pollen resume
+pollen leave --delete-network-data
+```
+
+Pause stops capture. Resume restarts it. Leave revokes the contribution token, deletes that contributor's server-side receipts, and recomputes public aggregates. Local history remains on the contributor's machine.
+
+## Identity and rewards
+
+Capture does not require a wallet or World ID. Both are required for payout eligibility. World ID is a one-person-one-account control for the reward system; it is not proof that a human authored every observed prompt.
+
+Founding-panel participation can make a contributor eligible for rewards, but it does not guarantee a payout. Weekly POLLEN payouts also require a closed epoch, a valid wallet binding, a score, and a cohort of at least five eligible contributors.

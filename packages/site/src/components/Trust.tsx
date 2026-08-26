@@ -6,17 +6,17 @@ const PILLARS = [
   {
     icon: '\u2606',
     title: 'Local extraction',
-    body: 'All extraction runs on your machine. Only anonymized labels leave \u2014 intent, tool names, command categories, model choice. Never code, prompts, or file contents.',
+    body: 'Extraction runs on your machine. Only fields in the closed receipt schema can upload. Never prompt text, code, file contents, tool arguments, results, or shell output.',
   },
   {
     icon: '\uD83D\uDD12',
-    title: 'On-chain ownership',
-    body: 'Your contribution is represented by tokens on Base. Verifiable, transferable, yours.',
+    title: 'Privacy threshold',
+    body: 'A public cell needs at least five distinct contributors. Below-threshold cells are suppressed before publication.',
   },
   {
     icon: '\u25CE',
-    title: 'Fully transparent',
-    body: 'Open-source MCP server. Public dataset. Query revenue and distributions visible on-chain.',
+    title: 'Verifiable settlement',
+    body: 'The client and contracts are open source. Completed x402 settlements and claims are visible on Base. The active-holder V3 path is implemented but not live.',
   },
 ]
 

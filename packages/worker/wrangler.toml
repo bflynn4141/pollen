@@ -5,20 +5,16 @@ main = "src/index.ts"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
-# api.pollen.id must be a zone in this Cloudflare account; the custom domain
-# route provisions DNS + cert automatically on deploy.
-# DISABLED 2026-08-05: the pollen.id zone lives in a different Cloudflare
-# account than this wrangler login — deploy failed with "Could not find zone".
-# Re-enable after moving the zone into this account (or deploy from the
-# account that owns pollen.id). Until then the worker serves on workers.dev.
-# routes = [
-#   { pattern = "api.pollen.id", custom_domain = true }
-# ]
+# The production origin is the Worker-owned hostname. Do not add pollen.id or
+# api.pollen.id here; that zone serves an unrelated Pollen DeFi product.
+# A future custom domain must be separately owned and reviewed before adding a
+# `custom_domain = true` route.
 
 [triggers]
 # 1) rollups: recompute k-anonymized rollup cells every 15 minutes
-# 2) epoch-close: score the just-closed epoch, Tuesdays 00:10 UTC
-crons = ["*/15 * * * *", "10 0 * * 2"]
+# 2) epoch-close: score the just-closed epoch, Tuesdays 00:10 UTC. Use the
+#    weekday name because Cloudflare numbers Sunday=1 (so numeric 2 is Monday).
+crons = ["*/15 * * * *", "10 0 * * TUE"]
 
 [[durable_objects.bindings]]
 name = "X402_RELAYER"

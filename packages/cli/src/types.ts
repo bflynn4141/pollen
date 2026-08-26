@@ -212,6 +212,11 @@ export interface CoarsenedToolEvent {
   agent_id?: string | null
   agent_type?: string | null
   effort_level?: string | null
+  // v6: model-response tokens divided across calls emitted by that response.
+  attributed_input_tokens?: number | null
+  attributed_output_tokens?: number | null
+  attributed_cached_input_tokens?: number | null
+  attributed_reasoning_tokens?: number | null
 }
 
 // Session tracking types
@@ -262,6 +267,7 @@ export interface SessionRecord {
   input_tokens?: number | null
   output_tokens?: number | null
   cached_input_tokens?: number | null
+  reasoning_tokens?: number | null
 }
 
 export interface SatisfactionSignals {

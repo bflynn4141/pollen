@@ -52,8 +52,8 @@ const SESSIONS_COLUMNS = [
   'contributor_id', 'permission_mode',
   'edit_count', 'read_count', 'search_to_edit_ratio', 'error_recovery_rate',
   'mcp_tool_count', 'unique_mcp_servers', 'subagent_count', 'context_compactions',
-  'transcript_path', 'stop_tool_use_count',
-  'input_tokens', 'output_tokens', 'cached_input_tokens',
+  'stop_tool_use_count',
+  'input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens',
 ] as const
 
 const SESSIONS_CONFLICT = `
@@ -86,11 +86,11 @@ const SESSIONS_CONFLICT = `
     unique_mcp_servers = EXCLUDED.unique_mcp_servers,
     subagent_count = EXCLUDED.subagent_count,
     context_compactions = EXCLUDED.context_compactions,
-    transcript_path = COALESCE(EXCLUDED.transcript_path, sessions.transcript_path),
     stop_tool_use_count = EXCLUDED.stop_tool_use_count,
     input_tokens = EXCLUDED.input_tokens,
     output_tokens = EXCLUDED.output_tokens,
-    cached_input_tokens = EXCLUDED.cached_input_tokens`
+    cached_input_tokens = EXCLUDED.cached_input_tokens,
+    reasoning_tokens = EXCLUDED.reasoning_tokens`
 
 const LIFECYCLE_COLUMNS = [
   'id', 'session_id', 'timestamp', 'event_type', 'parent_event_id', 'metadata', 'contributor_id',
@@ -260,8 +260,9 @@ export async function syncToNeon(db: Database.Database, connectionString: string
       row.contributor_id ?? contributorId, row.permission_mode,
       row.edit_count, row.read_count, row.search_to_edit_ratio, row.error_recovery_rate,
       row.mcp_tool_count, row.unique_mcp_servers, row.subagent_count, row.context_compactions,
-      row.transcript_path, toInt(row.stop_tool_use_count),
+      toInt(row.stop_tool_use_count),
       toInt(row.input_tokens), toInt(row.output_tokens), toInt(row.cached_input_tokens),
+      toInt(row.reasoning_tokens),
     ],
     SESSIONS_CONFLICT,
   )

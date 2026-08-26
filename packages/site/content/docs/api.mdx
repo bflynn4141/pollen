@@ -1,140 +1,102 @@
 ---
-title: Trending Tool Calls API
-description: Free weekly trending tool-call data plus paid x402 endpoints for full history. Every cell is k-anonymized across at least 5 contributors.
+title: Aggregate API
+description: Free previews and paid x402 v2 endpoints for privacy-safe Pollen prompt intelligence.
 ---
 
-# Trending Tool Calls API
+# Aggregate API
 
-Pollen publishes **telemetry-based trending tool-call data** for Claude Code:
-which tools and MCP servers coding agents actually invoke, week by week.
-The latest weeks are free; full history is paid per-request via
-[x402](https://x402.org) micropayments — USDC on Base, no API keys, no accounts.
+Pollen exposes only privacy-qualified aggregate cells. It never returns prompt text, individual sessions, source code, tool inputs, or tool output.
 
-Public base URL: `https://pollen-network.vercel.app/api/v1`.
+The verified production API is `https://pollen-api.bflynn4141.workers.dev`.
+The project site is `https://pollen-iota.vercel.app`.
 
-The production receipt API is also served by the Pollen Cloudflare Worker.
-The custom `api.pollen.id` hostname is not considered live until its DNS is
-explicitly verified, so onboarding clients use the configured Worker origin.
+Both `/path` and `/api/v1/path` forms are supported.
 
-## The k-anonymity guarantee
-
-**Every number this API returns aggregates at least 5 distinct contributors.**
-
-This is enforced structurally, not by filtering at read time:
-
-- All public data is served from a precomputed rollup table. The rollup job
-  suppresses any cell with fewer than 5 distinct contributors *before it is
-  written* (`HAVING COUNT(DISTINCT contributor_id) >= 5`), and aborts if a
-  below-threshold cell ever appears.
-- The API and the [/trending](/trending) pages can only read that rollup
-  table — they have no code path to the raw event tables.
-- There is no free-form query endpoint. Arbitrary SQL would defeat
-  k-anonymity by differencing two nearly-identical queries, so it is
-  deliberately not offered.
-- Every response row includes its `contributors` count so you can see the
-  cell's support.
-
-Periods are UTC ISO weeks (`2026-W32`) or UTC days (`2026-08-05`). Rollups
-recompute every 6 hours over a rolling 8-week window; weeks older than that
-are **frozen** — their numbers never change, so `/trending/2026-W32` and the
-history endpoints are stable citations.
-
-## Free endpoints
-
-Latest two published weeks. Cached 5 minutes (`Cache-Control: public, max-age=300`).
-
-| Endpoint | Returns |
-|----------|---------|
-| `GET /trending/tools` | Trending tools: calls, sessions, success rate, week-over-week change, `new` flags |
-| `GET /trending/mcp` | MCP server ranking: calls, sessions, success rate |
-| `GET /overview` | Network totals: tool calls, sessions, distinct tools/servers, contributors |
-| `GET /network` | Privacy-closed production receipt snapshot: models, MCP servers/tools, tool categories, intents, workflows, and outcomes |
+## Inspect before paying
 
 ```bash
-curl https://pollen-network.vercel.app/api/v1/network
+curl https://pollen-api.bflynn4141.workers.dev/catalog
 ```
+
+`GET /catalog` is the machine-readable source for schemas, prices, freshness, provenance, privacy policy, free previews, and x402 v2 headers.
+
+## Privacy contract
+
+- Every published cell has at least five distinct contributors.
+- Below-threshold cells are suppressed before publication.
+- Public handlers read only precomputed rollups.
+- The API offers no raw-event or free-form query endpoint.
+- Paid endpoints do not settle a payment when no published rows are available.
+
+## Free previews
+
+Free responses are cached for five minutes.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /catalog` | Product contract, schemas, prices, and provenance |
+| `GET /network` | Receipt-network readiness and latest privacy-safe snapshot |
+| `GET /trending/tools` | Latest two published tool weeks |
+| `GET /trending/mcp` | Latest two published MCP weeks |
+| `GET /overview` | Latest published network totals |
+| `GET /active-revenue/claims/:wallet` | Public V3 Merkle claim material and planned/live cutover status |
+
+Before the first cohort reaches k=5, `/network` intentionally reports:
 
 ```json
 {
+  "source": "network_receipts",
   "k_anonymity": 5,
-  "weeks": [
-    {
-      "week": "2026-W32",
-      "tools": [
-        {
-          "tool": "Bash",
-          "kind": "builtin",
-          "calls": 18423,
-          "sessions": 1201,
-          "successRate": 0.941,
-          "changePct": 12,
-          "trend": "up",
-          "isNew": false,
-          "contributors": 87
-        }
-      ]
-    }
-  ]
+  "status": "warming_up",
+  "weeks": []
 }
 ```
 
-## Paid endpoints (x402)
+## Paid endpoints
 
-Full published history, paid per request in USDC on Base. Responses are never
-cached (`Cache-Control: no-store`).
+Paid responses use x402 v2, USDC on Base, and `Cache-Control: no-store`.
 
-| Endpoint | Price | Returns |
-|----------|-------|---------|
-| `GET /tools/history?tool=<name>` | $0.01 | Weekly history for one tool |
-| `GET /mcp/history?server=<name>` | $0.01 | Weekly history for one MCP server |
-| `GET /grid` | $0.05 | Full tool × week and server × week grid |
-| `GET /export` | $0.25 | Every published rollup cell, all rollups |
+| Endpoint | Price | Success schema |
+|---|---:|---|
+| `GET /tools/history?tool=<name>` | $0.01 | `{ k_anonymity, tool, history[] }` |
+| `GET /mcp/history?server=<name>` | $0.01 | `{ k_anonymity, server, history[] }` |
+| `GET /grid` | $0.05 | `{ k_anonymity, tools[], mcpServers[] }` |
+| `GET /export` | $0.25 | `{ k_anonymity, count, cells[] }` |
 
-### How x402 payment works
+A history row has this shape:
 
-1. Call the endpoint. Unpaid requests get **HTTP 402** with a JSON body
-   describing the payment requirements (amount, asset, receiving address).
-2. Sign the payment with any x402-capable client and retry with the
-   `X-PAYMENT` header. The server verifies and settles via an x402
-   facilitator, then returns the data.
-
-The easiest client is [`x402-fetch`](https://www.npmjs.com/package/x402-fetch):
-
-```ts
-import { wrapFetchWithPayment } from 'x402-fetch'
-import { privateKeyToAccount } from 'viem/accounts'
-
-const account = privateKeyToAccount(process.env.PRIVATE_KEY)
-const fetchWithPay = wrapFetchWithPayment(fetch, account)
-
-const res = await fetchWithPay(
-  'https://pollen-api.bflynn4141.workers.dev/tools/history?tool=Bash',
-)
-const data = await res.json()
+```json
+{
+  "week": "2026-W34",
+  "calls": 120,
+  "sessions": 40,
+  "successRate": 0.93,
+  "contributors": 8
+}
 ```
 
-Or inspect the challenge by hand:
+This is a schema illustration, not a claim about current production volume.
 
-```bash
-curl -i "https://pollen-api.bflynn4141.workers.dev/tools/history?tool=Bash"
-# HTTP/1.1 402 Payment Required
-# { "x402Version": 1, "accepts": [ { "scheme": "exact", "network": "base", ... } ] }
+When a paid query has no privacy-qualified rows, the response is HTTP `425` and is not settled:
+
+```json
+{
+  "status": "warming_up",
+  "charged": false,
+  "error": "No privacy-qualified published rows are available for the grid.",
+  "minimum_contributors": 5,
+  "preview": "/network"
+}
 ```
 
-## Weekly permalinks
+See [x402 v2](/docs/developers/x402) for the challenge, signature, and settlement flow.
 
-Human-readable weekly snapshots live at
-[`/trending`](/trending) (latest week) and `/trending/<week>`
-(e.g. `/trending/2026-W32`). Weeks outside the recompute window are frozen and
-safe to cite in posts, papers, and changelogs.
+## Active-revenue claim lookup
 
-## Where the data comes from
+The claim lookup is a public blockchain support endpoint, not an aggregate prompt-data product. It returns only wallet-addressed Merkle material. It never returns contributor IDs, World ID nullifiers, scores, receipts, or prompt text.
 
-Contributors run the [Pollen CLI hook](/docs/quickstart), which converts local
-sessions into a closed receipt schema (agent, model, coarse intent, tool
-category sequence, canonical public MCP server/tool identifiers, success and
-latency buckets, duration bucket, terminal state, and check result). Unknown
-or custom MCP aliases are grouped as `private`. Raw
-prompts, tool arguments, commands, paths, source code, and output are never in
-the production receipt. Founding-panel participation may make contributors
-eligible for future rewards; it does not guarantee a payout.
+Before V3 cutover it reports `cutover_status: "planned"` and must not be interpreted as a live claim promise. After an approved cutover, a claim is actionable only when its root is published and unexpired on the verified V3 vault.
+
+## Freshness and provenance
+
+Rollups are scheduled every 15 minutes in UTC. Older weekly history outside the rolling recompute window is frozen. Opt-in CLI installations submit the closed receipt described in [What Leaves Your Device](/docs/contributing-data), and the API reads its published aggregates.

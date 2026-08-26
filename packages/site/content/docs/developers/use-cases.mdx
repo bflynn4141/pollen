@@ -1,76 +1,30 @@
 ---
 title: Use Cases
-description: What you can build with Pollen's prompt intelligence data. Market research, product analytics, agent building, and content creation.
+description: Appropriate uses and limits for Pollen's privacy-safe aggregate prompt intelligence.
 ---
 
 # Use Cases
 
-Pollen's Trends API gives you a window into how developers actually use AI coding tools. Here's what you can build with it.
+Pollen is useful when aggregate behavior is more informative than an individual anecdote.
 
-## Market research
+## MCP ecosystem research
 
-Track which tools, frameworks, and patterns developers are adopting in real time.
+Track which public MCP servers and tools appear in privacy-qualified cohorts, how their published volume changes, and which outcome buckets follow. Use this as one market signal rather than as a count of all installations.
 
-**Example:** Monitor framework adoption trends by comparing usage over time.
+## Agent and model evaluation
 
-```bash
-curl "https://pollen.dev/api/trends/compare?items=Next.js,Remix,Astro&period=90d"
-```
+Compare aggregate model usage, tool-category sequences, terminal states, and check results. Pollen shows observed correlation, not causation, and does not reveal an individual contributor's workflow.
 
-This returns time series for each framework — watch adoption curves, spot inflection points, compare growth rates.
+## Product research
 
-**Other ideas:**
-- Track which MCP servers are gaining traction (`/tools` endpoint, filter by `mcpServers`)
-- Compare AI model usage shifts over time (`/models`)
-- Monitor which programming topics are trending (`/trending`)
+Use coarse intent and workflow trends to identify areas worth interviewing users about. Pollen is not a substitute for qualitative research, and a missing cell can mean the cohort is below k=5 rather than demand is zero.
 
-## Product analytics
+## Research limits
 
-If you're building developer tools, understand how people use AI alongside your product.
+- No raw prompt or session access
+- No proof that a human authored each prompt
+- No individual-level targeting or attribution
+- No below-threshold cohorts
+- No guarantee that the founding panel represents the broader developer population
 
-**Example:** See which tools have the highest failure rates — these are pain points worth solving.
-
-```bash
-curl "https://pollen.dev/api/trends/tools?period=30d"
-```
-
-Look at `success_rate` across tools. Low success rates + high usage = opportunity.
-
-**Other ideas:**
-- Understand session complexity trends (`/sessions` — prompt count distribution)
-- Find peak usage hours to schedule deployments or maintenance (`/heatmap`)
-- Track satisfaction trends to gauge overall developer experience (`/satisfaction`)
-
-## Agent builders
-
-Discover which tool combinations and workflows are most effective.
-
-**Example:** Analyze session arcs to find the most common intent → outcome patterns.
-
-```bash
-curl "https://pollen.dev/api/trends/sessions?period=30d"
-```
-
-The `arcs` array shows patterns like "debug → resolved" or "implement → completed" — use these to design agent workflows.
-
-**Other ideas:**
-- Find popular tool sequences (`/tools` → `topToolSeries` for co-occurrence patterns)
-- Explore specific domains to understand tool preferences (`/explore?q=database+migration`)
-- Build recommendation engines: "developers working on X typically use tools Y and Z"
-
-## Content creators
-
-Find what developers are struggling with and create content around it.
-
-**Example:** Find trending subjects to write about.
-
-```bash
-curl "https://pollen.dev/api/trends/trending?period=7d"
-```
-
-High growth + moderate count = emerging topic. High count + stable growth = evergreen content opportunity.
-
-**Other ideas:**
-- Deep-dive into a subject to find related topics for a comprehensive guide (`/explore`)
-- Use action distribution to understand whether people are mostly implementing, debugging, or refactoring (`/actions`)
-- Spot satisfaction dips — topics with low satisfaction need better tooling or docs
+Check `/catalog` and `/network` before purchasing history so you can evaluate coverage, freshness, and methodology.

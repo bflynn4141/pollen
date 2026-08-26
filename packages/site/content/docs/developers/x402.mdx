@@ -1,76 +1,72 @@
 ---
-title: x402 Micropayments
-description: Pay for Trends API access with x402 micropayments. No API keys, no subscriptions — pay per request with stablecoins.
+title: x402 v2 Payments
+description: Pay for published Pollen aggregate data with x402 v2 and USDC on Base.
 ---
 
-# x402 Micropayments
+# x402 v2 Payments
 
-The Trends API supports [x402](https://www.x402.org/) — an HTTP-native payment protocol. Instead of API keys or subscriptions, you pay per request using stablecoins on Base.
+Pollen paid endpoints use x402 v2 with exact USDC payments on Base. The network identifier is `eip155:8453`.
 
-## How it works
+## Wire flow
 
-1. Make a request to any Trends API endpoint
-2. If payment is required, you receive an HTTP `402 Payment Required` response with pricing details
-3. Your client pays the specified amount (typically fractions of a cent per request)
-4. Retry the request with the payment receipt in the header
-5. The API returns the data
+1. Request a paid route without a payment.
+2. Receive HTTP `402` with a v2 challenge in the JSON body and `PAYMENT-REQUIRED` header.
+3. Select an accepted requirement and sign the EIP-3009 authorization.
+4. Retry with the encoded payload in `PAYMENT-SIGNATURE`.
+5. On success, receive the data and settlement receipt in `PAYMENT-RESPONSE`.
 
-## Example flow
+Legacy `X-PAYMENT` and `X-PAYMENT-RESPONSE` headers are not accepted.
+
+## Inspect a challenge
 
 ```bash
-# 1. Initial request returns 402
-curl -i "https://pollen.dev/api/trends/overview?period=30d"
-# HTTP/2 402
-# X-Payment-Amount: 0.001
-# X-Payment-Currency: USDC
-# X-Payment-Network: base
-# X-Payment-Address: 0x...
-
-# 2. Pay and retry with receipt
-curl -H "X-Payment-Receipt: 0x..." \
-  "https://pollen.dev/api/trends/overview?period=30d"
-# HTTP/2 200
-# { "totalPrompts": 14832, ... }
+curl -i https://pollen-api.bflynn4141.workers.dev/grid
 ```
 
-## Client libraries
+The challenge includes the resource, exact amount in atomic USDC units, Base CAIP-2 network, USDC contract, settlement address, timeout, and EIP-712 domain metadata.
 
-The x402 protocol has client libraries that handle the payment flow automatically:
+## Official TypeScript SDK
 
-```typescript
-import { createx402Client } from '@x402/client'
+```ts
+import { x402Client } from '@x402/core/client'
+import {
+  decodePaymentRequiredHeader,
+  encodePaymentSignatureHeader,
+} from '@x402/core/http'
+import { ExactEvmScheme } from '@x402/evm/exact/client'
+import { privateKeyToAccount } from 'viem/accounts'
 
-const client = createx402Client({
-  wallet: yourWallet, // any EVM wallet/signer
-  network: 'base',
-})
-
-// Payments happen automatically — just fetch
-const data = await client.fetch(
-  'https://pollen.dev/api/trends/overview?period=30d'
+const account = privateKeyToAccount(process.env.PAYER_KEY as `0x${string}`)
+const client = new x402Client().register(
+  'eip155:8453',
+  new ExactEvmScheme(account),
 )
+
+const first = await fetch('https://pollen-api.bflynn4141.workers.dev/grid')
+const required = decodePaymentRequiredHeader(
+  first.headers.get('PAYMENT-REQUIRED')!,
+)
+const payment = await client.createPaymentPayload(required)
+
+const paid = await fetch(required.resource.url, {
+  headers: {
+    'PAYMENT-SIGNATURE': encodePaymentSignatureHeader(payment),
+  },
+})
 ```
 
-## Pricing
+Keep payment keys in a secure signer. Do not place a funded private key in browser code or source control.
 
-Requests are priced by endpoint complexity:
+## Empty-result protection
 
-| Endpoint | Price |
-|----------|-------|
-| `/overview`, `/autocomplete` | Low |
-| `/topics`, `/tools`, `/commands`, `/models` | Low |
-| `/actions`, `/heatmap`, `/satisfaction` | Low |
-| `/trending` | Low |
-| `/sessions`, `/explore`, `/compare` | Medium |
+The relayer verifies and reserves an authorization before running the protected query, but it settles only after a successful data response. If the query has no privacy-qualified rows, Pollen returns HTTP `425`, releases the reservation, omits `PAYMENT-RESPONSE`, and reports `charged: false`.
 
-Exact prices are returned in the `402` response headers. Prices may change based on data freshness and query cost.
+## Revenue flow under current contracts
 
-## Revenue flow
+Successful settlement transfers the buyer's USDC into `PollenSettlementV2`, which deposits it into `PollenTokenV2`. The current token contract accounts for that USDC pro rata across all POLLEN holders. Weekly contribution scoring determines new POLLEN mint allocations; it does not limit revenue accrual to recently active contributors.
 
-100% of API payment revenue flows to POLLEN token holders via the revenue sharing mechanism. When you pay for a query, that money goes directly to the people who contributed the data.
+## Future V3 settlement
 
-See [How earning works](/docs/earning) for details on the revenue distribution model.
+The repository also implements an ABI-compatible `PollenSettlementV3` that deposits buyer USDC into a new active-revenue vault. It is not deployed or live. After a separately approved cutover, new payments would fund weekly Merkle claims for recent World ID-verified contributors who held POLLEN at the epoch boundary. Existing V2 accrual remains claimable from PollenTokenV2.
 
-## Free tier
-
-The public trends dashboard at [pollen.dev/trends](https://pollen.dev/trends) is free. x402 payments only apply to programmatic API access beyond the cached public dashboard.
+Before trusting a payment challenge, check the exact `payTo` address. A V2 address means durable-holder accrual. A verified V3 address means the active-holder vault path. Product copy or a dashboard flag cannot replace that on-chain address check.

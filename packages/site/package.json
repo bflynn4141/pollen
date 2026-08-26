@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -23,7 +24,7 @@
     "fumadocs-core": "15",
     "fumadocs-mdx": "14",
     "fumadocs-ui": "15",
-    "next": "^15",
+    "next": "15.5.24",
     "react": "^19",
     "react-dom": "^19",
     "simple-icons": "^16.28.0",
@@ -35,6 +36,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

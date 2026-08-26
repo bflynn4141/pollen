@@ -32,9 +32,10 @@ import {
 import { maybeSignWalletBinding } from './register-sign.js'
 import { openLocalDb } from './local-db.js'
 import { buildNetworkReceipts, summarizeNetworkReceipts } from './network-receipt.js'
-import { drainNetworkOutbox, enqueueEligibleNetworkReceipts } from './network-outbox.js'
+import { drainNetworkOutbox, enqueueEligibleNetworkReceipts, runNetworkOutboxWorker } from './network-outbox.js'
 import { joinFoundingPanel } from './join.js'
 import { deleteNetworkContributor } from './network-client.js'
+import { finalizeRecentCodexSessions } from './codex-backfill.js'
 
 function openDb(commandName: string | undefined) {
   // Commands that manage identity or onboarding do not need user activity data.
@@ -117,12 +118,14 @@ try {
         console.error('Run: pollen join <invite-code>')
         process.exit(1)
       }
+      const dryRun = process.argv.includes('--dry-run')
+      if (!dryRun) await finalizeRecentCodexSessions(db)
       const receipts = buildNetworkReceipts(db, config.contributor_id)
       if (receipts.length === 0) {
         console.log('No completed sessions are ready to sync.')
         break
       }
-      if (process.argv.includes('--dry-run')) {
+      if (dryRun) {
         const summary = summarizeNetworkReceipts(receipts)
         console.log(`${summary.total} local privacy-safe network receipts are eligible:`)
         console.log(`  Codex:       ${summary.codex}`)
@@ -159,15 +162,13 @@ try {
     case '_sync-network-outbox': {
       const config = loadConfig()
       if (!config?.network) break
+      await finalizeRecentCodexSessions(db)
       enqueueEligibleNetworkReceipts(db)
-      for (let batch = 0; batch < 100; batch++) {
-        const result = await drainNetworkOutbox(db, {
-          contributorId: config.contributor_id,
-          token: config.network.token,
-          apiUrl: config.network.api_url,
-        })
-        if (result.attempted === 0 || result.retryScheduled > 0) break
-      }
+      await runNetworkOutboxWorker(db, {
+        contributorId: config.contributor_id,
+        token: config.network.token,
+        apiUrl: config.network.api_url,
+      })
       break
     }
     case 'backfill-subjects': {
@@ -177,8 +178,10 @@ try {
       break
     }
     case 'backfill': {
-      if (!process.argv.includes('--codex')) {
-        console.error('Usage: pollen backfill --codex [--days N]')
+      const includeCodex = process.argv.includes('--codex')
+      const includeClaude = process.argv.includes('--claude')
+      if (!includeCodex && !includeClaude) {
+        console.error('Usage: pollen backfill (--codex | --claude) [--days N]')
         process.exit(1)
       }
       const daysIdx = process.argv.indexOf('--days')
@@ -187,13 +190,24 @@ try {
         console.error('--days must be a positive number')
         process.exit(1)
       }
-      const { backfillCodex } = await import('./codex-backfill.js')
-      console.log(`Backfilling Codex sessions (last ${days} days)...`)
-      const result = await backfillCodex(db, { days })
-      for (const warning of result.warnings) {
-        console.warn(`  ⚠  ${warning}`)
+      if (includeCodex) {
+        const { backfillCodex } = await import('./codex-backfill.js')
+        console.log(`Backfilling Codex sessions (last ${days} days)...`)
+        const result = await backfillCodex(db, { days })
+        for (const warning of result.warnings) {
+          console.warn(`  ⚠  ${warning}`)
+        }
+        console.log(`Done: ${result.sessions} sessions, ${result.toolEvents} tool events from ${result.files} files (${result.skippedFiles} skipped)`)
       }
-      console.log(`Done: ${result.sessions} sessions, ${result.toolEvents} tool events from ${result.files} files (${result.skippedFiles} skipped)`)
+      if (includeClaude) {
+        const { backfillClaudeTokenUsage } = await import('./claude-token-usage.js')
+        console.log(`Backfilling Claude token usage (last ${days} days)...`)
+        const result = backfillClaudeTokenUsage(db, { days })
+        for (const warning of result.warnings) {
+          console.warn(`  ⚠  ${warning}`)
+        }
+        console.log(`Done: ${result.sessions} sessions updated from ${result.files} transcripts (${result.skippedFiles} skipped)`)
+      }
       break
     }
     case 'seed': {
@@ -556,7 +570,7 @@ try {
         '  resume          Resume local capture',
         '  leave --delete-network-data  Delete server receipts and revoke access',
         '  admin health | invite ...  Operator support commands',
-        '  backfill --codex [--days N]  Ingest historical Codex sessions (default 30 days)',
+        '  backfill (--codex | --claude) [--days N]  Backfill agent sessions or token usage (default 30 days)',
         '  stats       Summary dashboard',
         '  intents     Intent distribution',
         '  languages   Language breakdown',

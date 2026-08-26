@@ -1,40 +1,22 @@
 ---
 title: For Developers
-description: Build on Pollen's prompt intelligence data. Access 13 REST endpoints covering topics, tools, models, sessions, and more.
+description: Build with Pollen's privacy-safe, contributor-backed aggregate prompt intelligence.
 ---
 
 # For Developers
 
-Pollen aggregates anonymized prompt intelligence from thousands of Claude Code sessions into a queryable API. Use it to understand how developers actually use AI coding tools.
+Pollen offers aggregate signals about coding-agent models, public MCP usage, tool categories, coarse intents, workflows, and observable outcomes. It does not provide raw prompts or individual session records.
 
-## What's available
+Start with the free product catalog and network preview:
 
-The [Trends API](/docs/developers/trends-api) exposes 13 endpoints covering:
-
-- **Topics** — what developers work on (authentication, databases, UI, etc.)
-- **Tools** — which Claude tools get used and how often they succeed
-- **Models** — which AI models are in use
-- **Commands** — CLI command frequency
-- **Sessions** — how coding sessions flow from intent to outcome
-- **Satisfaction** — are developers happy with their AI interactions?
-- **Heatmap** — when do developers code?
-- **Trending** — what subjects are gaining momentum right now
-- **Explore** — deep-dive into any subject with related topics and session examples
-
-All endpoints return JSON with 5-minute cache headers.
-
-## Access
-
-The Trends API is publicly accessible at:
-
-```
-https://pollen.dev/api/trends/*
+```bash
+curl https://pollen-api.bflynn4141.workers.dev/catalog
+curl https://pollen-api.bflynn4141.workers.dev/network
 ```
 
-For high-volume access, queries are priced via [x402 micropayments](/docs/developers/x402) — pay per request with no API keys or subscriptions.
+Use free endpoints to evaluate coverage and freshness. Use paid endpoints for full published history. Payment uses x402 v2 and USDC on Base, with no API key required for reads.
 
-## Next steps
-
-- [Trends API reference](/docs/developers/trends-api) — all 13 endpoints with examples
-- [Use cases](/docs/developers/use-cases) — concrete examples of what you can build
-- [x402 integration](/docs/developers/x402) — micropayment setup for API access
+- [Data Catalog](/docs/developers/catalog): fields, provenance, freshness, and prices
+- [API Reference](/docs/api): endpoint contracts and below-threshold behavior
+- [Use Cases](/docs/developers/use-cases): appropriate uses and limits
+- [x402 v2](/docs/developers/x402): payment integration

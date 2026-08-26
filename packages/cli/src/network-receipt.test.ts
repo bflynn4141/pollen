@@ -9,19 +9,23 @@ describe('network receipts', () => {
       INSERT INTO sessions (
         session_id, model, source, started_at, ended_at, duration_bucket,
         prompt_count, tool_use_count, tool_failure_count, dominant_intent,
-        outcome, transcript_path, subject
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        outcome, transcript_path, subject, input_tokens, output_tokens,
+        cached_input_tokens, reasoning_tokens
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       'raw-local-session-id', 'gpt-5.2-codex', 'codex', 1_786_512_000_000,
       1_786_512_600_000, 'short', 3, 2, 0, 'feature_build', 'completed',
       '/Users/someone/secret/transcript.jsonl', 'Private project name',
+      12_000, 800, 9_000, 250,
     )
     db.prepare(`
       INSERT INTO tool_events (
         id, session_id, timestamp, tool_name, tool_category, success,
-        command_category, sequence_number, response_summary
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run('tool-1', 'raw-local-session-id', 1_786_512_100_000, 'Read', 'read', 1, null, 0, 'secret excerpt')
+        command_category, sequence_number, response_summary,
+        attributed_input_tokens, attributed_output_tokens,
+        attributed_cached_input_tokens, attributed_reasoning_tokens
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('tool-1', 'raw-local-session-id', 1_786_512_100_000, 'Read', 'read', 1, null, 0, 'secret excerpt', 1_200, 100, 800, 25)
     db.prepare(`
       INSERT INTO tool_events (
         id, session_id, timestamp, tool_name, tool_category, success,
@@ -31,9 +35,11 @@ describe('network receipts', () => {
     db.prepare(`
       INSERT INTO tool_events (
         id, session_id, timestamp, tool_name, tool_category, success,
-        command_category, sequence_number, response_summary, mcp_server, duration_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run('tool-3', 'raw-local-session-id', 1_786_512_300_000, 'mcp__github__create_issue', 'interact', 1, null, 2, null, 'github', 820)
+        command_category, sequence_number, response_summary, mcp_server, duration_ms,
+        attributed_input_tokens, attributed_output_tokens,
+        attributed_cached_input_tokens, attributed_reasoning_tokens
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('tool-3', 'raw-local-session-id', 1_786_512_300_000, 'mcp__github__create_issue', 'interact', 1, null, 2, null, 'github', 820, 400, 50, 200, 10)
     db.prepare(`
       INSERT INTO tool_events (
         id, session_id, timestamp, tool_name, tool_category, success,
@@ -45,15 +51,33 @@ describe('network receipts', () => {
     const serialized = JSON.stringify(receipt)
 
     expect(receipt).toMatchObject({
-      schema_version: 2,
+      schema_version: 4,
       intent: 'feature_build',
       agent: 'codex',
       model: 'gpt-5.2-codex',
       tool_category_sequence: ['read', 'execute', 'interact', 'interact'],
       mcp_calls: [
-        { server: 'github', tool: 'create_issue', success: true, latency_bucket: 'fast' },
-        { server: 'private', tool: 'private', success: false, latency_bucket: 'slow' },
+        {
+          server: 'github', tool: 'create_issue', success: true, latency_bucket: 'fast',
+          input_tokens: 400, output_tokens: 50, cached_input_tokens: 200, reasoning_tokens: 10,
+        },
+        {
+          server: 'private', tool: 'private', success: false, latency_bucket: 'slow',
+          input_tokens: null, output_tokens: null, cached_input_tokens: null, reasoning_tokens: null,
+        },
       ],
+      tool_attributions: [
+        { category: 'read', input_tokens: 1200, output_tokens: 100, cached_input_tokens: 800, reasoning_tokens: 25 },
+        { category: 'execute', input_tokens: null, output_tokens: null, cached_input_tokens: null, reasoning_tokens: null },
+        { category: 'interact', input_tokens: 400, output_tokens: 50, cached_input_tokens: 200, reasoning_tokens: 10 },
+        { category: 'interact', input_tokens: null, output_tokens: null, cached_input_tokens: null, reasoning_tokens: null },
+      ],
+      token_usage: {
+        input_tokens: 12_000,
+        output_tokens: 800,
+        cached_input_tokens: 9_000,
+        reasoning_tokens: 250,
+      },
       duration_bucket: 'short',
       terminal_state: 'completed',
       check_result: 'passed',

@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3'
 import { getSession, updateSession } from '../store.js'
 import { computeSessionArc } from '../session-arc.js'
 import { enqueueEligibleNetworkReceipts } from '../network-outbox.js'
+import { applyClaudeTranscriptSummary } from '../claude-token-usage.js'
 import type { HookInput } from '../types.js'
 
 export function handleSessionEnd(db: Database.Database, input: HookInput): void {
@@ -9,6 +10,12 @@ export function handleSessionEnd(db: Database.Database, input: HookInput): void 
 
   const session = getSession(db, input.session_id)
   if (!session) return // no matching SessionStart recorded
+
+  applyClaudeTranscriptSummary(
+    db,
+    input.session_id,
+    input.transcript_path ?? session.transcript_path ?? '',
+  )
 
   const endedAt = Date.now()
   const arc = computeSessionArc(db, input.session_id, session.started_at, endedAt)
@@ -18,7 +25,6 @@ export function handleSessionEnd(db: Database.Database, input: HookInput): void 
     'SELECT DISTINCT mcp_server FROM tool_events WHERE session_id = ? AND mcp_server IS NOT NULL'
   ).all(input.session_id) as { mcp_server: string }[]
   const mcpServers = mcpRows.map(r => r.mcp_server)
-
   updateSession(db, {
     session_id: input.session_id,
     ended_at: endedAt,

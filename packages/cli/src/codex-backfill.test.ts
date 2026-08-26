@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type Database from 'better-sqlite3'
 import { initDb, getSession } from './store.js'
-import { backfillCodex } from './codex-backfill.js'
+import { backfillCodex, finalizeRecentCodexSessions } from './codex-backfill.js'
 import { buildNetworkReceipts } from './network-receipt.js'
+import { handlePostToolUse } from './hooks/tool-use.js'
+import { handleSessionStart } from './hooks/session-start.js'
 
 // Fixture grounded in the REAL local rollout schema (~/.codex/sessions/2026/08,
 // cli_version 0.146.0-alpha.9.2). All values synthesized/redacted.
@@ -66,7 +68,7 @@ function fixtureLines(): string[] {
           cache_write_input_tokens: 0, output_tokens: 50,
           reasoning_output_tokens: 8, total_tokens: 1050,
         },
-        last_token_usage: { input_tokens: 1000, cached_input_tokens: 400, output_tokens: 50 },
+        last_token_usage: { input_tokens: 1000, cached_input_tokens: 400, output_tokens: 50, reasoning_output_tokens: 8 },
         model_context_window: 258400,
       },
     }),
@@ -141,7 +143,7 @@ describe('backfillCodex', () => {
     sessionsDir = join(dir, 'sessions')
     mkdirSync(join(sessionsDir, '2026', '08', '01'), { recursive: true })
     writeFileSync(
-      join(sessionsDir, '2026', '08', '01', 'rollout-2026-08-01T07-00-40-fixture.jsonl'),
+      join(sessionsDir, '2026', '08', '01', `rollout-2026-08-01T07-00-40-${SESSION_ID}.jsonl`),
       fixtureLines().join('\n') + '\n',
     )
   })
@@ -176,6 +178,7 @@ describe('backfillCodex', () => {
     expect(session.input_tokens).toBe(5000)
     expect(session.output_tokens).toBe(300)
     expect(session.cached_input_tokens).toBe(2000)
+    expect(session.reasoning_tokens).toBe(40)
 
     // cli_version recorded as a lifecycle event
     const meta = db.prepare(
@@ -206,10 +209,19 @@ describe('backfillCodex', () => {
     await backfillCodex(db, { sessionsDir, days: 30, now: NOW })
 
     const rows = db.prepare(
-      'SELECT tool_name, success, error_category, mcp_server, sequence_number, duration_ms FROM tool_events WHERE session_id = ? ORDER BY sequence_number'
+      `SELECT tool_name, success, error_category, mcp_server, sequence_number, duration_ms,
+              attributed_input_tokens, attributed_output_tokens,
+              attributed_cached_input_tokens, attributed_reasoning_tokens
+       FROM tool_events WHERE session_id = ? ORDER BY sequence_number`
     ).all(SESSION_ID) as Array<{ tool_name: string; success: number; error_category: string | null; mcp_server: string | null; sequence_number: number; duration_ms: number | null }>
 
     expect(rows).toHaveLength(3)
+    expect(rows[0]).toMatchObject({
+      attributed_input_tokens: 1000,
+      attributed_output_tokens: 50,
+      attributed_cached_input_tokens: 400,
+      attributed_reasoning_tokens: 8,
+    })
 
     // Pair 1: clean exec output → success
     expect(rows[0].tool_name).toBe('exec')
@@ -278,6 +290,50 @@ describe('backfillCodex', () => {
     expect(sessions).toBe(1)
     const lifecycle = (db.prepare("SELECT COUNT(*) as c FROM lifecycle_events WHERE event_type = 'codex_session_meta'").get() as { c: number }).c
     expect(lifecycle).toBe(1)
+  })
+
+  it('automatically finalizes recent Codex tokens without duplicating live hook events', async () => {
+    handleSessionStart(db, {
+      session_id: SESSION_ID,
+      hook_event_name: 'SessionStart',
+      model: 'gpt-5.6-sol',
+    }, 'codex')
+    handlePostToolUse(db, {
+      session_id: SESSION_ID,
+      hook_event_name: 'PostToolUse',
+      tool_name: 'exec',
+      tool_use_id: 'call_success01',
+      tool_response: 'README.md\nsrc',
+    })
+    db.prepare('UPDATE sessions SET ended_at = ?, end_reason = ? WHERE session_id = ?')
+      .run(Date.parse('2026-08-01T14:05:02.000Z'), 'exit', SESSION_ID)
+
+    const first = await finalizeRecentCodexSessions(db, {
+      sessionsDir,
+      now: NOW,
+      lookbackDays: 10,
+    })
+    const second = await finalizeRecentCodexSessions(db, {
+      sessionsDir,
+      now: NOW + 1,
+      lookbackDays: 10,
+    })
+
+    expect(first).toMatchObject({ checked: 1, finalized: 1, warnings: [] })
+    expect(second).toMatchObject({ checked: 0, finalized: 0, warnings: [] })
+    expect(getSession(db, SESSION_ID)).toMatchObject({
+      input_tokens: 5000,
+      output_tokens: 300,
+      cached_input_tokens: 2000,
+      reasoning_tokens: 40,
+      end_reason: 'exit',
+    })
+    const tools = db.prepare(`
+      SELECT tool_use_id, attributed_input_tokens
+      FROM tool_events WHERE session_id = ? ORDER BY sequence_number
+    `).all(SESSION_ID) as Array<{ tool_use_id: string; attributed_input_tokens: number | null }>
+    expect(tools).toHaveLength(3)
+    expect(tools.find(tool => tool.tool_use_id === 'call_success01')?.attributed_input_tokens).toBe(1000)
   })
 
   it('accumulates last_token_usage deltas when no cumulative snapshot exists', async () => {
