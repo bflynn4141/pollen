@@ -32,3 +32,12 @@ test('payout recovery guidance names the live protected epoch-close endpoint', a
   assert.match(payout, /POST \/admin\/run\/epoch-close\?epoch=/)
   assert.doesNotMatch(payout, /\/api\/cron\/epoch-close/)
 })
+
+test('V3 deployment uses the encrypted Foundry account instead of a raw private key', async () => {
+  const deployment = await readRepoFile('contracts/script/DeployV3.s.sol')
+
+  assert.match(deployment, /vm\.envAddress\("DEPLOYER_ADDRESS"\)/)
+  assert.match(deployment, /vm\.startBroadcast\(\)/)
+  assert.doesNotMatch(deployment, /DEPLOYER_PRIVATE_KEY/)
+  assert.doesNotMatch(deployment, /vm\.envUint/)
+})

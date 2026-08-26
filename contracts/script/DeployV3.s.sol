@@ -11,8 +11,11 @@ import {PollenSettlementV3} from "../src/PollenSettlementV3.sol";
  */
 contract DeployV3 is Script {
     function run() external returns (PollenActiveRevenueVault vault, PollenSettlementV3 settlement) {
-        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address deployer = vm.addr(deployerKey);
+        // The established production workflow selects an encrypted Foundry
+        // keystore with `--account` and the matching address with `--sender`.
+        // Keeping key material out of environment variables prevents it from
+        // leaking through process inspection, shell history, or CI logs.
+        address deployer = vm.envAddress("DEPLOYER_ADDRESS");
         address usdc = vm.envAddress("USDC_ADDRESS");
         address pollenTokenV2 = vm.envAddress("POLLEN_TOKEN_V2_ADDRESS");
         address finalAdmin = vm.envAddress("ACTIVE_REVENUE_ADMIN_ADDRESS");
@@ -25,7 +28,9 @@ contract DeployV3 is Script {
         require(publisher != address(0), "ACTIVE_REVENUE_PUBLISHER_ADDRESS is zero");
         require(pauser != address(0), "ACTIVE_REVENUE_PAUSER_ADDRESS is zero");
 
-        vm.startBroadcast(deployerKey);
+        require(deployer != address(0), "DEPLOYER_ADDRESS is zero");
+
+        vm.startBroadcast();
 
         // The deployer is temporary admin only so it can bind the settlement
         // address after both immutable contracts exist in the same transaction sequence.
