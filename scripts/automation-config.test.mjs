@@ -53,3 +53,15 @@ test('production recovery is manual, serialized, and keeps credentials in GitHub
   assert.match(recovery, /--single-transaction/)
   assert.match(recovery, /013_active_revenue\.sql/)
 })
+
+test('production clients use the verified Worker origin, not the unrelated pollen.id zone', async () => {
+  const [config, earnings, docs] = await Promise.all([
+    readRepoFile('packages/worker/wrangler.toml'),
+    readRepoFile('packages/site/src/lib/contributor-earnings.ts'),
+    readRepoFile('packages/site/content/docs/api.mdx'),
+  ])
+
+  assert.doesNotMatch(config, /pattern\s*=\s*"api\.pollen\.id"/)
+  assert.match(earnings, /https:\/\/pollen-api\.bflynn4141\.workers\.dev/)
+  assert.match(docs, /https:\/\/pollen-iota\.vercel\.app/)
+})

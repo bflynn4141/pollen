@@ -1,13 +1,13 @@
 # pollen-api (Cloudflare Worker)
 
-Public aggregate API targeted at **api.pollen.id**, plus the two cron jobs
+Public aggregate API at **pollen-api.bflynn4141.workers.dev**, plus the two cron jobs
 (rollup recompute every 15m; epoch-close scoring Tuesdays 00:10 UTC). Moved off
 Vercel so the site stays Hobby-plan-safe; same architecture as
 prompt-trends' backend (Hono + @neondatabase/serverless + cron triggers).
 
-The custom hostname currently requires the production repair documented in
-`../../docs/PRODUCTION-DNS-RUNBOOK.md`. Until it is verified, the working
-origin is `https://pollen-api.bflynn4141.workers.dev`.
+This Worker-owned hostname is the verified production origin. Do not configure
+`pollen.id`; it serves an unrelated product. See
+`../../docs/PRODUCTION-DNS-RUNBOOK.md` before adding any future custom domain.
 
 - **Free** (`Cache-Control: public, max-age=300`): `GET /catalog`,
   `GET /network`, `GET /trending/tools`, `GET /trending/mcp`, `GET /overview`,
@@ -55,8 +55,7 @@ raw-table path and runs only from cron/admin.
 ## Deploy runbook
 
 ```bash
-# 0. one-time: authenticate wrangler with the Cloudflare account that owns
-#    the pollen.id zone
+# 0. one-time: authenticate wrangler with the account that owns pollen-api
 npx wrangler login
 
 cd packages/worker
@@ -77,20 +76,14 @@ npx wrangler secret put X402_RELAYER_KEY
 #    - ACTIVE_REVENUE_CUTOVER_STATUS remains unset until a separately approved
 #      V3 deployment and settlement cutover; only then set it to `live`
 
-# 3. deploy (also provisions the api.pollen.id custom domain + crons)
+# 3. deploy the Worker and its crons
 npx wrangler deploy
 
-# 4. DNS: pollen.id must be a zone on this Cloudflare account. The
-#    `custom_domain = true` route creates the proxied api.pollen.id record
-#    automatically; verify under Workers & Pages → pollen-api → Settings →
-#    Domains & Routes (and remove any old api.pollen.id record pointing at
-#    Vercel).
-
-# 5. smoke test
-curl -i https://api.pollen.id/catalog                   # 200, x402 v2 catalog
-curl -i https://api.pollen.id/trending/tools            # 200, max-age=300
-curl -i https://api.pollen.id/grid                      # 402, PAYMENT-REQUIRED
-curl -X POST https://api.pollen.id/admin/run/rollups \
+# 4. smoke test
+curl -i https://pollen-api.bflynn4141.workers.dev/catalog                   # 200, x402 v2 catalog
+curl -i https://pollen-api.bflynn4141.workers.dev/trending/tools            # 200, max-age=300
+curl -i https://pollen-api.bflynn4141.workers.dev/grid                      # 402, PAYMENT-REQUIRED
+curl -X POST https://pollen-api.bflynn4141.workers.dev/admin/run/rollups \
   -H "Authorization: Bearer $ADMIN_SECRET"              # first backfill
 
 # local dev

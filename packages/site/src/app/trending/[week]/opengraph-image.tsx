@@ -90,12 +90,12 @@ export default async function Image({ params }: { params: Promise<{ week: string
             </div>
           ))}
           {movers.length === 0 && (
-            <div style={{ fontSize: 30, color: MUTED, marginTop: 40 }}>pollen.id/trending</div>
+            <div style={{ fontSize: 30, color: MUTED, marginTop: 40 }}>pollen-iota.vercel.app/trending</div>
           )}
         </div>
 
         <div style={{ display: 'flex', fontSize: 22, color: MUTED }}>
-          k-anonymized · every cell ≥ 5 contributors · pollen.id/trending/{week}
+          k-anonymized · every cell ≥ 5 contributors · pollen-iota.vercel.app/trending/{week}
         </div>
       </div>
     ),

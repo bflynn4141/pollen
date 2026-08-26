@@ -7,7 +7,7 @@ import {
 
 describe('buyer-facing data catalog', () => {
   it('advertises the exact x402 v2 wire contract and all paid routes', () => {
-    const catalog = createBuyerCatalog('https://api.pollen.id/')
+    const catalog = createBuyerCatalog('https://pollen-api.bflynn4141.workers.dev/')
 
     expect(catalog.x402Version).toBe(2)
     expect(catalog.network).toBe('eip155:8453')
@@ -25,7 +25,7 @@ describe('buyer-facing data catalog', () => {
   })
 
   it('states the privacy boundary without offering prompt text', () => {
-    const catalog = createBuyerCatalog('https://api.pollen.id')
+    const catalog = createBuyerCatalog('https://pollen-api.bflynn4141.workers.dev')
     const serialized = JSON.stringify(catalog)
 
     expect(catalog.privacy.minimumContributorsPerCell).toBe(5)

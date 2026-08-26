@@ -74,7 +74,7 @@ Trigger: a receipt contains a forbidden field, a public row has fewer than five 
 
 ## DNS or API-origin incident
 
-1. Compare `api.pollen.id` with the direct `workers.dev` origin.
+1. Check the canonical `pollen-api.bflynn4141.workers.dev` origin directly.
 2. Check TLS, DNS, Worker custom-domain binding, and Cloudflare error code.
 3. If the direct origin works, publish it as the temporary approved endpoint and stop paid traffic through the failing hostname.
 4. Follow `PRODUCTION-DNS-RUNBOOK.md`; do not improvise a proxied origin record.

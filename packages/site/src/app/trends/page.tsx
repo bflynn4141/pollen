@@ -455,10 +455,10 @@ export default async function TrendsPage({ searchParams }: Props) {
         >
           <pre className="overflow-x-auto text-sm leading-relaxed font-[family-name:var(--font-mono)]" style={{ color: '#C45D3E' }}>
             <code>{`# Free: latest two weeks of trending tools
-curl https://api.pollen.id/trending/tools
+curl https://pollen-api.bflynn4141.workers.dev/trending/tools
 
 # Paid ($0.01 via x402): full weekly history for one tool
-curl "https://api.pollen.id/tools/history?tool=Bash"
+curl "https://pollen-api.bflynn4141.workers.dev/tools/history?tool=Bash"
 # → 402 Payment Required + payment requirements; retry with
 #   an x402 client (x402-fetch) to pay in USDC on Base`}</code>
           </pre>

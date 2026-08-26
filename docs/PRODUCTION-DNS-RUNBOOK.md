@@ -1,52 +1,57 @@
-# `api.pollen.id` production DNS runbook
+# Production hostname runbook
 
-## Current diagnosis
+## Verified origins
 
-Read-only checks on 2026-08-26 found:
+Read-only checks on 2026-08-26 established two production surfaces controlled
+by this project:
 
-- `https://api.pollen.id/overview` returns HTTP 530 with Cloudflare error 1016.
-- `api.pollen.id` resolves to Cloudflare edge IPs, but Cloudflare has no usable origin or Worker custom-domain binding for that hostname.
-- `packages/worker/wrangler.toml` has the custom-domain route disabled because the `pollen.id` zone and Worker login are in different Cloudflare accounts.
-- `https://pollen-api.bflynn4141.workers.dev/network` returns HTTP 200 and the privacy-correct `warming_up` state.
+- Site: `https://pollen-iota.vercel.app`
+- API: `https://pollen-api.bflynn4141.workers.dev`
 
-Changing only the proxied DNS record is not sufficient. The hostname needs an active Worker custom-domain binding in the Cloudflare account that owns the zone.
+The API origin returns HTTP 200 for `/catalog` and `/network`, valid TLS, and
+the privacy-correct `warming_up` state while no real k=5 cohort exists.
 
-## Change plan
+## Domain collision
 
-This is a production configuration change and requires explicit approval.
+Do not use `pollen.id` or `api.pollen.id` for this product. The apex currently
+serves an unrelated Pollen DeFi trading and prediction-market site. Its public
+DNS also contains `_github-challenge-PollenDeFi`, mail, and search-verification
+records. The Cloudflare account authenticated for this repository does not own
+that zone.
 
-1. Identify the Cloudflare account that owns the `pollen.id` zone and the account that owns the `pollen-api` Worker.
-2. Choose one ownership model:
-   - Recommended: manage or deploy the Worker from the zone-owning account, then add `api.pollen.id` as a Worker custom domain.
-   - Alternative: move the zone to the Worker-owning account, with a separate DNS migration plan.
-3. Remove or replace the current conflicting `api` DNS record as required by Cloudflare's custom-domain flow.
-4. Re-enable the `routes` entry in `packages/worker/wrangler.toml` only when the deployment identity can see the zone.
-5. Deploy the already-reviewed Worker build.
-6. Wait for certificate issuance and DNS propagation.
+Changing the broken `api.pollen.id` record could interfere with a third party
+and would make the prompt-intelligence product look affiliated with an
+unrelated protocol. The old custom-domain route therefore remains absent from
+`packages/worker/wrangler.toml`.
 
-Do not expose Cloudflare tokens in terminal output, workflow logs, or the repository.
-
-## Verification
-
-Run from a network outside the Cloudflare account:
+## Current verification
 
 ```bash
-curl --fail --show-error --silent https://api.pollen.id/catalog
-curl --fail --show-error --silent https://api.pollen.id/network
-curl -i https://api.pollen.id/grid
+curl --fail --show-error --silent https://pollen-api.bflynn4141.workers.dev/catalog
+curl --fail --show-error --silent https://pollen-api.bflynn4141.workers.dev/network
+curl -i https://pollen-api.bflynn4141.workers.dev/grid
+curl --fail --show-error --silent https://pollen-iota.vercel.app
 ```
 
 Acceptance criteria:
 
-- TLS certificate is valid for `api.pollen.id`.
-- `/catalog` returns HTTP 200 and advertises x402 version 2.
-- `/network` returns HTTP 200 with `k_anonymity: 5`; `warming_up` is acceptable until a real cohort qualifies.
-- Unpaid `/grid` returns HTTP 402 with `PAYMENT-REQUIRED`.
-- No response contains Cloudflare 1016, 522, or 530.
-- The `workers.dev` origin remains available during the verification window.
+- both verified origins have valid TLS
+- `/catalog` returns HTTP 200 and advertises x402 version 2
+- `/network` returns HTTP 200 with `k_anonymity: 5`; `warming_up` is valid until
+  a real cohort qualifies
+- unpaid `/grid` returns HTTP 402 with `PAYMENT-REQUIRED`
+- no public copy links this project to `pollen.id`
 
-After verification, update operational health checks to use the custom hostname and keep one direct-origin check for diagnosing route failures.
+## Future custom domain
 
-## Rollback
+A short, project-owned domain would improve buyer trust, but it is not needed
+to run the beta. Before adding one:
 
-If the custom domain fails, remove or disable its Worker binding and restore the last known DNS configuration. Continue serving the documented `workers.dev` origin. DNS rollback does not authorize a Worker code rollback or deployment.
+1. confirm ownership in the same operator account used for deployment
+2. check for product and trademark confusion
+3. add the hostname as a Worker custom domain
+4. retain the `workers.dev` address as the diagnostic origin
+5. verify TLS, catalog, network, payment challenge, and rollback behavior
+
+Do not move another party's zone or replace its DNS records as part of this
+launch.

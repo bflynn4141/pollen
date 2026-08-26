@@ -26,10 +26,10 @@ const USE_CASES = [
 ]
 
 const REQUEST_CODE = `# Inspect the product before paying
-curl https://api.pollen.id/catalog
+curl https://pollen-api.bflynn4141.workers.dev/catalog
 
 # Paid route: first request returns x402 v2
-curl -i https://api.pollen.id/grid`
+curl -i https://pollen-api.bflynn4141.workers.dev/grid`
 
 const RESPONSE_CODE = `{
   "x402Version": 2,

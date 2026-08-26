@@ -49,7 +49,7 @@ export { X402SettlementRelayer } from './x402-relay'
 
 /**
  * pollen-api — Cloudflare Worker serving the public /api/v1 endpoints at
- * api.pollen.id, plus the two cron jobs that used to be Vercel crons
+ * pollen-api.bflynn4141.workers.dev, plus the two cron jobs that used to be Vercel crons
  * (rollups every 15m, epoch-close Tuesdays 00:10 UTC).
  *
  * k-anonymity boundary: route handlers import ONLY the @pollen/data readers
@@ -251,7 +251,7 @@ app.get('/', c =>
   c.json(
     {
       name: 'pollen-api',
-      docs: 'https://pollen.id/docs/api',
+      docs: 'https://pollen-iota.vercel.app/docs/api',
       k_anonymity: K_ANONYMITY,
       free: ['/catalog', '/trending/tools', '/trending/mcp', '/overview', '/network'],
       paid_x402: {

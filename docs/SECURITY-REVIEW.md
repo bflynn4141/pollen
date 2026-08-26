@@ -112,7 +112,9 @@ Action: document EOA-only beta support. Any ERC-1271 redesign needs a new contra
 
 ### Medium: custom API hostname is broken
 
-`api.pollen.id` currently returns Cloudflare 530 / 1016. Buyers cannot rely on the intended canonical origin.
+The verified production origin is `pollen-api.bflynn4141.workers.dev`.
+`pollen.id` serves an unrelated product and must not be configured or presented
+as this project's hostname.
 
 Action: follow `PRODUCTION-DNS-RUNBOOK.md`; retain direct Worker monitoring during cutover.
 

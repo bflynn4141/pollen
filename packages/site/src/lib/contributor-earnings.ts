@@ -199,7 +199,7 @@ export async function fetchContributorEarnings(
       walletAddress,
       apiUrl: options.activeRevenueApiUrl
         ?? process.env.POLLEN_API_URL
-        ?? 'https://api.pollen.id',
+        ?? 'https://pollen-api.bflynn4141.workers.dev',
     }),
   ])
 
