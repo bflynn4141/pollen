@@ -24,6 +24,7 @@ type QueryState = {
 
 interface CapturedQuery {
   text: string
+  numberedText: string
   values: unknown[]
 }
 
@@ -46,7 +47,11 @@ function installEpochDatabase(state: QueryState): CapturedQuery[] {
   const queries: CapturedQuery[] = []
   mocks.sql.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join('?')
-    queries.push({ text: query, values })
+    const numberedText = strings.reduce(
+      (result, chunk, index) => result + chunk + (index < values.length ? `$${index + 1}` : ''),
+      '',
+    )
+    queries.push({ text: query, numberedText, values })
 
     if (/SELECT COUNT\(\*\)::int AS n FROM epoch_scores/.test(query)) {
       return [{ n: 0 }]
@@ -102,6 +107,17 @@ describe('epoch-close production data source', () => {
     expect(scoring?.values).toContain(SCORING_V2.receiptsPerDay)
     expect(scoring?.values).toContain(SCORING_V2.toolStepsPerReceipt)
     expect(scoring?.values).toContain(SCORING_V2.maxEpochScore)
+  })
+
+  it('casts jsonb cap parameters so PostgreSQL can infer every placeholder type', async () => {
+    const queries = installEpochDatabase({ receiptContributor: true })
+
+    await runEpochClose({ epoch: 1 })
+
+    const scoring = queries.find(query => query.text.includes('INSERT INTO epoch_scores'))
+    expect(scoring?.numberedText).toContain("'receipts_per_day', $22::int")
+    expect(scoring?.numberedText).toContain("'tool_steps_per_receipt', $23::int")
+    expect(scoring?.numberedText).toContain("'max_epoch_score', $24::numeric")
   })
 
   it('preserves the no-op guard for an already-scored epoch', async () => {

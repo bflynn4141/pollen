@@ -303,9 +303,9 @@ export async function runEpochClose(
             'distinct_agents', distinct_agents,
             'distinct_models', distinct_models,
             'caps', jsonb_build_object(
-              'receipts_per_day', ${SCORING_V2.receiptsPerDay},
-              'tool_steps_per_receipt', ${SCORING_V2.toolStepsPerReceipt},
-              'max_epoch_score', ${SCORING_V2.maxEpochScore}
+              'receipts_per_day', ${SCORING_V2.receiptsPerDay}::int,
+              'tool_steps_per_receipt', ${SCORING_V2.toolStepsPerReceipt}::int,
+              'max_epoch_score', ${SCORING_V2.maxEpochScore}::numeric
             )
           ),
           NOW()
