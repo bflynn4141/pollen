@@ -101,7 +101,7 @@ jobs:
     env:
       NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       POLLEN_TOKEN_ADDRESS: ${{ secrets.POLLEN_TOKEN_ADDRESS }}
-      BASE_RPC_URL: https://base-rpc.publicnode.com
+      BASE_RPC_URL: https://mainnet.base.org
       EPOCH: ${{ inputs.epoch }}
       SNAPSHOT_BLOCK: ${{ inputs.snapshot_block }}
       POOL_ATOMIC: ${{ inputs.pool_atomic }}
