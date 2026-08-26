@@ -1,7 +1,7 @@
 # Weekly POLLEN payout, signed by a Splits subaccount.
 #
 # Epochs close Tuesdays 00:00 UTC (PollenTokenV2 EPOCH_ZERO = 2026-02-24, a
-# Tuesday). The site's epoch-close cron scores the closed epoch at 00:10 UTC;
+# Tuesday). The Worker's epoch-close cron scores the closed epoch at 00:10 UTC;
 # this job mints the pro-rata payout at 00:30 UTC by proposing mintBatch on
 # the Splits subaccount (which holds MINTER_ROLE) and headless-signing it.
 #
@@ -20,6 +20,8 @@ name: Weekly payout
 
 on:
   schedule:
+    # GitHub/POSIX cron numbers Sunday=0, so 2 is Tuesday. Cloudflare's cron
+    # dialect differs; its Worker trigger uses the unambiguous name TUE.
     - cron: '30 0 * * 2' # Tuesdays 00:30 UTC
   workflow_dispatch:
     inputs:

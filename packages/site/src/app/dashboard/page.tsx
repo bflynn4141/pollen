@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { fetchContributorEarnings } from '@/lib/contributor-earnings'
 import {
   fetchDashboard,
+  isDashboardScope,
   type RankingSection,
 } from '@/lib/network-dashboard'
 import {
@@ -8,6 +10,8 @@ import {
   EntityMark,
   type DashboardIconName,
 } from './dashboard-icons'
+import { dashboardHref, DashboardScopeSwitch } from './dashboard-scope-switch'
+import { ContributorEarningsSummary } from './contributor-earnings-summary'
 import styles from './dashboard.module.css'
 
 export const revalidate = 300
@@ -36,11 +40,20 @@ function PanelTitle({ icon, title, href }: { icon: DashboardIconName; title: str
   )
 }
 
-export default async function DashboardPage() {
-  const dashboard = await fetchDashboard()
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ scope?: string | string[] }>
+}) {
+  const query = await searchParams
+  const requestedScope = isDashboardScope(query.scope) ? query.scope : undefined
+  const [dashboard, earnings] = await Promise.all([
+    fetchDashboard(requestedScope),
+    requestedScope === 'network' ? Promise.resolve(null) : fetchContributorEarnings(),
+  ])
   const isPersonal = dashboard.scope === 'personal'
   const moverWindow = isPersonal ? '7d' : '24h'
-  const scopedHref = (path: string) => path
+  const scopedHref = (path: string) => dashboardHref(path, dashboard.scope)
   const contributorCount = dashboard.overview?.contributors ?? (isPersonal ? 1 : 0)
   const contributorLabel = `${contributorCount} contributor${contributorCount === 1 ? '' : 's'}`
   const sections: Array<{ id: RankingSection; label: string; icon: DashboardIconName }> = [
@@ -100,9 +113,12 @@ export default async function DashboardPage() {
         <section className={styles.pageHeader}>
           <h1>Agent Market Index</h1>
           <div className={styles.headerActions}>
+            <DashboardScopeSwitch dashboard={dashboard} path="/dashboard" />
             <span className={styles.scopeBadge}>{contributorLabel}</span>
           </div>
         </section>
+
+        {isPersonal && earnings ? <ContributorEarningsSummary earnings={earnings} /> : null}
 
         {dashboard.status === 'live' ? <div className={styles.dashboardGrid}>
           <section id="models" className={`${styles.panel} ${styles.modelPanel}`}>
@@ -159,7 +175,7 @@ export default async function DashboardPage() {
             <div className={styles.moversTable}>
               <div className={styles.moversHead}><span>Entity</span><span>Market</span><span>{isPersonal ? 'Usage share' : 'Panel reach'}</span><span>{isPersonal ? 'Tool success' : 'Completion'}</span><span>{isPersonal ? '7D change' : '24H change'}</span></div>
               {movers.map(({ section, entry, metric }) => (
-                <Link href={`/dashboard/${section.id}?window=${moverWindow}`} className={styles.moverRow} key={`${section.id}-${entry.id}`}>
+                <Link href={dashboardHref(`/dashboard/${section.id}`, dashboard.scope, moverWindow)} className={styles.moverRow} key={`${section.id}-${entry.id}`}>
                   <span className={styles.moverEntity}><EntityIcon id={entry.iconId ?? entry.id} provider={entry.secondary} section={section.id} /><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></span>
                   <span className={styles.marketType}><DashboardIcon name={section.icon} size={11} />{section.label}</span>
                   <span className={styles.moverReach}><strong>{metric.adoptionPct}%</strong><i><b style={{ width: `${metric.adoptionPct}%` }} /></i></span>

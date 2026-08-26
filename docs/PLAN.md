@@ -1,5 +1,13 @@
 # Pollen: Prompt Intelligence Network
 
+> Historical design document. It does not describe the current production
+> contract or launch position. Current Pollen exports only the closed network
+> receipt documented in `packages/worker/src/ingest.ts`, never prompt text or
+> raw session records. Public cells require k=5. Current x402 v2 revenue
+> accrues pro rata to all POLLEN holders. The approved future V3 model instead
+> uses weekly active-holder Merkle claims and is not live. See `LAUNCH-READINESS.md` and
+> `ECONOMICS-DECISION.md`.
+
 > Your prompts pollinate shared intelligence.
 
 ## What Is Pollen
@@ -41,7 +49,7 @@ World ID ZK proof ──────────────────▶ Veri
 | Audit trail | Merkle root of **aggregates** on Base | Per-contribution records stay private; public aggregates only |
 | Sybil resistance | World ID (Semaphore ZK) | 1 human = 1 contributor; ZK proves uniqueness without revealing identity |
 | Buyer queries | Governed DSL with k-anon + DP | Not open-ended NL — prevents differencing/reconstruction attacks |
-| Payments | x402 micropayments | Buyers pay per query, contributors earn 70% of revenue |
+| Payments | x402 v2 micropayments | Current V2 rewards all holders; approved future V3 funds weekly active-holder Merkle claims |
 | Payouts | Flat rate + daily cap | Simple, configurable, anti-spam by design |
 | Positioning | Standalone product | Own brand, own repo, not a Clara/Vibe feature |
 
@@ -87,7 +95,7 @@ Contributor payouts:
   - 1 credit per valid contribution
   - Daily cap: 200 credits per contributor
   - Weekly epochs
-  - Distribution: (your_credits / total_credits) × revenue_pool × 0.70
+  - Historical proposal only. The approved V3 formula is documented in `ECONOMICS-DECISION.md`.
   - Minimum payout: $1.00 USDC on Base
   - Anti-spam: dedup, confidence > 0.5, rate limit 1/30s
 ```

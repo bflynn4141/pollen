@@ -92,8 +92,9 @@ export async function runPayout(deps: PayoutDeps, opts: PayoutOptions = {}): Pro
   const scoreCount = await store.countEpochScores(epoch)
   if (scoreCount === 0) {
     throw new PayoutAbort(
-      `No epoch_scores rows for epoch ${epoch} — run the epoch-close cron first ` +
-      '(site: /api/cron/epoch-close), then re-run the payout.',
+      `No epoch_scores rows for epoch ${epoch} — verify the Tuesday epoch-close cron ran, ` +
+      `or invoke POST /admin/run/epoch-close?epoch=${epoch} with the Worker ADMIN_SECRET, ` +
+      'then re-run the payout.',
     )
   }
 

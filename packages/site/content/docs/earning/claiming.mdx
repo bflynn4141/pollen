@@ -1,64 +1,55 @@
 ---
-title: Claiming Tokens
-description: How to claim POLLEN tokens and USDC revenue. Managed wallets claim with one command; BYO wallets need a private key.
+title: Payout and Claim Status
+description: Check POLLEN payouts, legacy V2 USDC, and future V3 Merkle claims.
 ---
 
-# Claiming Tokens
+# Payout and Claim Status
 
-After an epoch completes, your POLLEN tokens become claimable. If you hold POLLEN, you can also claim your share of API revenue in USDC.
+POLLEN and USDC use different delivery models.
 
-## Prerequisites
+## POLLEN is pushed automatically
 
-Before claiming, you need:
-- A configured wallet (`pollen wallet`)
-- Orb-backed World ID Proof of Human (`pollen verify`) — provides the high-assurance one-person-one-account signal used to protect payouts from duplicate identities
-
-## Claim POLLEN tokens
-
-### Managed wallet (recommended)
+Eligible contributors receive weekly POLLEN directly in their bound wallet after a successful epoch close and payout run. Running `pollen claim` shows status and explains that there is no POLLEN claim transaction.
 
 ```bash
-export NEON_DATABASE_URL="postgresql://..."
-export POLLEN_API_KEY="your-api-key"
-npx @pollen/cli claim
+pollen earnings
+pollen claim
 ```
 
-The managed wallet signs the claim transaction through the Para API — no private key on your machine.
+`pollen earnings` shows identity eligibility, epoch scores, score components, and recorded payout status when the database is available.
 
-### BYO wallet
+## Legacy V2 USDC is claimed by the holder
+
+If x402 revenue has accrued to your POLLEN balance, claim it with:
 
 ```bash
-export NEON_DATABASE_URL="postgresql://..."
-export POLLEN_PRIVATE_KEY=0x...
-npx @pollen/cli claim
+pollen claim --revenue
 ```
 
-## Claim USDC revenue
+Managed Para wallets submit the claim through the configured proxy. Bring-your-own wallets sign locally with `POLLEN_PRIVATE_KEY`. Check the exact contract address and chain before signing.
 
-POLLEN holders earn a pro-rata share of Trends API revenue. Claim it:
+If earned USDC is zero, there is nothing to claim. Token supply by itself does not prove that buyer revenue has been deposited.
 
-```bash
-npx @pollen/cli claim --revenue
-```
+## Active-holder V3 claims
 
-Revenue accumulates continuously. You can claim at any time — there's no epoch lock for revenue claims.
+The approved V3 path uses a separate weekly Merkle claim. It is implemented in the repository but is not deployed or live. When it is live, the public claim endpoint will return the wallet's epoch, index, amount, root, and proof. A wallet or relayer can submit that proof, but the vault always pays the wallet encoded in the leaf.
 
-## Check your balance
+The personal dashboard keeps these values separate:
 
-```bash
-npx @pollen/cli earnings
-```
+- `Legacy V2 pending USDC` comes from `PollenTokenV2.earned()`
+- `Active-holder claims` comes from published V3 Merkle allocations
+- `Planned, not live` means no V3 production claim should be expected
 
-This shows:
-- **Credits** — your raw contribution score
-- **POLLEN balance** — tokens you've already claimed
-- **Claimable** — tokens ready to claim from completed epochs
-- **Revenue** — accumulated USDC from API fees
+Do not treat a draft root or dashboard preview as an entitlement. Only a published, unexpired on-chain root can be claimed.
 
-## Troubleshooting
+## Eligibility
 
-**"No wallet configured"** — Run `pollen wallet` first.
+Weekly POLLEN eligibility requires:
 
-**"Set NEON_DATABASE_URL"** — You need a connection string. This is provided when you join as a contributor.
+- a closed epoch with a score
+- World ID verification
+- a registered wallet
+- a valid cryptographic wallet binding
+- at least five eligible contributors in the payout cohort
 
-**"Set POLLEN_API_KEY"** — For managed wallets, you need an API key. This is issued during onboarding.
+World ID helps enforce one reward account per person. It does not prove human authorship of each prompt.

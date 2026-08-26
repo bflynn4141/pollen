@@ -1,5 +1,13 @@
 # Pollen: Pitch Narrative & Use Cases
 
+> Historical pitch exploration, not approved public copy. It includes old
+> product, volume, and 70/30 economics assumptions. Current positioning is
+> privacy-safe aggregate prompt intelligence from opt-in contributors, never
+> raw prompts or per-prompt proof of human authorship. Current x402 v2 revenue
+> accrues pro rata to all POLLEN holders. The approved future V3 model instead
+> uses weekly active-holder Merkle claims and is not live. See `LAUNCH-READINESS.md` and the
+> public documentation under `packages/site/content/docs`.
+
 *The intelligence layer for the developer tool ecosystem.*
 
 ---
@@ -33,7 +41,7 @@ Contributors install a lightweight hook that captures session behavior, classifi
 1. **Behavioral, not declarative.** We capture what developers *do*, not what they *say* they do.
 2. **Real-time, not annual.** Data flows continuously, not once a year in a survey.
 3. **Privacy-first by architecture.** The server never sees prompt text. All classification happens locally. Identity is verified via World ID ZK proofs — sybil-resistant without being invasive.
-4. **Contributor-owned.** Users earn 70% of query revenue. Their data, their upside.
+4. **Contributor-aligned.** The approved future V3 path sends settled query revenue into a weekly active-holder vault. It is implemented but not deployed or proven with real revenue.
 
 ---
 

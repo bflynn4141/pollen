@@ -59,7 +59,7 @@ const failures = [
 ] as const
 
 describe('World ID site validation diagnostics', () => {
-  it.each(failures)('reports only the %s stage', (stage, idkitResult) => {
+  it.each(failures)('reports only the %s stage', (stage: string, idkitResult: unknown) => {
     const result = validateIdKitResult(idkitResult, 'pollen-verify', contributorId)
 
     expect(result).toEqual({ ok: false, stage })
@@ -88,7 +88,7 @@ describe('World ID site validation diagnostics', () => {
     ['null proof value', null],
     ['empty proof string', ''],
     ['empty proof array', []],
-  ])('leaves a present %s to the World verifier', (_label, proof) => {
+  ])('leaves a present %s to the World verifier', (_label: string, proof: unknown) => {
     const idkitResult = {
       ...validResult,
       responses: [{ ...validResult.responses[0], proof }],
@@ -102,7 +102,7 @@ describe('World ID site validation diagnostics', () => {
 
   it.each([
     ['oversized nullifier', { nullifier: `0x${'1'.repeat(65)}` }],
-  ])('rejects %s', (_label, override) => {
+  ])('rejects %s', (_label: string, override: { nullifier: string }) => {
     const result = validateIdKitResult({
       ...validResult,
       responses: [{ ...validResult.responses[0], ...override }],

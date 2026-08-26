@@ -17,6 +17,11 @@ import {
   readTrendingTools,
 } from '@pollen/data'
 import { getEpochHealth, runEpochClose } from './epoch-close'
+import { createBuyerCatalog, unpublishedPaidResult } from './buyer-catalog'
+import {
+  createActiveRevenueClaimStore,
+  handleActiveRevenueClaims,
+} from './active-revenue-claims'
 import { createPollenPaymentMiddleware, getRelayerHealth, type X402RelayEnv } from './x402-relay'
 import {
   handleRpSignature,
@@ -61,6 +66,8 @@ export interface Env extends X402RelayEnv, WorldIdEnv {
   // Secrets (wrangler secret put):
   NEON_DATABASE_URL: string
   ADMIN_SECRET: string
+  /** Set to `live` only after the separately approved V3 settlement cutover. */
+  ACTIVE_REVENUE_CUTOVER_STATUS?: string
 }
 
 const FREE_CACHE = { 'Cache-Control': 'public, max-age=300' }
@@ -77,6 +84,12 @@ app.use('*', createPollenPaymentMiddleware())
 // ── API endpoints (mounted at both / and /api/v1) ──
 
 const api = new Hono<{ Bindings: Env }>()
+
+// Free, machine-readable product contract. Buyers can inspect the schema,
+// prices, privacy boundary, and x402 v2 headers before authorizing payment.
+api.get('/catalog', c =>
+  c.json(createBuyerCatalog(new URL(c.req.url).origin), 200, FREE_CACHE),
+)
 
 // Identity endpoints are uncached and never x402-gated. The signing key stays
 // in the Worker; clients receive only a short-lived request signature.
@@ -175,6 +188,16 @@ api.get('/network', async c => {
   }, 200, FREE_CACHE)
 })
 
+// Free public claim material. Before an approved V3 cutover this accurately
+// reports `planned`, even if draft allocation rows exist.
+api.get('/active-revenue/claims/:wallet', c =>
+  handleActiveRevenueClaims(
+    c.req.param('wallet'),
+    createActiveRevenueClaimStore(c.env.NEON_DATABASE_URL),
+    c.env.ACTIVE_REVENUE_CUTOVER_STATUS === 'live' ? 'live' : 'planned',
+  ),
+)
+
 // Paid ($0.01): full weekly history for one tool. Never cached.
 api.get('/tools/history', async c => {
   const tool = c.req.query('tool')
@@ -182,6 +205,9 @@ api.get('/tools/history', async c => {
     return c.json({ error: 'missing required query param: tool' }, 400, NO_STORE)
   }
   const history = await readToolHistory(tool)
+  if (history.length === 0) {
+    return c.json(unpublishedPaidResult(`tool ${tool}`), 425, NO_STORE)
+  }
   return c.json({ k_anonymity: K_ANONYMITY, tool, history }, 200, NO_STORE)
 })
 
@@ -192,18 +218,27 @@ api.get('/mcp/history', async c => {
     return c.json({ error: 'missing required query param: server' }, 400, NO_STORE)
   }
   const history = await readMcpHistory(server)
+  if (history.length === 0) {
+    return c.json(unpublishedPaidResult(`MCP server ${server}`), 425, NO_STORE)
+  }
   return c.json({ k_anonymity: K_ANONYMITY, server, history }, 200, NO_STORE)
 })
 
 // Paid ($0.05): full tool x week and server x week grid. Never cached.
 api.get('/grid', async c => {
   const grid = await readGrid()
+  if (grid.tools.length === 0 && grid.mcpServers.length === 0) {
+    return c.json(unpublishedPaidResult('the grid'), 425, NO_STORE)
+  }
   return c.json({ k_anonymity: K_ANONYMITY, ...grid }, 200, NO_STORE)
 })
 
 // Paid ($0.25): every published rollup cell. Never cached.
 api.get('/export', async c => {
   const cells = await readExport()
+  if (cells.length === 0) {
+    return c.json(unpublishedPaidResult('the export'), 425, NO_STORE)
+  }
   return c.json({ k_anonymity: K_ANONYMITY, count: cells.length, cells }, 200, NO_STORE)
 })
 
@@ -218,7 +253,7 @@ app.get('/', c =>
       name: 'pollen-api',
       docs: 'https://pollen.id/docs/api',
       k_anonymity: K_ANONYMITY,
-      free: ['/trending/tools', '/trending/mcp', '/overview', '/network'],
+      free: ['/catalog', '/trending/tools', '/trending/mcp', '/overview', '/network'],
       paid_x402: {
         '/tools/history?tool=<name>': '$0.01',
         '/mcp/history?server=<name>': '$0.01',
@@ -327,7 +362,10 @@ async function scheduled(controller: ScheduledController, env: Env): Promise<voi
       console.log(`[cron rollups] wrote ${cells} cells`)
       break
     }
-    case '10 0 * * 2': {
+    // Keep the named weekday in sync with wrangler.toml. Cloudflare numbers
+    // Sunday=1, so the formerly configured numeric 2 fired on Monday, before
+    // Pollen's Tuesday epoch boundary.
+    case '10 0 * * TUE': {
       const result = await runEpochClose()
       console.log(`[cron epoch-close] ${JSON.stringify(result.body)}`)
       if (result.status >= 500) throw new Error(`epoch-close failed: ${JSON.stringify(result.body)}`)

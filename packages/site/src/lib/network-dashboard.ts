@@ -466,8 +466,8 @@ export function selectDashboard(
   personal?: NetworkDashboard,
 ): NetworkDashboard {
   const availableScopes: DashboardScope[] = [
-    ...(personal?.status === 'live' ? ['personal' as const] : []),
-    ...(network.status === 'live' ? ['network' as const] : []),
+    ...(personal ? ['personal' as const] : []),
+    'network',
   ]
   const selected = requestedScope === 'personal' && personal
     ? personal

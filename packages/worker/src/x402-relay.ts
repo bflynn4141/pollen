@@ -1,5 +1,19 @@
 import type { MiddlewareHandler } from 'hono'
 import {
+  decodePaymentSignatureHeader,
+  encodePaymentRequiredHeader,
+  encodePaymentResponseHeader,
+} from '@x402/core/http'
+import type {
+  PaymentPayload,
+  PaymentRequired,
+  PaymentRequirements,
+  SettleResponse,
+  VerifyResponse,
+} from '@x402/core/types'
+import { toFacilitatorEvmSigner } from '@x402/evm'
+import { ExactEvmScheme } from '@x402/evm/exact/facilitator'
+import {
   createPublicClient,
   createWalletClient,
   getAddress,
@@ -9,30 +23,11 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { base } from 'viem/chains'
-import { exact } from 'x402/schemes'
-import {
-  settleResponseHeader,
-  type PaymentRequirements,
-  type SettleResponse,
-  type VerifyResponse,
-} from 'x402/types'
+import { paidResource, type PaidResourcePath } from './buyer-catalog'
 
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const BASE_NETWORK = 'eip155:8453' as const
 const DEFAULT_BASE_RPC = 'https://mainnet.base.org'
-
-const PRICE_UNITS: Record<string, string> = {
-  '/tools/history': '10000',
-  '/mcp/history': '10000',
-  '/grid': '50000',
-  '/export': '250000',
-}
-
-const DESCRIPTIONS: Record<string, string> = {
-  '/tools/history': 'Full weekly history for one tool (k-anonymized, >=5 contributors per cell)',
-  '/mcp/history': 'Full weekly history for one MCP server (k-anonymized, >=5 contributors per cell)',
-  '/grid': 'Full tool x week and MCP-server x week grid, all published history',
-  '/export': 'Full dump of every published rollup cell',
-}
 
 export interface X402RelayEnv {
   X402_PAY_TO?: string
@@ -42,10 +37,12 @@ export interface X402RelayEnv {
   X402_RELAYER?: DurableObjectNamespace
 }
 
-interface ExactPaymentPayload {
-  x402Version: number
-  scheme: 'exact'
-  network: 'base'
+interface ExactPaymentPayload extends PaymentPayload {
+  x402Version: 2
+  accepted: PaymentRequirements & {
+    scheme: 'exact'
+    network: typeof BASE_NETWORK
+  }
   payload: {
     signature: Hex
     authorization: {
@@ -65,23 +62,37 @@ export interface PaymentRelayer {
   release?(env: X402RelayEnv, payment: ExactPaymentPayload): Promise<void>
 }
 
-function paidRoute(path: string): string | null {
-  const canonical = path.startsWith('/api/v1/') ? path.slice('/api/v1'.length) : path
-  return canonical in PRICE_UNITS ? canonical : null
-}
-
-function requirementsFor(url: string, route: string, payTo: string): PaymentRequirements {
+function requirementsFor(route: PaidResourcePath, payTo: string): PaymentRequirements {
+  const definition = paidResource(route)!.resource
   return {
     scheme: 'exact',
-    network: 'base',
-    maxAmountRequired: PRICE_UNITS[route],
-    resource: url,
-    description: DESCRIPTIONS[route],
-    mimeType: 'application/json',
+    network: BASE_NETWORK,
+    amount: definition.amount,
     payTo: getAddress(payTo),
     maxTimeoutSeconds: 60,
     asset: BASE_USDC,
     extra: { name: 'USD Coin', version: '2' },
+  }
+}
+
+function paymentRequiredFor(
+  url: string,
+  route: PaidResourcePath,
+  requirements: PaymentRequirements,
+  error: string,
+): PaymentRequired {
+  return {
+    x402Version: 2,
+    error,
+    resource: {
+      url,
+      description: paidResource(route)!.resource.description,
+      mimeType: 'application/json',
+      serviceName: 'Pollen Prompt Intelligence',
+      tags: ['ai', 'developer-tools', 'prompt-intelligence', 'privacy-safe'],
+    },
+    accepts: [requirements],
+    extensions: {},
   }
 }
 
@@ -92,6 +103,20 @@ function clients(env: X402RelayEnv) {
   const account = privateKeyToAccount(env.X402_RELAYER_KEY as Hex)
   const walletClient = createWalletClient({ account, chain: base, transport: http(rpc) })
   return { publicClient, walletClient }
+}
+
+function facilitatorScheme(env: X402RelayEnv): ExactEvmScheme {
+  const { publicClient, walletClient } = clients(env)
+  const signer = toFacilitatorEvmSigner({
+    address: walletClient.account.address,
+    readContract: args => publicClient.readContract(args as never),
+    verifyTypedData: args => publicClient.verifyTypedData(args as never),
+    writeContract: args => walletClient.writeContract(args as never),
+    sendTransaction: args => walletClient.sendTransaction(args as never),
+    waitForTransactionReceipt: args => publicClient.waitForTransactionReceipt(args),
+    getCode: args => publicClient.getCode(args),
+  })
+  return new ExactEvmScheme(signer)
 }
 
 export async function getRelayerHealth(env: X402RelayEnv): Promise<{
@@ -281,7 +306,7 @@ export class X402SettlementRelayer {
     }
     if (payerLock) await this.state.storage.delete([payerLock.key, payerKey])
 
-    const verification = await exact.evm.verify(publicClient, payment as any, requirements)
+    const verification = await facilitatorScheme(this.env).verify(payment, requirements)
     if (!verification.isValid) return verification
 
     const amount = BigInt(payment.payload.authorization.value)
@@ -345,7 +370,7 @@ export class X402SettlementRelayer {
     })
     const receipt = await publicClient.waitForTransactionReceipt({ hash: transaction })
     if (receipt.status !== 'success') throw new Error('settlement transaction reverted')
-    return { success: true, payer: authorization.from, transaction, network: 'base' }
+    return { success: true, payer: authorization.from, transaction, network: BASE_NETWORK }
   }
 
   private async release(payment: ExactPaymentPayload): Promise<void> {
@@ -361,8 +386,9 @@ export function createPollenPaymentMiddleware(
   relayer: PaymentRelayer = baseRelayer,
 ): MiddlewareHandler<{ Bindings: X402RelayEnv }> {
   return async (c, next) => {
-    const route = paidRoute(c.req.path)
-    if (!route) return next()
+    const paid = paidResource(c.req.path)
+    if (!paid) return next()
+    const route = paid.path
 
     if (!c.env.X402_PAY_TO || !c.env.X402_RELAYER_KEY) {
       return c.json({ error: 'x402 settlement is not configured' }, 503)
@@ -370,44 +396,75 @@ export function createPollenPaymentMiddleware(
 
     let requirements: PaymentRequirements
     try {
-      requirements = requirementsFor(c.req.url, route, c.env.X402_PAY_TO)
+      requirements = requirementsFor(route, c.env.X402_PAY_TO)
     } catch {
       return c.json({ error: 'x402 settlement is not configured' }, 503)
     }
 
-    const header = c.req.header('X-PAYMENT')
+    const paymentRequired = (error: string) => {
+      const challenge = paymentRequiredFor(c.req.url, route, requirements, error)
+      c.header('PAYMENT-REQUIRED', encodePaymentRequiredHeader(challenge))
+      c.header('Cache-Control', 'no-store')
+      return c.json(challenge, 402)
+    }
+
+    const header = c.req.header('PAYMENT-SIGNATURE')
     if (!header) {
-      return c.json({ error: 'X-PAYMENT header is required', accepts: [requirements], x402Version: 1 }, 402)
+      return paymentRequired('PAYMENT-SIGNATURE header is required')
     }
 
     let payment: ExactPaymentPayload
     try {
-      payment = exact.evm.decodePayment(header) as ExactPaymentPayload
+      const decoded = decodePaymentSignatureHeader(header)
+      if (
+        decoded.x402Version !== 2
+        || decoded.accepted.scheme !== 'exact'
+        || decoded.accepted.network !== BASE_NETWORK
+        || typeof decoded.payload.signature !== 'string'
+        || typeof decoded.payload.authorization !== 'object'
+        || decoded.payload.authorization === null
+      ) {
+        throw new Error('invalid x402 v2 exact EVM payload')
+      }
+      const authorization = decoded.payload.authorization as Record<string, unknown>
+      if (
+        typeof authorization.from !== 'string'
+        || typeof authorization.to !== 'string'
+        || typeof authorization.value !== 'string'
+        || typeof authorization.validAfter !== 'string'
+        || typeof authorization.validBefore !== 'string'
+        || typeof authorization.nonce !== 'string'
+      ) {
+        throw new Error('invalid x402 v2 EIP-3009 authorization')
+      }
+      payment = decoded as ExactPaymentPayload
     } catch (error) {
-      return c.json({
-        error: error instanceof Error ? error.message : 'Invalid or malformed payment header',
-        accepts: [requirements],
-        x402Version: 1,
-      }, 402)
+      return paymentRequired(error instanceof Error ? error.message : 'Invalid or malformed payment header')
     }
 
     const authorization = payment.payload.authorization
-    if (
-      payment.network !== 'base'
-      || getAddress(authorization.to) !== getAddress(requirements.payTo)
-      || BigInt(authorization.value) < BigInt(requirements.maxAmountRequired)
-    ) {
-      return c.json({ error: 'payment does not match requirements', accepts: [requirements], x402Version: 1 }, 402)
+    try {
+      if (
+        payment.accepted.amount !== requirements.amount
+        || getAddress(payment.accepted.asset) !== getAddress(requirements.asset)
+        || getAddress(payment.accepted.payTo) !== getAddress(requirements.payTo)
+        || getAddress(authorization.to) !== getAddress(requirements.payTo)
+        || BigInt(authorization.value) !== BigInt(requirements.amount)
+      ) {
+        return paymentRequired('payment does not match requirements')
+      }
+    } catch {
+      return paymentRequired('payment does not match requirements')
     }
 
     let reserved = false
     try {
       if (payment.payload.signature.length !== 132) {
-        return c.json({ error: 'smart-wallet signatures are not supported', accepts: [requirements], x402Version: 1 }, 402)
+        return paymentRequired('smart-wallet signatures are not supported by PollenSettlementV2')
       }
       const verification = await relayer.verify(c.env, payment, requirements)
       if (!verification.isValid) {
-        return c.json({ error: verification.invalidReason || 'payment verification failed', accepts: [requirements], x402Version: 1 }, 402)
+        return paymentRequired(verification.invalidReason || 'payment verification failed')
       }
       reserved = true
 
@@ -421,16 +478,12 @@ export function createPollenPaymentMiddleware(
       const settlement = await relayer.settle(c.env, payment)
       if (!settlement.success) throw new Error(settlement.errorReason || 'settlement failed')
       reserved = false
-      c.res.headers.set('X-PAYMENT-RESPONSE', settleResponseHeader(settlement))
+      c.res.headers.set('PAYMENT-RESPONSE', encodePaymentResponseHeader(settlement))
     } catch (error) {
       if (reserved) {
         try { await relayer.release?.(c.env, payment) } catch { /* best-effort unlock */ }
       }
-      return c.json({
-        error: error instanceof Error ? error.message : 'payment settlement failed',
-        accepts: [requirements],
-        x402Version: 1,
-      }, 402)
+      return paymentRequired(error instanceof Error ? error.message : 'payment settlement failed')
     }
   }
 }

@@ -1,66 +1,38 @@
-## Foundry
+# Pollen contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## Production V2
 
-Foundry consists of:
+- `PollenTokenV2.sol`: POLLEN issuance, weekly mint caps, and legacy pro-rata
+  holder USDC accounting
+- `PollenSettlementV2.sol`: EIP-3009/x402 settlement into PollenTokenV2
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+These contracts remain deployed and unchanged.
 
-## Documentation
+## Future active-holder V3
 
-https://book.getfoundry.sh/
+- `PollenSettlementV3.sol`: ABI-compatible settlement into a separate vault
+- `PollenActiveRevenueVault.sol`: role-separated deposits, immutable closed-epoch
+  Merkle roots, replay-safe claims, accounting reservations, pause, and expiry
+- `script/DeployV3.s.sol`: approval-gated deployment and temporary-admin handoff
 
-## Usage
+V3 is repository implementation only. It has not been deployed and must not be
+presented as live. See `../docs/ACTIVE-HOLDER-ARCHITECTURE.md` and
+`../docs/ACTIVE-HOLDER-CUTOVER.md`.
 
-### Build
+## Verification
 
-```shell
-$ forge build
+```bash
+forge build
+forge test --force
 ```
 
-### Test
+The suite includes V2 regressions, V3 role and claim tests, a fixed
+TypeScript/Solidity proof vector, fuzz tests, and stateful vault invariants.
 
-```shell
-$ forge test
-```
+Formatting only the active V3 files:
 
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+```bash
+forge fmt --check src/PollenActiveRevenueVault.sol src/PollenSettlementV3.sol \
+  test/PollenActiveRevenueVault.t.sol test/PollenSettlementV3.t.sol \
+  test/PollenActiveRevenueVaultInvariant.t.sol script/DeployV3.s.sol
 ```

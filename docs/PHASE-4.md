@@ -1,5 +1,12 @@
 # Phase 4: Economics + Launch
 
+> Historical phase plan. The 70/20/10 model below is not implemented. The
+> current PollenTokenV2 contract distributes deposited USDC pro rata to all
+> token holders and issues weekly POLLEN separately through receipt-backed
+> scoring. The approved future V3 path uses weekly active-holder Merkle claims
+> and is implemented but not live. See `ECONOMICS-DECISION.md` before changing
+> or marketing economics.
+
 > **Goal:** Contributors earn money. Product is public. Growth begins.
 >
 > **Duration:** 2 weeks

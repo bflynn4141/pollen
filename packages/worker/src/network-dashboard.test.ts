@@ -191,7 +191,7 @@ describe('fetchNetworkDashboard', () => {
 })
 
 describe('selectDashboard', () => {
-  it('falls back to personal activity until the public network is live', () => {
+  it('defaults to personal activity while keeping the privacy-thresholded network selectable', () => {
     const network = buildNetworkDashboard({
       source: 'network_receipts',
       k_anonymity: 5,
@@ -205,9 +205,18 @@ describe('selectDashboard', () => {
     const personal = buildNetworkDashboard({ ...liveResponse(), source: 'local_activity', scope: 'personal', k_anonymity: 1 })
 
     const dashboard = selectDashboard(undefined, network, personal)
+    const networkDashboard = selectDashboard('network', network, personal)
 
     expect(dashboard.scope).toBe('personal')
-    expect(dashboard.availableScopes).toEqual(['personal'])
+    expect(dashboard.availableScopes).toEqual(['personal', 'network'])
+    expect(networkDashboard).toMatchObject({
+      scope: 'network',
+      status: 'warming_up',
+      kAnonymity: 5,
+      availableScopes: ['personal', 'network'],
+      overview: null,
+    })
+    expect(Object.values(networkDashboard.rankings).every(section => section.entries.length === 0)).toBe(true)
   })
 
   it('defaults to network data once both scopes are live and honors an explicit personal scope', () => {

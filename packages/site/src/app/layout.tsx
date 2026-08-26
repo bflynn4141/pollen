@@ -29,21 +29,21 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
-  title: "Pollen — The Shared Intelligence Network",
+  title: "Pollen | The Shared Intelligence Network",
   description:
-    "Your prompts have value. Install one MCP server. Contribute anonymized intents, tool calls, command patterns, and model preferences. Earn tokens when the data is queried.",
+    "Privacy-safe prompt intelligence built from opt-in contributor activity. Pollen publishes aggregate patterns, never raw prompts, code, or tool output.",
   openGraph: {
-    title: "Pollen — The Shared Intelligence Network",
+    title: "Pollen | The Shared Intelligence Network",
     description:
-      "Your prompts have value. Contribute anonymized prompt intelligence and earn tokens.",
+      "Opt in to privacy-safe prompt intelligence. Pollen publishes aggregate patterns, never raw prompts.",
     type: "website",
     siteName: "Pollen",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Pollen — The Shared Intelligence Network",
+    title: "Pollen | The Shared Intelligence Network",
     description:
-      "Your prompts have value. Contribute anonymized prompt intelligence and earn tokens.",
+      "Opt in to privacy-safe prompt intelligence. Pollen publishes aggregate patterns, never raw prompts.",
   },
 };
 

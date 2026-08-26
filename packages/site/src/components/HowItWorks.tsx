@@ -6,20 +6,20 @@ const STEPS = [
   {
     num: 1,
     title: 'Install',
-    code: 'npx @pollen/cli setup',
-    body: 'One command adds the MCP server to your Claude config. No API keys, no signup.',
+    code: 'pollen setup --agents',
+    body: 'One command installs local hooks for supported coding agents. Founding-panel access requires an invite.',
   },
   {
     num: 2,
     title: 'Code normally',
     code: null,
-    body: 'The MCP extracts a session intent, logs which tools and CLI commands you use, and records your model choice. No prompts, no code, no context ever leaves your machine.',
+    body: 'Local hooks produce a closed receipt with coarse intent, agent and model, tool categories, public MCP identifiers, and outcome buckets. Prompt text, code, paths, arguments, results, and shell output stay local.',
   },
   {
     num: 3,
-    title: 'Earn tokens',
+    title: 'Build the network',
     code: null,
-    body: 'Revenue from dataset queries flows proportionally to all token holders on Base. More sessions = bigger share.',
+    body: 'Privacy-qualified receipts can contribute to weekly POLLEN scores. V2 currently rewards all holders; the approved, not-yet-live V3 path uses recent activity plus a POLLEN snapshot.',
   },
 ]
 

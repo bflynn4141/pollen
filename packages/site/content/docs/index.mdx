@@ -1,33 +1,29 @@
 ---
 title: Pollen Docs
-description: Documentation for the Pollen shared intelligence network. Contribute data and earn tokens, or build on the Trends API.
+description: Privacy-safe prompt intelligence from opt-in contributor activity, with paid aggregate access over x402 v2.
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card'
 
 # Pollen Docs
 
-Pollen is a **shared intelligence network**. Contributors share anonymized Claude Code usage data and earn POLLEN tokens. Developers query the aggregated data through the Trends API.
+Pollen turns opt-in coding-agent activity into privacy-safe aggregate intelligence. It does not sell or export prompt text. The production receipt contains only a closed set of coarse fields, and a public cell is suppressed until at least five distinct contributors support it.
 
-<img src="/docs/og.png" alt="Pollen Documentation" style={{ borderRadius: '12px', width: '100%', marginTop: '8px', marginBottom: '8px', border: '3px solid #C45D3E' }} />
-
-## I want to contribute data
-
-Install a Claude Code hook, contribute anonymized session features, and earn tokens.
+## Contribute
 
 <Cards>
-  <Card title="Quickstart" href="/docs/quickstart" description="Install the hook and start contributing in 2 minutes" />
-  <Card title="Wallet Setup" href="/docs/wallet" description="Set up a wallet to receive POLLEN tokens" />
-  <Card title="CLI Reference" href="/docs/cli" description="All commands for stats, sync, and claiming" />
-  <Card title="How Earning Works" href="/docs/earning" description="Epochs, IVS scoring, and revenue sharing" />
+  <Card title="Quickstart" href="/docs/quickstart" description="Join the founding panel and install local hooks" />
+  <Card title="What leaves your device" href="/docs/contributing-data" description="Review the consent boundary and contributor controls" />
+  <Card title="Wallet Setup" href="/docs/wallet" description="Set up a wallet for automatic POLLEN payouts" />
+  <Card title="How Earning Works" href="/docs/earning" description="Understand weekly scores, POLLEN payouts, and USDC revenue" />
 </Cards>
 
-## I want to build with the data
-
-Query 13 REST endpoints covering topics, tools, models, sessions, and more.
+## Build with aggregate data
 
 <Cards>
-  <Card title="Trends API Reference" href="/docs/developers/trends-api" description="All 13 endpoints with request/response examples" />
-  <Card title="Use Cases" href="/docs/developers/use-cases" description="Market research, product analytics, agent building" />
-  <Card title="x402 Micropayments" href="/docs/developers/x402" description="Pay-per-request API access with stablecoins" />
+  <Card title="Data Catalog" href="/docs/developers/catalog" description="Schemas, prices, freshness, provenance, and free previews" />
+  <Card title="API Reference" href="/docs/api" description="Free and paid privacy-qualified endpoints" />
+  <Card title="x402 v2" href="/docs/developers/x402" description="Pay per published result with USDC on Base" />
 </Cards>
+
+Pollen does not claim that each individual prompt is cryptographically proven to come from a human. World ID is an eligibility control for contributor payouts, not proof of authorship for every prompt.

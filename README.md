@@ -95,6 +95,27 @@ pnpm --filter @pollen/site dev
 The demo dashboard is at [http://localhost:3000/dashboard](http://localhost:3000/dashboard).
 The public aggregate API is at [pollen-api.bflynn4141.workers.dev](https://pollen-api.bflynn4141.workers.dev).
 
+Buyers can inspect the machine-readable catalog before paying:
+
+```bash
+curl https://pollen-api.bflynn4141.workers.dev/catalog
+curl https://pollen-api.bflynn4141.workers.dev/network
+```
+
+Paid history uses x402 v2 with exact USDC payments on Base. Pollen does not
+settle a paid request when no privacy-qualified rows are available. Under the
+current contracts, successful query revenue accrues pro rata to all POLLEN
+holders. The approved future V3 path instead uses weekly Merkle claims for
+recent, World ID-verified contributors who held POLLEN at the epoch boundary,
+with activity decay, square-root balance weighting, and a 10% wallet cap. V3
+is implemented in this repository but is not deployed or live.
+
+See [launch readiness](./docs/LAUNCH-READINESS.md), the [security
+review](./docs/SECURITY-REVIEW.md), and [buyer-to-holder proof
+runbook](./docs/BUYER-TO-HOLDER-RUNBOOK.md) for the remaining production gates.
+The V3 design and approval gates are in [active-holder architecture](./docs/ACTIVE-HOLDER-ARCHITECTURE.md)
+and the [cutover runbook](./docs/ACTIVE-HOLDER-CUTOVER.md).
+
 See [DEMO.md](./DEMO.md) for the demo talk track and privacy contract.
 
 ## License

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
   fetchDashboard,
+  isDashboardScope,
   RANKING_SECTION_META,
   RANKING_WINDOWS,
   type RankingEntry,
@@ -10,6 +11,7 @@ import {
   type RankingWindow,
 } from '@/lib/network-dashboard'
 import { DashboardIcon, EntityMark, type DashboardIconName } from '../dashboard-icons'
+import { dashboardHref, DashboardScopeSwitch } from '../dashboard-scope-switch'
 import home from '../dashboard.module.css'
 import styles from './ranking-page.module.css'
 
@@ -77,24 +79,28 @@ export default async function RankingPage({
   searchParams,
 }: {
   params: Promise<{ section: string }>
-  searchParams: Promise<{ window?: string | string[]; view?: string | string[] }>
+  searchParams: Promise<{ scope?: string | string[]; window?: string | string[]; view?: string | string[] }>
 }) {
   const [{ section }, query] = await Promise.all([params, searchParams])
   if (!sections.includes(section as RankingSection)) notFound()
 
   const activeSection = section as RankingSection
   const selectedWindow: RankingWindow = isRankingWindow(query.window) ? query.window : '7d'
-  const dashboard = await fetchDashboard()
+  const requestedScope = isDashboardScope(query.scope) ? query.scope : undefined
+  const dashboard = await fetchDashboard(requestedScope)
   const isPersonal = dashboard.scope === 'personal'
-  const scopedHref = (path: string) => path
-  const mcpView = query.view === 'tools' ? 'tools' : 'servers'
+  const scopedHref = (path: string) => dashboardHref(path, dashboard.scope)
+  const mcpView: 'tools' | 'servers' = query.view === 'tools' ? 'tools' : 'servers'
   const definition = activeSection === 'mcps' && mcpView === 'tools'
     ? dashboard.mcpTools
     : dashboard.rankings[activeSection]
   const rankingHref = (window: RankingWindow, view = mcpView) => {
-    const search = new URLSearchParams({ window })
-    if (activeSection === 'mcps') search.set('view', view)
-    return `/dashboard/${activeSection}?${search.toString()}`
+    return dashboardHref(
+      `/dashboard/${activeSection}`,
+      dashboard.scope,
+      window,
+      activeSection === 'mcps' ? view : undefined,
+    )
   }
   const icon = sectionIcons[activeSection]
   const candidates = definition.entries
@@ -158,6 +164,12 @@ export default async function RankingPage({
           <div className={styles.titleRow}>
             <div className={styles.titleCopy}><span className={styles.titleIcon}><DashboardIcon name={icon} size={20} /></span><h1>{definition.label}</h1></div>
             <div className={styles.headerControls}>
+              <DashboardScopeSwitch
+                dashboard={dashboard}
+                path={`/dashboard/${activeSection}`}
+                window={selectedWindow}
+                view={activeSection === 'mcps' ? mcpView : undefined}
+              />
               <span className={home.scopeBadge}>{contributorLabel}</span>
               {activeSection === 'mcps' ? <nav className={styles.windowToggle} aria-label="MCP ranking type">
                 <Link href={rankingHref(selectedWindow, 'servers')} className={mcpView === 'servers' ? styles.windowActive : undefined} aria-current={mcpView === 'servers' ? 'page' : undefined}>Servers</Link>

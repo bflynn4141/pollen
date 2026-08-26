@@ -5,32 +5,32 @@ import { useIsMobile } from '@/lib/hooks'
 const CATEGORIES = [
   {
     color: '#C45D3E',
-    title: 'SESSION INTENTS',
-    desc: 'What developers are building and thinking about',
+    title: 'COARSE SESSION SIGNALS',
+    desc: 'Intent, agent, model, duration, terminal state, and check result',
   },
   {
     color: '#5C9E8F',
-    title: 'MCP TOOL CALLS',
-    desc: 'Which servers and tools get called during sessions',
+    title: 'PUBLIC MCP IDENTIFIERS',
+    desc: 'Canonical public server and tool names, with custom aliases grouped as private',
   },
   {
     color: '#C45D3E',
-    title: 'COMMANDS & MODELS',
-    desc: 'CLI command categories and which AI model was chosen',
+    title: 'TOOL CATEGORIES',
+    desc: 'Coarse read, write, execute, search, web, and other action categories',
   },
 ]
 
 const TERMINAL_LINES = [
-  { type: 'cmd', text: '$ claude "add auth to the Next.js app"' },
-  { type: 'highlight', text: '  Topic: nextjs-authentication' },
+  { type: 'cmd', text: '$ pollen sync --dry-run' },
+  { type: 'highlight', text: '  intent: feature_build' },
   { type: 'blank', text: '' },
-  { type: 'tool', text: '  → figma · get_screenshot' },
-  { type: 'tool', text: '  → github · create_pr' },
+  { type: 'tool', text: '  tool categories: read → write → execute' },
+  { type: 'tool', text: '  public MCP: github · create_pull_request' },
   { type: 'blank', text: '' },
-  { type: 'cmd', text: '$ git commit -m "add auth middleware"' },
-  { type: 'cmd', text: '$ npm run test' },
+  { type: 'cmd', text: '  terminal state: completed' },
+  { type: 'cmd', text: '  check result: passed' },
   { type: 'blank', text: '' },
-  { type: 'model', text: '  Model: claude-sonnet-4.5' },
+  { type: 'model', text: '  model: claude-sonnet-4.5' },
 ]
 
 export function DataModel() {
