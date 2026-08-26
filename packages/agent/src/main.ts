@@ -21,6 +21,7 @@ import {
   createActiveRevenueSourceStore,
   prepareActiveRevenuePlan,
 } from './active-revenue-plan.js'
+import { parseActiveRevenuePlanFlags } from './active-revenue-cli.js'
 import { stringifyActiveRevenueArtifact } from './active-revenue-artifact.js'
 import { createNeonStore } from './db.js'
 import { createSplitsMintChain } from './mint.js'
@@ -40,46 +41,6 @@ function usage(): never {
     '                                               Print a read-only V3 Merkle draft; never writes or publishes',
   ].join('\n'))
   process.exit(1)
-}
-
-interface ActiveRevenuePlanFlags {
-  epoch: number
-  poolAtomicUsdc: bigint
-  snapshotBlock: bigint
-}
-
-function parseRequiredInteger(value: string | undefined, name: string): bigint {
-  try {
-    const parsed = BigInt(value ?? '')
-    if (parsed <= BigInt(0)) throw new Error('not positive')
-    return parsed
-  } catch {
-    console.error(`${name} expects a positive integer, got: ${value}`)
-    process.exit(1)
-  }
-}
-
-function parseActiveRevenuePlanFlags(argv: string[]): ActiveRevenuePlanFlags {
-  let epoch: number | undefined
-  let poolAtomicUsdc: bigint | undefined
-  let snapshotBlock: bigint | undefined
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
-    const value = argv[++i]
-    if (arg === '--epoch') epoch = Number(value)
-    else if (arg === '--pool-atomic') poolAtomicUsdc = parseRequiredInteger(value, arg)
-    else if (arg === '--snapshot-block') snapshotBlock = parseRequiredInteger(value, arg)
-    else {
-      console.error(`Unknown active-revenue-plan flag: ${arg}`)
-      process.exit(1)
-    }
-  }
-  if (!Number.isInteger(epoch) || (epoch ?? 0) < 1) {
-    console.error(`--epoch expects a 1-based integer, got: ${epoch}`)
-    process.exit(1)
-  }
-  if (poolAtomicUsdc === undefined || snapshotBlock === undefined) usage()
-  return { epoch: epoch!, poolAtomicUsdc, snapshotBlock }
 }
 
 interface Flags {

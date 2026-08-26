@@ -52,6 +52,9 @@ test('production recovery is manual, serialized, and keeps credentials in GitHub
   assert.match(recovery, /secrets\.NEON_DATABASE_URL/)
   assert.match(recovery, /--single-transaction/)
   assert.match(recovery, /013_active_revenue\.sql/)
+  assert.match(recovery, /active-revenue-shadow/)
+  assert.match(recovery, /--snapshot-block/)
+  assert.match(recovery, /POOL_ATOMIC/)
 })
 
 test('production clients use the verified Worker origin, not the unrelated pollen.id zone', async () => {

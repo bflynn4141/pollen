@@ -10,9 +10,19 @@ on:
         options:
           - epoch-close
           - active-revenue-migration
+          - active-revenue-shadow
       epoch:
         description: 'Just-closed epoch (required for epoch-close)'
         required: false
+        type: string
+      snapshot_block:
+        description: 'Last Base block at or before the epoch boundary'
+        required: false
+        type: string
+      pool_atomic:
+        description: 'Shadow USDC pool in atomic units; zero is valid'
+        required: false
+        default: '0'
         type: string
 
 permissions:
@@ -84,3 +94,52 @@ jobs:
         run: |
           psql "${NEON_DATABASE_URL}" --set=ON_ERROR_STOP=1 --tuples-only --command \
             "select table_name from information_schema.tables where table_schema = 'public' and table_name in ('active_revenue_distributions', 'active_revenue_claims') order by table_name;"
+
+  active-revenue-shadow:
+    if: ${{ inputs.action == 'active-revenue-shadow' }}
+    runs-on: ubuntu-latest
+    env:
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      POLLEN_TOKEN_ADDRESS: ${{ secrets.POLLEN_TOKEN_ADDRESS }}
+      BASE_RPC_URL: https://base-rpc.publicnode.com
+      EPOCH: ${{ inputs.epoch }}
+      SNAPSHOT_BLOCK: ${{ inputs.snapshot_block }}
+      POOL_ATOMIC: ${{ inputs.pool_atomic }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Validate shadow inputs
+        run: |
+          if [[ ! "${EPOCH}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::active-revenue-shadow requires a positive integer epoch"
+            exit 1
+          fi
+          if [[ ! "${SNAPSHOT_BLOCK}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::active-revenue-shadow requires a positive snapshot_block"
+            exit 1
+          fi
+          if [[ ! "${POOL_ATOMIC}" =~ ^[0-9]+$ ]]; then
+            echo "::error::pool_atomic must be a non-negative integer"
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build active-revenue planner
+        run: pnpm --filter @pollen/agent build
+
+      - name: Generate read-only shadow artifact
+        run: |
+          node packages/agent/dist/main.js active-revenue-plan \
+            --epoch "${EPOCH}" \
+            --pool-atomic "${POOL_ATOMIC}" \
+            --snapshot-block "${SNAPSHOT_BLOCK}"
