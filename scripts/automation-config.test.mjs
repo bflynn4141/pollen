@@ -41,3 +41,15 @@ test('V3 deployment uses the encrypted Foundry account instead of a raw private 
   assert.doesNotMatch(deployment, /DEPLOYER_PRIVATE_KEY/)
   assert.doesNotMatch(deployment, /vm\.envUint/)
 })
+
+test('production recovery is manual, serialized, and keeps credentials in GitHub', async () => {
+  const recovery = await readRepoFile('.github/workflows/production-recovery.yml')
+
+  assert.match(recovery, /workflow_dispatch:/)
+  assert.doesNotMatch(recovery, /schedule:/)
+  assert.match(recovery, /group: pollen-production-recovery/)
+  assert.match(recovery, /secrets\.WORKER_ADMIN_SECRET/)
+  assert.match(recovery, /secrets\.NEON_DATABASE_URL/)
+  assert.match(recovery, /--single-transaction/)
+  assert.match(recovery, /013_active_revenue\.sql/)
+})

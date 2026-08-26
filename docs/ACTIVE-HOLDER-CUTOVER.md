@@ -43,7 +43,8 @@ remaining dependency advisories, and independent review outcome.
 ## Deployment preparation
 
 1. Apply migration `013_active_revenue.sql` and verify its constraints in the
-   target database.
+   target database. The manual `Production recovery` GitHub workflow runs this
+   transactionally without exporting the Neon credential to an operator machine.
 2. Reproduce and review a draft allocation using archive RPC data. A zero-root
    artifact or fewer than ten eligible wallets is valid, but the strict-cap
    carry must be understood. A zero root cannot be published.

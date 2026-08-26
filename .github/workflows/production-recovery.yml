@@ -1,0 +1,86 @@
+name: Production recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Approved recovery operation'
+        required: true
+        type: choice
+        options:
+          - epoch-close
+          - active-revenue-migration
+      epoch:
+        description: 'Just-closed epoch (required for epoch-close)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pollen-production-recovery
+  cancel-in-progress: false
+
+jobs:
+  epoch-close:
+    if: ${{ inputs.action == 'epoch-close' }}
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_SECRET: ${{ secrets.WORKER_ADMIN_SECRET }}
+    steps:
+      - name: Validate requested epoch
+        env:
+          EPOCH: ${{ inputs.epoch }}
+        run: |
+          if [[ ! "${EPOCH}" =~ ^[0-9]+$ ]]; then
+            echo "::error::epoch-close requires an integer epoch input"
+            exit 1
+          fi
+
+      - name: Score the just-closed epoch
+        env:
+          EPOCH: ${{ inputs.epoch }}
+        run: |
+          response_file="$(mktemp)"
+          status=$(curl --silent --show-error --output "${response_file}" --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer ${ADMIN_SECRET}" \
+            "https://pollen-api.bflynn4141.workers.dev/admin/run/epoch-close?epoch=${EPOCH}")
+          jq . "${response_file}"
+          if [[ "${status}" != "200" ]]; then
+            echo "::error::epoch-close returned HTTP ${status}"
+            exit 1
+          fi
+
+      - name: Read post-recovery health
+        run: |
+          response_file="$(mktemp)"
+          status=$(curl --silent --show-error --output "${response_file}" --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${ADMIN_SECRET}" \
+            https://pollen-api.bflynn4141.workers.dev/admin/health)
+          jq . "${response_file}"
+          if [[ "${status}" != "200" && "${status}" != "503" ]]; then
+            echo "::error::health returned unexpected HTTP ${status}"
+            exit 1
+          fi
+
+  active-revenue-migration:
+    if: ${{ inputs.action == 'active-revenue-migration' }}
+    runs-on: ubuntu-latest
+    env:
+      NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply active-revenue schema transactionally
+        run: |
+          psql "${NEON_DATABASE_URL}" \
+            --set=ON_ERROR_STOP=1 \
+            --single-transaction \
+            --file packages/site/migrations/013_active_revenue.sql
+
+      - name: Verify active-revenue schema
+        run: |
+          psql "${NEON_DATABASE_URL}" --set=ON_ERROR_STOP=1 --tuples-only --command \
+            "select table_name from information_schema.tables where table_schema = 'public' and table_name in ('active_revenue_distributions', 'active_revenue_claims') order by table_name;"

@@ -56,7 +56,10 @@ Trigger: a receipt contains a forbidden field, a public row has fewer than five 
 
 1. Do not start a new payout with plain retry.
 2. Read `epoch_scores`, `payouts`, stored Splits proposal IDs, and on-chain receipts.
-3. If no scores exist, use the protected epoch-close recovery route only with approval and only for the just-closed payable epoch.
+3. If no scores exist, dispatch the manual `Production recovery` workflow with
+   `action=epoch-close` only for the just-closed payable epoch. It validates the
+   epoch, uses the protected route, and records the response without exposing
+   the admin secret.
 4. Run `--dry-run` and save the exact cohort and amounts.
 5. If rows are pending, use `--resume` so stored proposals are reconciled rather than replaced.
 6. If any transaction state is ambiguous, stop and resolve it on-chain before further minting.
