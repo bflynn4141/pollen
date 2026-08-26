@@ -142,4 +142,12 @@ jobs:
           node packages/agent/dist/main.js active-revenue-plan \
             --epoch "${EPOCH}" \
             --pool-atomic "${POOL_ATOMIC}" \
-            --snapshot-block "${SNAPSHOT_BLOCK}"
+            --snapshot-block "${SNAPSHOT_BLOCK}" \
+            | tee active-revenue-shadow.json
+
+      - name: Retain shadow allocation for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: active-revenue-shadow-epoch-${{ inputs.epoch }}
+          path: active-revenue-shadow.json
+          if-no-files-found: error
