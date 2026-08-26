@@ -55,6 +55,7 @@ test('production recovery is manual, serialized, and keeps credentials in GitHub
   assert.match(recovery, /active-revenue-shadow/)
   assert.match(recovery, /--snapshot-block/)
   assert.match(recovery, /POOL_ATOMIC/)
+  assert.match(recovery, /BASE_RPC_URL: https:\/\/mainnet\.base\.org/)
 })
 
 test('production clients use the verified Worker origin, not the unrelated pollen.id zone', async () => {
