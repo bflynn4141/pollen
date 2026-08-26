@@ -228,6 +228,12 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
            agent,
            model,
            COUNT(*)::int AS sessions,
+           COUNT(*) FILTER (WHERE input_tokens IS NOT NULL OR output_tokens IS NOT NULL)::int AS tokenized_sessions,
+           COUNT(*) FILTER (WHERE reasoning_tokens IS NOT NULL)::int AS reasoning_sessions,
+           COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
+           COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
+           COALESCE(SUM(cached_input_tokens), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM(reasoning_tokens), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
            ROUND(AVG(CASE WHEN check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
            COUNT(DISTINCT contributor_id)::int AS contributors
@@ -240,6 +246,12 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     dims: { agent: r.agent, model: r.model },
     value: {
       sessions: r.sessions,
+      tokenized_sessions: r.tokenized_sessions,
+      reasoning_sessions: r.reasoning_sessions,
+      input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens,
+      cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
     },
@@ -249,14 +261,30 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
   // --- receipt_tool_categories: coarsened capability usage -----------------
   const receiptCategories = await sql`
     SELECT to_char(to_timestamp(r.observed_at / 1000.0) AT TIME ZONE 'UTC', 'IYYY-"W"IW') AS period,
-           category,
+           tool_call.category,
            COUNT(*)::int AS events,
            COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           COUNT(*) FILTER (WHERE tool_call.input_tokens IS NOT NULL OR tool_call.output_tokens IS NOT NULL)::int AS tokenized_events,
+           COALESCE(SUM(tool_call.input_tokens), 0)::bigint AS input_tokens,
+           COALESCE(SUM(tool_call.output_tokens), 0)::bigint AS output_tokens,
+           COALESCE(SUM(tool_call.cached_input_tokens), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM(tool_call.reasoning_tokens), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
            ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
            COUNT(DISTINCT r.contributor_id)::int AS contributors
-    FROM network_receipts r,
-         unnest(r.tool_category_sequence) AS category
+    FROM network_receipts r
+    CROSS JOIN LATERAL (
+      SELECT attr->>'category' AS category,
+             (attr->>'input_tokens')::bigint AS input_tokens,
+             (attr->>'output_tokens')::bigint AS output_tokens,
+             (attr->>'cached_input_tokens')::bigint AS cached_input_tokens,
+             (attr->>'reasoning_tokens')::bigint AS reasoning_tokens
+      FROM jsonb_array_elements(r.tool_attributions) AS attr
+      UNION ALL
+      SELECT legacy_category, NULL::bigint, NULL::bigint, NULL::bigint, NULL::bigint
+      FROM unnest(r.tool_category_sequence) AS legacy_category
+      WHERE jsonb_array_length(r.tool_attributions) = 0
+    ) AS tool_call
     WHERE r.observed_at > ${windowStartMs}
     GROUP BY 1, 2
     HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
@@ -266,6 +294,11 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     value: {
       events: r.events,
       sessions: r.sessions,
+      tokenized_events: r.tokenized_events,
+      input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens,
+      cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
     },
@@ -278,6 +311,11 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
            mcp_call->>'server' AS server,
            COUNT(*)::int AS calls,
            COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           COUNT(*) FILTER (WHERE mcp_call->>'input_tokens' IS NOT NULL OR mcp_call->>'output_tokens' IS NOT NULL)::int AS tokenized_events,
+           COALESCE(SUM((mcp_call->>'input_tokens')::bigint), 0)::bigint AS input_tokens,
+           COALESCE(SUM((mcp_call->>'output_tokens')::bigint), 0)::bigint AS output_tokens,
+           COALESCE(SUM((mcp_call->>'cached_input_tokens')::bigint), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM((mcp_call->>'reasoning_tokens')::bigint), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
@@ -296,6 +334,9 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     dims: { server: r.server },
     value: {
       calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      tokenized_events: r.tokenized_events, input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens, cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       latency_instant: r.latency_instant, latency_fast: r.latency_fast,
       latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
       latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,
@@ -309,6 +350,11 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
            mcp_call->>'tool' AS tool,
            COUNT(*)::int AS calls,
            COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           COUNT(*) FILTER (WHERE mcp_call->>'input_tokens' IS NOT NULL OR mcp_call->>'output_tokens' IS NOT NULL)::int AS tokenized_events,
+           COALESCE(SUM((mcp_call->>'input_tokens')::bigint), 0)::bigint AS input_tokens,
+           COALESCE(SUM((mcp_call->>'output_tokens')::bigint), 0)::bigint AS output_tokens,
+           COALESCE(SUM((mcp_call->>'cached_input_tokens')::bigint), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM((mcp_call->>'reasoning_tokens')::bigint), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
@@ -327,6 +373,9 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     dims: { server: r.server, tool: r.tool },
     value: {
       calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      tokenized_events: r.tokenized_events, input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens, cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       latency_instant: r.latency_instant, latency_fast: r.latency_fast,
       latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
       latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,
@@ -432,6 +481,12 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     )
     SELECT p.period, r.agent, r.model,
            COUNT(*)::int AS sessions,
+           COUNT(*) FILTER (WHERE r.input_tokens IS NOT NULL OR r.output_tokens IS NOT NULL)::int AS tokenized_sessions,
+           COUNT(*) FILTER (WHERE r.reasoning_tokens IS NOT NULL)::int AS reasoning_sessions,
+           COALESCE(SUM(r.input_tokens), 0)::bigint AS input_tokens,
+           COALESCE(SUM(r.output_tokens), 0)::bigint AS output_tokens,
+           COALESCE(SUM(r.cached_input_tokens), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM(r.reasoning_tokens), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
            ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
            COUNT(DISTINCT r.contributor_id)::int AS contributors
@@ -444,6 +499,12 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     dims: { agent: r.agent, model: r.model },
     value: {
       sessions: r.sessions,
+      tokenized_sessions: r.tokenized_sessions,
+      reasoning_sessions: r.reasoning_sessions,
+      input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens,
+      cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
     },
@@ -459,15 +520,31 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
       ('rolling:30d:current', ${d30Current.startMs}::bigint, ${d30Current.endMs}::bigint),
       ('rolling:30d:previous', ${d30Previous.startMs}::bigint, ${d30Previous.endMs}::bigint)
     )
-    SELECT p.period, category,
+    SELECT p.period, tool_call.category,
            COUNT(*)::int AS events,
            COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           COUNT(*) FILTER (WHERE tool_call.input_tokens IS NOT NULL OR tool_call.output_tokens IS NOT NULL)::int AS tokenized_events,
+           COALESCE(SUM(tool_call.input_tokens), 0)::bigint AS input_tokens,
+           COALESCE(SUM(tool_call.output_tokens), 0)::bigint AS output_tokens,
+           COALESCE(SUM(tool_call.cached_input_tokens), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM(tool_call.reasoning_tokens), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN r.terminal_state = 'completed' THEN 1.0 ELSE 0.0 END), 3)::float AS completion_rate,
            ROUND(AVG(CASE WHEN r.check_result = 'passed' THEN 1.0 ELSE 0.0 END), 3)::float AS check_pass_rate,
            COUNT(DISTINCT r.contributor_id)::int AS contributors
     FROM periods p
-    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms,
-         unnest(r.tool_category_sequence) AS category
+    JOIN network_receipts r ON r.observed_at >= p.start_ms AND r.observed_at < p.end_ms
+    CROSS JOIN LATERAL (
+      SELECT attr->>'category' AS category,
+             (attr->>'input_tokens')::bigint AS input_tokens,
+             (attr->>'output_tokens')::bigint AS output_tokens,
+             (attr->>'cached_input_tokens')::bigint AS cached_input_tokens,
+             (attr->>'reasoning_tokens')::bigint AS reasoning_tokens
+      FROM jsonb_array_elements(r.tool_attributions) AS attr
+      UNION ALL
+      SELECT legacy_category, NULL::bigint, NULL::bigint, NULL::bigint, NULL::bigint
+      FROM unnest(r.tool_category_sequence) AS legacy_category
+      WHERE jsonb_array_length(r.tool_attributions) = 0
+    ) AS tool_call
     GROUP BY 1, 2
     HAVING COUNT(DISTINCT r.contributor_id) >= ${K}`
   await write('receipt_tool_categories', rollingCategories.map(r => ({
@@ -476,6 +553,11 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     value: {
       events: r.events,
       sessions: r.sessions,
+      tokenized_events: r.tokenized_events,
+      input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens,
+      cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       completion_rate: r.completion_rate,
       check_pass_rate: r.check_pass_rate,
     },
@@ -494,6 +576,11 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     SELECT p.period, mcp_call->>'server' AS server,
            COUNT(*)::int AS calls,
            COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           COUNT(*) FILTER (WHERE mcp_call->>'input_tokens' IS NOT NULL OR mcp_call->>'output_tokens' IS NOT NULL)::int AS tokenized_events,
+           COALESCE(SUM((mcp_call->>'input_tokens')::bigint), 0)::bigint AS input_tokens,
+           COALESCE(SUM((mcp_call->>'output_tokens')::bigint), 0)::bigint AS output_tokens,
+           COALESCE(SUM((mcp_call->>'cached_input_tokens')::bigint), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM((mcp_call->>'reasoning_tokens')::bigint), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
@@ -511,6 +598,9 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     period: String(r.period), dims: { server: r.server },
     value: {
       calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      tokenized_events: r.tokenized_events, input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens, cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       latency_instant: r.latency_instant, latency_fast: r.latency_fast,
       latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
       latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,
@@ -530,6 +620,11 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     SELECT p.period, mcp_call->>'server' AS server, mcp_call->>'tool' AS tool,
            COUNT(*)::int AS calls,
            COUNT(DISTINCT r.receipt_id)::int AS sessions,
+           COUNT(*) FILTER (WHERE mcp_call->>'input_tokens' IS NOT NULL OR mcp_call->>'output_tokens' IS NOT NULL)::int AS tokenized_events,
+           COALESCE(SUM((mcp_call->>'input_tokens')::bigint), 0)::bigint AS input_tokens,
+           COALESCE(SUM((mcp_call->>'output_tokens')::bigint), 0)::bigint AS output_tokens,
+           COALESCE(SUM((mcp_call->>'cached_input_tokens')::bigint), 0)::bigint AS cached_input_tokens,
+           COALESCE(SUM((mcp_call->>'reasoning_tokens')::bigint), 0)::bigint AS reasoning_tokens,
            ROUND(AVG(CASE WHEN (mcp_call->>'success')::boolean THEN 1.0 ELSE 0.0 END), 3)::float AS success_rate,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'instant')::int AS latency_instant,
            COUNT(*) FILTER (WHERE mcp_call->>'latency_bucket' = 'fast')::int AS latency_fast,
@@ -547,6 +642,9 @@ export async function computeRollups(now: Date = new Date()): Promise<number> {
     period: String(r.period), dims: { server: r.server, tool: r.tool },
     value: {
       calls: r.calls, sessions: r.sessions, success_rate: r.success_rate,
+      tokenized_events: r.tokenized_events, input_tokens: r.input_tokens,
+      output_tokens: r.output_tokens, cached_input_tokens: r.cached_input_tokens,
+      reasoning_tokens: r.reasoning_tokens,
       latency_instant: r.latency_instant, latency_fast: r.latency_fast,
       latency_moderate: r.latency_moderate, latency_slow: r.latency_slow,
       latency_very_slow: r.latency_very_slow, latency_unknown: r.latency_unknown,

@@ -88,6 +88,12 @@ export interface ReceiptModelRank {
   completionRate: number
   checkPassRate: number
   contributors: number
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  reasoningTokens?: number
+  tokenizedSessions?: number
+  reasoningSessions?: number
 }
 
 export interface ReceiptCategoryRank {
@@ -97,6 +103,11 @@ export interface ReceiptCategoryRank {
   completionRate: number
   checkPassRate: number
   contributors: number
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  reasoningTokens?: number
+  tokenizedEvents?: number
 }
 
 export type ReceiptMcpLatencyBucket = 'instant' | 'fast' | 'moderate' | 'slow' | 'very_slow' | 'unknown'
@@ -108,6 +119,11 @@ export interface ReceiptMcpServerRank {
   successRate: number
   latencyBucket: ReceiptMcpLatencyBucket
   contributors: number
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  reasoningTokens?: number
+  tokenizedEvents?: number
 }
 
 export interface ReceiptMcpToolRank extends ReceiptMcpServerRank {
@@ -335,39 +351,81 @@ export async function readReceiptNetwork(period: string): Promise<ReceiptNetwork
       checkPassRate: rate(overview, 'check_pass_rate'),
       contributors: overview.contributors,
     },
-    models: modelCells.map(cell => ({
-      agent: cell.dims.agent,
-      model: cell.dims.model,
-      sessions: Number(cell.value.sessions),
-      completionRate: rate(cell, 'completion_rate'),
-      checkPassRate: rate(cell, 'check_pass_rate'),
-      contributors: cell.contributors,
-    })).sort((a, b) => b.sessions - a.sessions),
-    toolCategories: categoryCells.map(cell => ({
-      category: cell.dims.category,
-      events: Number(cell.value.events),
-      sessions: Number(cell.value.sessions),
-      completionRate: rate(cell, 'completion_rate'),
-      checkPassRate: rate(cell, 'check_pass_rate'),
-      contributors: cell.contributors,
-    })).sort((a, b) => b.events - a.events),
-    mcpServers: mcpServerCells.map(cell => ({
-      server: cell.dims.server,
-      calls: Number(cell.value.calls),
-      sessions: Number(cell.value.sessions),
-      successRate: rate(cell, 'success_rate'),
-      latencyBucket: latencyBucket(cell),
-      contributors: cell.contributors,
-    })).sort((a, b) => b.calls - a.calls),
-    mcpTools: mcpToolCells.map(cell => ({
-      server: cell.dims.server,
-      tool: cell.dims.tool,
-      calls: Number(cell.value.calls),
-      sessions: Number(cell.value.sessions),
-      successRate: rate(cell, 'success_rate'),
-      latencyBucket: latencyBucket(cell),
-      contributors: cell.contributors,
-    })).sort((a, b) => b.calls - a.calls),
+    models: modelCells.map(cell => {
+      const tokenizedSessions = Number(cell.value.tokenized_sessions ?? 0)
+      const reasoningSessions = Number(cell.value.reasoning_sessions ?? 0)
+      return {
+        agent: cell.dims.agent,
+        model: cell.dims.model,
+        sessions: Number(cell.value.sessions),
+        ...(tokenizedSessions > 0 ? {
+          inputTokens: Number(cell.value.input_tokens ?? 0),
+          outputTokens: Number(cell.value.output_tokens ?? 0),
+          cachedInputTokens: Number(cell.value.cached_input_tokens ?? 0),
+          tokenizedSessions,
+          reasoningSessions,
+          ...(reasoningSessions > 0 ? { reasoningTokens: Number(cell.value.reasoning_tokens ?? 0) } : {}),
+        } : {}),
+        completionRate: rate(cell, 'completion_rate'),
+        checkPassRate: rate(cell, 'check_pass_rate'),
+        contributors: cell.contributors,
+      }
+    }).sort((a, b) => b.sessions - a.sessions),
+    toolCategories: categoryCells.map(cell => {
+      const tokenizedEvents = Number(cell.value.tokenized_events ?? 0)
+      return {
+        category: cell.dims.category,
+        events: Number(cell.value.events),
+        sessions: Number(cell.value.sessions),
+        ...(tokenizedEvents > 0 ? {
+          inputTokens: Number(cell.value.input_tokens ?? 0),
+          outputTokens: Number(cell.value.output_tokens ?? 0),
+          cachedInputTokens: Number(cell.value.cached_input_tokens ?? 0),
+          reasoningTokens: Number(cell.value.reasoning_tokens ?? 0),
+          tokenizedEvents,
+        } : {}),
+        completionRate: rate(cell, 'completion_rate'),
+        checkPassRate: rate(cell, 'check_pass_rate'),
+        contributors: cell.contributors,
+      }
+    }).sort((a, b) => ((b.inputTokens ?? 0) + (b.outputTokens ?? 0) || b.events) - ((a.inputTokens ?? 0) + (a.outputTokens ?? 0) || a.events)),
+    mcpServers: mcpServerCells.map(cell => {
+      const tokenizedEvents = Number(cell.value.tokenized_events ?? 0)
+      return {
+        server: cell.dims.server,
+        calls: Number(cell.value.calls),
+        sessions: Number(cell.value.sessions),
+        ...(tokenizedEvents > 0 ? {
+          inputTokens: Number(cell.value.input_tokens ?? 0),
+          outputTokens: Number(cell.value.output_tokens ?? 0),
+          cachedInputTokens: Number(cell.value.cached_input_tokens ?? 0),
+          reasoningTokens: Number(cell.value.reasoning_tokens ?? 0),
+          tokenizedEvents,
+        } : {}),
+        successRate: rate(cell, 'success_rate'),
+        latencyBucket: latencyBucket(cell),
+        contributors: cell.contributors,
+      }
+    }).sort((a, b) => ((b.inputTokens ?? 0) + (b.outputTokens ?? 0) || b.calls) - ((a.inputTokens ?? 0) + (a.outputTokens ?? 0) || a.calls)),
+    mcpTools: mcpToolCells.map(cell => {
+      const tokenizedEvents = Number(cell.value.tokenized_events ?? 0)
+      return {
+        server: cell.dims.server,
+        tool: cell.dims.tool,
+        calls: Number(cell.value.calls),
+        sessions: Number(cell.value.sessions),
+        ...(tokenizedEvents > 0 ? {
+          inputTokens: Number(cell.value.input_tokens ?? 0),
+          outputTokens: Number(cell.value.output_tokens ?? 0),
+          cachedInputTokens: Number(cell.value.cached_input_tokens ?? 0),
+          reasoningTokens: Number(cell.value.reasoning_tokens ?? 0),
+          tokenizedEvents,
+        } : {}),
+        successRate: rate(cell, 'success_rate'),
+        latencyBucket: latencyBucket(cell),
+        contributors: cell.contributors,
+      }
+    }).sort((a, b) => ((b.inputTokens ?? 0) + (b.outputTokens ?? 0) || b.calls) - ((a.inputTokens ?? 0) + (a.outputTokens ?? 0) || a.calls)),
     intents: intentCells.map(cell => ({
       intent: cell.dims.intent,
       sessions: Number(cell.value.sessions),

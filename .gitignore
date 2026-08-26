@@ -8,3 +8,6 @@ out
 .vercel
 .gstack/
 .wrangler/
+.playwright-cli/
+output/
+TODOS.md

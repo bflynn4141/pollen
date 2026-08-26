@@ -189,4 +189,21 @@ export function migrateSchema(db: Database.Database): void {
   if (!hasColumn(db, 'sessions', 'cached_input_tokens')) {
     db.prepare('ALTER TABLE sessions ADD COLUMN cached_input_tokens INTEGER').run()
   }
+  if (!hasColumn(db, 'sessions', 'reasoning_tokens')) {
+    db.prepare('ALTER TABLE sessions ADD COLUMN reasoning_tokens INTEGER').run()
+  }
+
+  // --- v6: response-attributed model tokens for tool and MCP rankings ---
+  if (!hasColumn(db, 'tool_events', 'attributed_input_tokens')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN attributed_input_tokens INTEGER').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'attributed_output_tokens')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN attributed_output_tokens INTEGER').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'attributed_cached_input_tokens')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN attributed_cached_input_tokens INTEGER').run()
+  }
+  if (!hasColumn(db, 'tool_events', 'attributed_reasoning_tokens')) {
+    db.prepare('ALTER TABLE tool_events ADD COLUMN attributed_reasoning_tokens INTEGER').run()
+  }
 }

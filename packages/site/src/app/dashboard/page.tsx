@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import {
-  fetchNetworkDashboard,
+  fetchDashboard,
   type RankingSection,
 } from '@/lib/network-dashboard'
 import {
@@ -13,6 +13,7 @@ import styles from './dashboard.module.css'
 export const revalidate = 300
 
 const number = new Intl.NumberFormat('en-US')
+const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 function EntityIcon({ id, provider, section }: { id: string; provider?: string; section?: RankingSection }) {
   const tone = provider === 'Anthropic' ? styles.iconAnthropic
     : provider === 'OpenAI' ? styles.iconOpenAI
@@ -36,7 +37,12 @@ function PanelTitle({ icon, title, href }: { icon: DashboardIconName; title: str
 }
 
 export default async function DashboardPage() {
-  const dashboard = await fetchNetworkDashboard()
+  const dashboard = await fetchDashboard()
+  const isPersonal = dashboard.scope === 'personal'
+  const moverWindow = isPersonal ? '7d' : '24h'
+  const scopedHref = (path: string) => path
+  const contributorCount = dashboard.overview?.contributors ?? (isPersonal ? 1 : 0)
+  const contributorLabel = `${contributorCount} contributor${contributorCount === 1 ? '' : 's'}`
   const sections: Array<{ id: RankingSection; label: string; icon: DashboardIconName }> = [
     { id: 'models', label: 'Models', icon: 'models' },
     { id: 'mcps', label: 'MCPs', icon: 'tools' },
@@ -46,7 +52,7 @@ export default async function DashboardPage() {
   ]
   const movers = sections
     .flatMap(section => dashboard.rankings[section.id].entries.flatMap(entry => {
-      const metric = entry.windows['24h']
+      const metric = entry.windows[moverWindow]
       return metric ? [{ section, entry, metric }] : []
     }))
     .filter(item => item.metric.trendPct !== null)
@@ -56,10 +62,17 @@ export default async function DashboardPage() {
     const metric = entry.windows['7d']
     return metric ? [{ entry, metric }] : []
   }).sort((left, right) => right.metric.adoptionPct - left.metric.adoptionPct).slice(0, 6)
+  const hasModelTokens = models.some(({ metric }) =>
+    (metric.tokenizedSessions ?? 0) > 0 && metric.totalTokens != null
+  )
   const tools = dashboard.rankings.tools.entries.flatMap(entry => {
     const metric = entry.windows['7d']
     return metric ? [{ entry, metric }] : []
-  }).sort((left, right) => right.metric.adoptionPct - left.metric.adoptionPct).slice(0, 6)
+  }).sort((left, right) => right.metric.adoptionPct - left.metric.adoptionPct).slice(0, 3)
+  const mcps = dashboard.rankings.mcps.entries.flatMap(entry => {
+    const metric = entry.windows['7d']
+    return metric ? [{ entry, metric }] : []
+  }).sort((left, right) => right.metric.adoptionPct - left.metric.adoptionPct).slice(0, 3)
 
   return (
     <div className={styles.terminalShell}>
@@ -69,40 +82,42 @@ export default async function DashboardPage() {
         </Link>
 
         <nav className={styles.nav} aria-label="Dashboard sections">
-          <Link href="/network" aria-label="Live production network"><span><DashboardIcon name="market" /></span>Live network</Link>
-          <Link href="/dashboard" className={styles.navActive} aria-label="Market overview"><span><DashboardIcon name="market" /></span>Overview</Link>
-          <Link href="/dashboard/models" aria-label="Model rankings"><span><DashboardIcon name="models" /></span>Models</Link>
-          <Link href="/dashboard/mcps" aria-label="MCP rankings"><span><DashboardIcon name="tools" /></span>MCPs</Link>
-          <Link href="/dashboard/tools" aria-label="Tool rankings"><span><DashboardIcon name="tools" /></span>Tools</Link>
-          <Link href="/dashboard/workflows" aria-label="Workflow rankings"><span><DashboardIcon name="workflow" /></span>Workflows</Link>
-          <Link href="/dashboard/intents" aria-label="Intent rankings"><span><DashboardIcon name="intent" /></span>Intents</Link>
+          <Link href={scopedHref('/dashboard')} className={styles.navActive} aria-label="Market overview"><span><DashboardIcon name="market" /></span>Overview</Link>
+          <Link href={scopedHref('/dashboard/models')} aria-label="Model rankings"><span><DashboardIcon name="models" /></span>Models</Link>
+          <Link href={scopedHref('/dashboard/mcps')} aria-label="MCP rankings"><span><DashboardIcon name="tools" /></span>MCPs</Link>
+          <Link href={scopedHref('/dashboard/tools')} aria-label="Tool rankings"><span><DashboardIcon name="tools" /></span>Tools</Link>
+          <Link href={scopedHref('/dashboard/workflows')} aria-label="Workflow rankings"><span><DashboardIcon name="workflow" /></span>Workflows</Link>
+          <Link href={scopedHref('/dashboard/intents')} aria-label="Intent rankings"><span><DashboardIcon name="intent" /></span>Intents</Link>
         </nav>
 
       </aside>
 
       <main className={styles.main}>
         <header className={styles.mobileTopbar}>
-          <Link href="/dashboard" className={styles.mobileBrand} aria-label="Pollen dashboard"><span className={styles.brandMark}>P</span><strong>Pollen</strong></Link>
+          <Link href={scopedHref('/dashboard')} className={styles.mobileBrand} aria-label="Pollen dashboard"><span className={styles.brandMark}>P</span><strong>Pollen</strong></Link>
         </header>
 
         <section className={styles.pageHeader}>
           <h1>Agent Market Index</h1>
-          <span>{dashboard.status === 'live' ? 'LIVE' : `K≥${dashboard.kAnonymity}`}</span>
+          <div className={styles.headerActions}>
+            <span className={styles.scopeBadge}>{contributorLabel}</span>
+          </div>
         </section>
 
         {dashboard.status === 'live' ? <div className={styles.dashboardGrid}>
           <section id="models" className={`${styles.panel} ${styles.modelPanel}`}>
-            <PanelTitle icon="models" title="Model adoption" href="/dashboard/models" />
+            <PanelTitle icon="models" title={isPersonal ? 'Model usage' : 'Model adoption'} href={scopedHref('/dashboard/models')} />
             <div className={styles.tableScroll}>
               <table className={styles.dataTable}>
-                <thead><tr><th>#</th><th>Model</th><th>Adoption</th><th>Users</th><th>Sessions</th><th>Completion</th></tr></thead>
+                <thead><tr><th>#</th><th>Model</th><th>{isPersonal ? 'Share' : 'Adoption'}</th>{isPersonal ? null : <th>Users</th>}{hasModelTokens ? <th>Tokens</th> : null}<th>Sessions</th><th>{isPersonal ? 'Tool success' : 'Completion'}</th></tr></thead>
                 <tbody>
                   {models.map(({ entry, metric }, index) => (
                     <tr key={entry.id}>
                       <td className={styles.rank}>{index + 1}</td>
                       <td><div className={styles.entity}><EntityIcon id={entry.id} provider={entry.secondary} /><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></div></td>
                       <td><div className={styles.metricBar}><strong>{metric.adoptionPct}%</strong><span><i style={{ width: `${metric.adoptionPct}%` }} /></span></div></td>
-                      <td className={styles.mono}>{metric.contributors}/{metric.eligibleContributors}</td>
+                      {isPersonal ? null : <td className={styles.mono}>{metric.contributors}/{metric.eligibleContributors}</td>}
+                      {hasModelTokens ? <td className={styles.mono} title={`${number.format(metric.totalTokens ?? 0)} tokens across ${metric.tokenizedSessions ?? 0}/${metric.volume} sessions`}>{metric.totalTokens == null ? '—' : compactNumber.format(metric.totalTokens)}</td> : null}
                       <td className={styles.mono}>{metric.volume}</td>
                       <td><span className={styles.score}>{metric.completionPct}%</span></td>
                     </tr>
@@ -113,14 +128,26 @@ export default async function DashboardPage() {
           </section>
 
           <aside id="tools" className={`${styles.panel} ${styles.toolPanel}`}>
-            <PanelTitle icon="tools" title="Top tools" href="/dashboard/tools" />
+            <PanelTitle icon="tools" title="Top tools" href={scopedHref('/dashboard/tools')} />
             <div className={styles.compactRows}>
               {tools.map(({ entry, metric }, index) => (
                 <div className={styles.toolRow} key={entry.id}>
                   <span className={styles.rank}>{index + 1}</span>
                   <EntityIcon id={entry.iconId ?? entry.id} />
                   <span className={styles.toolName}><strong>{entry.label}</strong><small>{entry.secondary}</small></span>
-                  <span className={styles.toolCalls}><strong>{number.format(metric.volume)}</strong><small>calls</small></span>
+                  <span className={styles.toolCalls} title={(metric.tokenizedEvents ?? 0) > 0 ? `${number.format(metric.volume)} attributed tokens across ${number.format(metric.calls ?? 0)} calls` : undefined}><strong>{(metric.tokenizedEvents ?? 0) > 0 ? compactNumber.format(metric.volume) : number.format(metric.volume)}</strong><small>{(metric.tokenizedEvents ?? 0) > 0 ? 'tokens' : 'calls'}</small></span>
+                  <span className={styles.toolAdoption}>{metric.adoptionPct}%</span>
+                </div>
+              ))}
+            </div>
+            <PanelTitle icon="tools" title="Top MCPs" href={scopedHref('/dashboard/mcps')} />
+            <div className={styles.compactRows}>
+              {mcps.map(({ entry, metric }, index) => (
+                <div className={styles.toolRow} key={entry.id}>
+                  <span className={styles.rank}>{index + 1}</span>
+                  <EntityIcon id={entry.iconId ?? entry.id} />
+                  <span className={styles.toolName}><strong>{entry.label}</strong><small>{entry.secondary}</small></span>
+                  <span className={styles.toolCalls} title={(metric.tokenizedEvents ?? 0) > 0 ? `${number.format(metric.volume)} attributed tokens across ${number.format(metric.calls ?? 0)} calls` : undefined}><strong>{(metric.tokenizedEvents ?? 0) > 0 ? compactNumber.format(metric.volume) : number.format(metric.volume)}</strong><small>{(metric.tokenizedEvents ?? 0) > 0 ? 'tokens' : 'calls'}</small></span>
                   <span className={styles.toolAdoption}>{metric.adoptionPct}%</span>
                 </div>
               ))}
@@ -128,11 +155,11 @@ export default async function DashboardPage() {
           </aside>
 
           <section className={`${styles.panel} ${styles.moversPanel}`}>
-            <PanelTitle icon="market" title="Fastest movers · 24H" />
+            <PanelTitle icon="market" title={isPersonal ? 'Activity shifts · 7D' : 'Fastest movers · 24H'} />
             <div className={styles.moversTable}>
-              <div className={styles.moversHead}><span>Entity</span><span>Market</span><span>Panel reach</span><span>Completion</span><span>24H change</span></div>
+              <div className={styles.moversHead}><span>Entity</span><span>Market</span><span>{isPersonal ? 'Usage share' : 'Panel reach'}</span><span>{isPersonal ? 'Tool success' : 'Completion'}</span><span>{isPersonal ? '7D change' : '24H change'}</span></div>
               {movers.map(({ section, entry, metric }) => (
-                <Link href={`/dashboard/${section.id}?window=24h`} className={styles.moverRow} key={`${section.id}-${entry.id}`}>
+                <Link href={`/dashboard/${section.id}?window=${moverWindow}`} className={styles.moverRow} key={`${section.id}-${entry.id}`}>
                   <span className={styles.moverEntity}><EntityIcon id={entry.iconId ?? entry.id} provider={entry.secondary} section={section.id} /><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></span>
                   <span className={styles.marketType}><DashboardIcon name={section.icon} size={11} />{section.label}</span>
                   <span className={styles.moverReach}><strong>{metric.adoptionPct}%</strong><i><b style={{ width: `${metric.adoptionPct}%` }} /></i></span>
@@ -144,10 +171,10 @@ export default async function DashboardPage() {
           </section>
         </div> : (
           <section className={styles.networkState}>
-            <span>{dashboard.status === 'unavailable' ? 'NETWORK UNAVAILABLE' : 'NETWORK WARMING UP'}</span>
-            <h2>{dashboard.status === 'unavailable' ? 'Live rankings are temporarily unavailable.' : 'No public rankings yet.'}</h2>
-            <p>{dashboard.status === 'unavailable' ? 'Try again shortly.' : `Rankings publish when at least ${dashboard.kAnonymity} contributors qualify.`}</p>
-            <Link href="/docs/quickstart">Join the network <DashboardIcon name="external" size={12} /></Link>
+            <span>{isPersonal ? 'LOCAL DATA' : dashboard.status === 'unavailable' ? 'NETWORK UNAVAILABLE' : 'NETWORK WARMING UP'}</span>
+            <h2>{isPersonal ? 'No activity in this window.' : dashboard.status === 'unavailable' ? 'Live rankings are temporarily unavailable.' : 'No public rankings yet.'}</h2>
+            <p>{isPersonal ? 'Use Codex or Claude Code, then refresh.' : dashboard.status === 'unavailable' ? 'Try again shortly.' : `Rankings publish when at least ${dashboard.kAnonymity} contributors qualify.`}</p>
+            {isPersonal ? null : <Link href="/docs/quickstart">Join the network <DashboardIcon name="external" size={12} /></Link>}
           </section>
         )}
       </main>

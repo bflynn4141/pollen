@@ -4,6 +4,8 @@ import {
   drainNetworkOutbox,
   enqueueEligibleNetworkReceipts,
   getNetworkOutboxStatus,
+  requeueNetworkReceipt,
+  runNetworkOutboxWorker,
 } from './network-outbox.js'
 
 const NOW = 1_786_512_900_000
@@ -47,9 +49,37 @@ describe('durable network receipt outbox', () => {
     expect(result).toEqual({ attempted: 1, synced: 1, accepted: 1, retryScheduled: 0 })
     expect(upload).toHaveBeenCalledOnce()
     expect(upload.mock.calls[0][1]).toEqual([
-      expect.objectContaining({ schema_version: 2, model: 'gpt-5.6-sol', mcp_calls: [] }),
+      expect.objectContaining({
+        schema_version: 4,
+        model: 'gpt-5.6-sol',
+        mcp_calls: [],
+        tool_attributions: [],
+        token_usage: {
+          input_tokens: null,
+          output_tokens: null,
+          cached_input_tokens: null,
+          reasoning_tokens: null,
+        },
+      }),
     ])
     expect(getNetworkOutboxStatus(db)).toEqual({ pending: 0, synced: 1 })
+    db.close()
+  })
+
+  it('requeues an already-synced receipt after token backfill changes it', async () => {
+    const db = initDb()
+    insertCompletedSession(db, 'session-backfilled')
+    enqueueEligibleNetworkReceipts(db, NOW)
+    await drainNetworkOutbox(db, {
+      contributorId: 'contributor-1',
+      token: `pln_${'a'.repeat(43)}`,
+      now: NOW,
+      upload: async (_token, receipts) => ({ accepted: receipts.length, received: receipts.length }),
+    })
+
+    expect(requeueNetworkReceipt(db, 'session-backfilled', NOW + 1)).toBe(1)
+    expect(getNetworkOutboxStatus(db)).toEqual({ pending: 1, synced: 0 })
+    expect(requeueNetworkReceipt(db, 'session-backfilled', NOW + 2)).toBe(0)
     db.close()
   })
 
@@ -76,6 +106,33 @@ describe('durable network receipt outbox', () => {
     expect(tooSoon.attempted).toBe(0)
     expect(upload).toHaveBeenCalledOnce()
     expect(getNetworkOutboxStatus(db)).toEqual({ pending: 1, synced: 0 })
+    db.close()
+  })
+
+  it('automatically retries a failed upload without permanent polling', async () => {
+    const db = initDb()
+    insertCompletedSession(db, 'session-worker-retry')
+    enqueueEligibleNetworkReceipts(db, NOW)
+    let current = NOW
+    const sleeps: number[] = []
+    const upload = vi.fn()
+      .mockRejectedValueOnce(new Error('API offline'))
+      .mockResolvedValueOnce({ accepted: 1, received: 1 })
+
+    const result = await runNetworkOutboxWorker(db, {
+      contributorId: 'contributor-1',
+      token: `pln_${'a'.repeat(43)}`,
+      upload,
+      now: () => current,
+      sleep: async milliseconds => {
+        sleeps.push(milliseconds)
+        current += milliseconds
+      },
+    })
+
+    expect(upload).toHaveBeenCalledTimes(2)
+    expect(sleeps).toEqual([30_000])
+    expect(result).toEqual({ attempted: 2, synced: 1, accepted: 1, pending: 0 })
     db.close()
   })
 

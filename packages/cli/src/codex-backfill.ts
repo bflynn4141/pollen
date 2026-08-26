@@ -36,6 +36,7 @@ import {
 } from './coarsen.js'
 import { MS_PER_DAY, getOrCreateContributorId } from './config.js'
 import { extractFeatures } from './features.js'
+import { requeueNetworkReceipt } from './network-outbox.js'
 import { coarsenDepth } from './session.js'
 import { computeSessionArc } from './session-arc.js'
 import {
@@ -71,9 +72,29 @@ interface BackfillOpts {
   now?: number
 }
 
+interface FinalizeRecentOpts {
+  sessionsDir?: string
+  now?: number
+  lookbackDays?: number
+  limit?: number
+}
+
+export interface CodexFinalizeResult {
+  checked: number
+  finalized: number
+  warnings: string[]
+}
+
 interface PendingCall {
   name: string
   timestamp: number
+}
+
+interface AttributedTokens {
+  input: number | null
+  output: number | null
+  cachedInput: number | null
+  reasoning: number | null
 }
 
 let terms: TermDictionary | null = null
@@ -93,11 +114,14 @@ interface FileState {
   model: string | null
   seq: number
   pending: Map<string, PendingCall>
+  unattributedCallIds: string[]
+  attributedTokens: Map<string, AttributedTokens>
   // token totals: token_count carries CUMULATIVE totals in
   // info.total_token_usage — keep the latest, don't sum
   inputTokens: number | null
   outputTokens: number | null
   cachedInputTokens: number | null
+  reasoningTokens: number | null
   toolEvents: number
   legacyPromptIndex: number
 }
@@ -177,6 +201,74 @@ export async function backfillCodex(
   return result
 }
 
+/**
+ * Finalize a small number of recently-ended Codex sessions before network
+ * delivery. Codex rollout filenames contain the session id, so this avoids a
+ * historical rescan on every hook. A lifecycle marker makes successful work
+ * one-shot while leaving missing/incomplete files eligible for a later retry.
+ */
+export async function finalizeRecentCodexSessions(
+  db: Database.Database,
+  opts: FinalizeRecentOpts = {},
+): Promise<CodexFinalizeResult> {
+  const now = opts.now ?? Date.now()
+  const lookbackDays = opts.lookbackDays ?? 2
+  const limit = opts.limit ?? 4
+  const sessionsDir = opts.sessionsDir ?? join(process.env.HOME ?? '~', '.codex', 'sessions')
+  const result: CodexFinalizeResult = { checked: 0, finalized: 0, warnings: [] }
+  if (!existsSync(sessionsDir)) return result
+
+  const cutoff = now - lookbackDays * MS_PER_DAY
+  const candidates = db.prepare(`
+    SELECT s.session_id
+    FROM sessions s
+    WHERE s.source = 'codex'
+      AND s.ended_at IS NOT NULL
+      AND s.ended_at >= ?
+      AND NOT EXISTS (
+        SELECT 1 FROM lifecycle_events l
+        WHERE l.session_id = s.session_id
+          AND l.event_type = 'codex_transcript_finalized'
+      )
+    ORDER BY s.ended_at DESC
+    LIMIT ?
+  `).all(cutoff, limit) as Array<{ session_id: string }>
+  const files = collectRolloutFiles(sessionsDir, cutoff)
+  const contributorId = getOrCreateContributorId()
+
+  for (const candidate of candidates) {
+    result.checked++
+    const file = files.find(path => path.includes(candidate.session_id))
+    if (!file) continue
+    let size: number
+    try {
+      size = statSync(file).size
+    } catch {
+      continue
+    }
+    if (size > MAX_ROLLOUT_FILE_BYTES) {
+      result.warnings.push(`Skipped oversized Codex transcript for ${candidate.session_id}`)
+      continue
+    }
+    try {
+      const state = await processRolloutFile(db, file, candidate.session_id)
+      if (state.sessionId !== candidate.session_id) continue
+      insertLifecycleEvent(db, {
+        id: deterministicId(candidate.session_id, 'transcript_finalized'),
+        session_id: candidate.session_id,
+        timestamp: now,
+        event_type: 'codex_transcript_finalized',
+        metadata: null,
+        contributor_id: contributorId,
+      })
+      result.finalized++
+    } catch (error) {
+      result.warnings.push(`Failed to finalize Codex session ${candidate.session_id}: ${(error as Error).message}`)
+    }
+  }
+  return result
+}
+
 /** Walk sessionsDir/YYYY/MM/DD, keeping day-directories within the cutoff */
 function collectRolloutFiles(sessionsDir: string, cutoff: number): string[] {
   const files: string[] = []
@@ -220,7 +312,11 @@ function collectRolloutFiles(sessionsDir: string, cutoff: number): string[] {
   return files
 }
 
-async function processRolloutFile(db: Database.Database, file: string): Promise<FileState> {
+async function processRolloutFile(
+  db: Database.Database,
+  file: string,
+  expectedSessionId?: string,
+): Promise<FileState> {
   const contributorId = getOrCreateContributorId()
   const state: FileState = {
     sessionId: null,
@@ -230,9 +326,12 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
     model: null,
     seq: 0,
     pending: new Map(),
+    unattributedCallIds: [],
+    attributedTokens: new Map(),
     inputTokens: null,
     outputTokens: null,
     cachedInputTokens: null,
+    reasoningTokens: null,
     toolEvents: 0,
     legacyPromptIndex: 0,
   }
@@ -262,6 +361,12 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
     const payloadType = payload.type
 
     if (type === 'session_meta') {
+      const parsedSessionId = typeof payload.session_id === 'string'
+        ? payload.session_id
+        : typeof payload.id === 'string' ? payload.id : null
+      if (expectedSessionId && parsedSessionId !== expectedSessionId) {
+        throw new Error('rollout session id mismatch')
+      }
       handleSessionMeta(db, state, payload, ts, contributorId)
     } else if (type === 'turn_context') {
       if (state.model == null && typeof payload.model === 'string') {
@@ -276,6 +381,7 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
             name: typeof payload.name === 'string' && payload.name.length > 0 ? payload.name : 'unknown',
             timestamp: ts,
           })
+          state.unattributedCallIds.push(payload.call_id)
         }
       } else if (payloadType === 'custom_tool_call_output' || payloadType === 'function_call_output') {
         handleToolOutput(db, state, payload, ts, contributorId)
@@ -292,7 +398,7 @@ async function processRolloutFile(db: Database.Database, file: string): Promise<
           contributorId,
         )
       } else if (payloadType === 'token_count') {
-        handleTokenCount(state, payload)
+        handleTokenCount(db, state, payload)
       } else if (payloadType === 'mcp_tool_call_end') {
         handleMcpToolCallEnd(db, state, payload, ts, contributorId)
       }
@@ -438,26 +544,55 @@ function handleToolOutput(
 
   const text = outputText(payload.output)
   const hasError = text.length > 0 && OUTPUT_ERROR_PATTERN.test(text.slice(0, 4000))
+  const attribution = state.attributedTokens.get(callId)
+  const existing = db.prepare(
+    'SELECT id FROM tool_events WHERE session_id = ? AND tool_use_id = ? LIMIT 1'
+  ).get(state.sessionId, callId) as { id: string } | undefined
 
-  insertToolEvent(db, {
-    id: deterministicId(state.sessionId, callId),
-    session_id: state.sessionId,
-    timestamp: call.timestamp,
-    tool_name: call.name,
-    tool_category: classifyToolCategory(call.name),
-    success: !hasError,
-    error_category: hasError ? classifyError(text) : null,
-    file_extension: null,
-    command_category: null,
-    sequence_number: state.seq++,
-    mcp_server: extractMcpServer(call.name),
-    duration_ms: ts > call.timestamp ? ts - call.timestamp : null,
-    contributor_id: contributorId,
-    response_type: hasError ? 'error_output' : 'command_output',
-    response_size: text.length > 0 ? text.length : null,
-    response_has_error: hasError,
-  })
-  state.toolEvents++
+  if (existing) {
+    db.prepare(`
+      UPDATE tool_events SET
+        duration_ms = COALESCE(duration_ms, ?),
+        attributed_input_tokens = COALESCE(?, attributed_input_tokens),
+        attributed_output_tokens = COALESCE(?, attributed_output_tokens),
+        attributed_cached_input_tokens = COALESCE(?, attributed_cached_input_tokens),
+        attributed_reasoning_tokens = COALESCE(?, attributed_reasoning_tokens)
+      WHERE id = ?
+    `).run(
+      ts > call.timestamp ? ts - call.timestamp : null,
+      attribution?.input ?? null,
+      attribution?.output ?? null,
+      attribution?.cachedInput ?? null,
+      attribution?.reasoning ?? null,
+      existing.id,
+    )
+  } else {
+    insertToolEvent(db, {
+      id: deterministicId(state.sessionId, callId),
+      session_id: state.sessionId,
+      timestamp: call.timestamp,
+      tool_name: call.name,
+      tool_category: classifyToolCategory(call.name),
+      success: !hasError,
+      error_category: hasError ? classifyError(text) : null,
+      file_extension: null,
+      command_category: null,
+      sequence_number: state.seq,
+      mcp_server: extractMcpServer(call.name),
+      duration_ms: ts > call.timestamp ? ts - call.timestamp : null,
+      contributor_id: contributorId,
+      response_type: hasError ? 'error_output' : 'command_output',
+      response_size: text.length > 0 ? text.length : null,
+      response_has_error: hasError,
+      tool_use_id: callId,
+      attributed_input_tokens: attribution?.input ?? null,
+      attributed_output_tokens: attribution?.output ?? null,
+      attributed_cached_input_tokens: attribution?.cachedInput ?? null,
+      attributed_reasoning_tokens: attribution?.reasoning ?? null,
+    })
+    state.toolEvents++
+  }
+  state.seq++
 }
 
 function handleMcpToolCallEnd(
@@ -475,6 +610,7 @@ function handleMcpToolCallEnd(
   const server = typeof invocation.server === 'string' ? invocation.server : 'unknown'
   const tool = typeof invocation.tool === 'string' ? invocation.tool : 'unknown'
   const toolName = `mcp__${server}__${tool}`
+  state.unattributedCallIds.push(callId)
 
   // result: { Ok: { isError?: bool, ... } } | { Err: ... }
   const resultVal = payload.result as Record<string, unknown> | undefined
@@ -487,27 +623,45 @@ function handleMcpToolCallEnd(
     ? (toNum(duration.secs) ?? 0) * 1000 + Math.round((toNum(duration.nanos) ?? 0) / 1e6)
     : null
 
-  insertToolEvent(db, {
-    id: deterministicId(state.sessionId, callId),
-    session_id: state.sessionId,
-    timestamp: ts,
-    tool_name: toolName,
-    tool_category: classifyToolCategory(toolName),
-    success: !failed,
-    error_category: failed ? 'unknown' : null,
-    file_extension: null,
-    command_category: null,
-    sequence_number: state.seq++,
-    mcp_server: server,
-    duration_ms: durationMs,
-    contributor_id: contributorId,
-    response_type: failed ? 'error_output' : null,
-    response_has_error: failed ? true : null,
-  })
-  state.toolEvents++
+  const existing = db.prepare(
+    'SELECT id FROM tool_events WHERE session_id = ? AND tool_use_id = ? LIMIT 1'
+  ).get(state.sessionId, callId) as { id: string } | undefined
+  if (existing) {
+    db.prepare(`
+      UPDATE tool_events SET
+        mcp_server = COALESCE(mcp_server, ?),
+        duration_ms = COALESCE(duration_ms, ?)
+      WHERE id = ?
+    `).run(server, durationMs, existing.id)
+  } else {
+    insertToolEvent(db, {
+      id: deterministicId(state.sessionId, callId),
+      session_id: state.sessionId,
+      timestamp: ts,
+      tool_name: toolName,
+      tool_category: classifyToolCategory(toolName),
+      success: !failed,
+      error_category: failed ? 'unknown' : null,
+      file_extension: null,
+      command_category: null,
+      sequence_number: state.seq,
+      mcp_server: server,
+      duration_ms: durationMs,
+      contributor_id: contributorId,
+      response_type: failed ? 'error_output' : null,
+      response_has_error: failed ? true : null,
+      tool_use_id: callId,
+    })
+    state.toolEvents++
+  }
+  state.seq++
 }
 
-function handleTokenCount(state: FileState, payload: Record<string, unknown>): void {
+function handleTokenCount(
+  db: Database.Database,
+  state: FileState,
+  payload: Record<string, unknown>,
+): void {
   const info = payload.info as Record<string, unknown> | undefined
   if (info == null) return
 
@@ -517,19 +671,51 @@ function handleTokenCount(state: FileState, payload: Record<string, unknown>): v
     state.inputTokens = toNum(total.input_tokens) ?? state.inputTokens
     state.outputTokens = toNum(total.output_tokens) ?? state.outputTokens
     state.cachedInputTokens = toNum(total.cached_input_tokens) ?? state.cachedInputTokens
-    return
+    state.reasoningTokens = toNum(total.reasoning_output_tokens) ?? state.reasoningTokens
   }
 
   // Fallback: no cumulative snapshot — accumulate per-turn deltas
   const last = info.last_token_usage as Record<string, unknown> | undefined
-  if (last != null) {
+  if (last != null && total == null) {
     const input = toNum(last.input_tokens)
     const output = toNum(last.output_tokens)
     const cached = toNum(last.cached_input_tokens)
+    const reasoning = toNum(last.reasoning_output_tokens)
     if (input != null) state.inputTokens = (state.inputTokens ?? 0) + input
     if (output != null) state.outputTokens = (state.outputTokens ?? 0) + output
     if (cached != null) state.cachedInputTokens = (state.cachedInputTokens ?? 0) + cached
+    if (reasoning != null) state.reasoningTokens = (state.reasoningTokens ?? 0) + reasoning
   }
+  if (last == null || !state.sessionId || state.unattributedCallIds.length === 0) return
+
+  const callIds = state.unattributedCallIds.splice(0)
+  const split = (value: number | null, index: number): number | null => {
+    if (value == null) return null
+    return Math.floor(value / callIds.length) + (index < value % callIds.length ? 1 : 0)
+  }
+  const input = toNum(last.input_tokens)
+  const output = toNum(last.output_tokens)
+  const cachedInput = toNum(last.cached_input_tokens)
+  const reasoning = toNum(last.reasoning_output_tokens)
+  const update = db.prepare(`
+    UPDATE tool_events SET
+      attributed_input_tokens = ?, attributed_output_tokens = ?,
+      attributed_cached_input_tokens = ?, attributed_reasoning_tokens = ?
+    WHERE session_id = ? AND tool_use_id = ?
+  `)
+  callIds.forEach((callId, index) => {
+    const tokens: AttributedTokens = {
+      input: split(input, index),
+      output: split(output, index),
+      cachedInput: split(cachedInput, index),
+      reasoning: split(reasoning, index),
+    }
+    state.attributedTokens.set(callId, tokens)
+    update.run(
+      tokens.input, tokens.output, tokens.cachedInput, tokens.reasoning,
+      state.sessionId!, callId,
+    )
+  })
 }
 
 function finalizeSession(db: Database.Database, state: FileState): void {
@@ -549,14 +735,18 @@ function finalizeSession(db: Database.Database, state: FileState): void {
   ).all(state.sessionId) as { mcp_server: string }[]
   const mcpServers = mcpRows.map(r => r.mcp_server)
 
+  const existing = db.prepare('SELECT end_reason FROM sessions WHERE session_id = ?')
+    .get(state.sessionId) as { end_reason: string | null } | undefined
   updateSession(db, {
     session_id: state.sessionId,
     ended_at: endedAt,
-    end_reason: 'codex_backfill',
+    end_reason: existing?.end_reason ?? 'codex_backfill',
     mcp_servers_used: mcpServers.length > 0 ? JSON.stringify(mcpServers) : null,
     input_tokens: state.inputTokens,
     output_tokens: state.outputTokens,
     cached_input_tokens: state.cachedInputTokens,
+    reasoning_tokens: state.reasoningTokens,
     ...arc,
   })
+  requeueNetworkReceipt(db, state.sessionId)
 }

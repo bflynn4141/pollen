@@ -172,7 +172,7 @@ describe('syncToNeon batching', () => {
   it('preserves the ON CONFLICT clause for every table', async () => {
     seedContribution(db, 'c-1', 1000)
     seedToolEvent(db, 't-1', 1000)
-    seedSession(db, 's-1', 1000)
+    seedSession(db, 's-1', 1000, { transcript_path: '/Users/example/private/session.jsonl' })
     db.prepare(`
       INSERT INTO lifecycle_events (id, session_id, timestamp, event_type)
       VALUES ('l-1', 's-1', 1000, 'session_start')
@@ -193,8 +193,10 @@ describe('syncToNeon batching', () => {
 
     const sess = insertsInto('sessions')[0].text
     expect(sess).toContain('ON CONFLICT (session_id) DO UPDATE SET')
-    expect(sess).toContain('transcript_path = COALESCE(EXCLUDED.transcript_path, sessions.transcript_path)')
+    expect(sess).not.toContain('transcript_path')
+    expect(insertsInto('sessions')[0].params).not.toContain('/Users/example/private/session.jsonl')
     expect(sess).toContain('cached_input_tokens = EXCLUDED.cached_input_tokens')
+    expect(sess).toContain('reasoning_tokens = EXCLUDED.reasoning_tokens')
 
     expect(insertsInto('lifecycle_events')[0].text).toContain('ON CONFLICT (id) DO NOTHING')
     expect(insertsInto('x402_events')[0].text).toContain('ON CONFLICT (id) DO NOTHING')

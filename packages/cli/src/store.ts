@@ -62,7 +62,11 @@ CREATE TABLE IF NOT EXISTS tool_events (
   tool_use_id TEXT,
   agent_id TEXT,
   agent_type TEXT,
-  effort_level TEXT
+  effort_level TEXT,
+  attributed_input_tokens INTEGER,
+  attributed_output_tokens INTEGER,
+  attributed_cached_input_tokens INTEGER,
+  attributed_reasoning_tokens INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_tool_session ON tool_events(session_id);
@@ -108,7 +112,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   stop_tool_use_count INTEGER,
   input_tokens INTEGER,
   output_tokens INTEGER,
-  cached_input_tokens INTEGER
+  cached_input_tokens INTEGER,
+  reasoning_tokens INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_session_started ON sessions(started_at);
@@ -468,8 +473,10 @@ export function insertToolEvent(db: Database.Database, event: CoarsenedToolEvent
       mcp_server, duration_ms, contributor_id,
       response_type, response_size, response_file_paths,
       response_has_code, response_has_error, response_summary,
-      tool_use_id, agent_id, agent_type, effort_level
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      tool_use_id, agent_id, agent_type, effort_level,
+      attributed_input_tokens, attributed_output_tokens,
+      attributed_cached_input_tokens, attributed_reasoning_tokens
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     event.id,
     event.session_id,
@@ -494,6 +501,10 @@ export function insertToolEvent(db: Database.Database, event: CoarsenedToolEvent
     event.agent_id ?? null,
     event.agent_type ?? null,
     event.effort_level ?? null,
+    event.attributed_input_tokens ?? null,
+    event.attributed_output_tokens ?? null,
+    event.attributed_cached_input_tokens ?? null,
+    event.attributed_reasoning_tokens ?? null,
   )
 }
 
@@ -582,8 +593,8 @@ export function insertSession(db: Database.Database, session: SessionRecord): vo
       contributor_id, permission_mode,
       edit_count, read_count, search_to_edit_ratio, error_recovery_rate,
       mcp_tool_count, unique_mcp_servers, subagent_count, context_compactions,
-      transcript_path, input_tokens, output_tokens, cached_input_tokens
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      transcript_path, input_tokens, output_tokens, cached_input_tokens, reasoning_tokens
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     session.session_id,
     session.model,
@@ -623,6 +634,7 @@ export function insertSession(db: Database.Database, session: SessionRecord): vo
     session.input_tokens ?? null,
     session.output_tokens ?? null,
     session.cached_input_tokens ?? null,
+    session.reasoning_tokens ?? null,
   )
 }
 
@@ -640,7 +652,7 @@ export function updateSession(db: Database.Database, session: Partial<SessionRec
     'edit_count', 'read_count', 'search_to_edit_ratio', 'error_recovery_rate',
     'mcp_tool_count', 'unique_mcp_servers', 'subagent_count', 'context_compactions',
     'transcript_path', 'stop_tool_use_count',
-    'input_tokens', 'output_tokens', 'cached_input_tokens',
+    'input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens',
   ]
 
   for (const key of updatable) {

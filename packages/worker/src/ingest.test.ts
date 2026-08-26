@@ -34,6 +34,36 @@ const validReceiptV2 = {
   ],
 }
 
+const validReceiptV3 = {
+  ...validReceiptV2,
+  schema_version: 3,
+  token_usage: {
+    input_tokens: 12000,
+    output_tokens: 800,
+    cached_input_tokens: 9000,
+    reasoning_tokens: 250,
+  },
+}
+
+const validReceiptV4 = {
+  ...validReceiptV3,
+  schema_version: 4,
+  mcp_calls: [{
+    ...validReceiptV2.mcp_calls[0],
+    input_tokens: 600,
+    output_tokens: 40,
+    cached_input_tokens: 300,
+    reasoning_tokens: 10,
+  }],
+  tool_attributions: validReceipt.tool_category_sequence.map((category, index) => ({
+    category,
+    input_tokens: index === 2 ? 600 : null,
+    output_tokens: index === 2 ? 40 : null,
+    cached_input_tokens: index === 2 ? 300 : null,
+    reasoning_tokens: index === 2 ? 10 : null,
+  })),
+}
+
 function dependencies(overrides: Partial<IngestDependencies> = {}): IngestDependencies {
   return {
     registerContributor: vi.fn(async () => true),
@@ -51,6 +81,35 @@ describe('network receipt validation', () => {
 
   it('accepts closed MCP call summaries in the v2 schema', () => {
     expect(validateNetworkReceipt(validReceiptV2)).toEqual(validReceiptV2)
+  })
+
+  it('accepts numeric-only token aggregates in the v3 schema', () => {
+    expect(validateNetworkReceipt(validReceiptV3)).toEqual(validReceiptV3)
+  })
+
+  it('accepts response-attributed tool tokens in the v4 schema', () => {
+    expect(validateNetworkReceipt(validReceiptV4)).toEqual(validReceiptV4)
+  })
+
+  it('rejects content and invalid token subsets in v4 tool attribution', () => {
+    expect(() => validateNetworkReceipt({
+      ...validReceiptV4,
+      tool_attributions: [{ ...validReceiptV4.tool_attributions[0], arguments: 'private' }],
+    })).toThrow()
+    expect(() => validateNetworkReceipt({
+      ...validReceiptV4,
+      mcp_calls: [{ ...validReceiptV4.mcp_calls[0], cached_input_tokens: 700 }],
+    })).toThrow()
+  })
+
+  it.each([
+    { ...validReceiptV3.token_usage, input_tokens: -1 },
+    { ...validReceiptV3.token_usage, output_tokens: 1.5 },
+    { ...validReceiptV3.token_usage, cached_input_tokens: 20_000 },
+    { ...validReceiptV3.token_usage, transcript_path: '/private/transcript.jsonl' },
+  ])('rejects unsafe token usage data %#', tokenUsage => {
+    expect(() => validateNetworkReceipt({ ...validReceiptV3, token_usage: tokenUsage }))
+      .toThrow()
   })
 
   it.each([

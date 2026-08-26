@@ -23,6 +23,39 @@ export interface NetworkReceiptV2 {
   check_result: string
 }
 
+export interface NetworkTokenUsageV3 {
+  input_tokens: number | null
+  output_tokens: number | null
+  cached_input_tokens: number | null
+  reasoning_tokens: number | null
+}
+
+export interface NetworkReceiptV3 extends Omit<NetworkReceiptV2, 'schema_version'> {
+  schema_version: 3
+  token_usage: NetworkTokenUsageV3
+}
+
+export interface NetworkAttributedTokensV4 {
+  input_tokens: number | null
+  output_tokens: number | null
+  cached_input_tokens: number | null
+  reasoning_tokens: number | null
+}
+
+export interface NetworkToolAttributionV4 extends NetworkAttributedTokensV4 {
+  category: string
+}
+
+export interface NetworkMcpCallV4 extends NetworkMcpCallV2, NetworkAttributedTokensV4 {}
+
+export interface NetworkReceiptV4 extends Omit<NetworkReceiptV3, 'schema_version' | 'mcp_calls'> {
+  schema_version: 4
+  mcp_calls: NetworkMcpCallV4[]
+  tool_attributions: NetworkToolAttributionV4[]
+}
+
+export type NetworkReceipt = NetworkReceiptV2 | NetworkReceiptV3 | NetworkReceiptV4
+
 export interface NetworkReceiptSummary {
   total: number
   codex: number
@@ -32,7 +65,7 @@ export interface NetworkReceiptSummary {
 }
 
 /** Aggregate-only preview for `pollen sync --dry-run`; contains no IDs. */
-export function summarizeNetworkReceipts(receipts: NetworkReceiptV2[]): NetworkReceiptSummary {
+export function summarizeNetworkReceipts(receipts: NetworkReceipt[]): NetworkReceiptSummary {
   let earliestObservedAt: number | null = null
   let latestObservedAt: number | null = null
   let codex = 0
@@ -60,6 +93,10 @@ interface ReceiptRow {
   duration_bucket: string
   dominant_intent: string
   outcome: string
+  input_tokens: number | null
+  output_tokens: number | null
+  cached_input_tokens: number | null
+  reasoning_tokens: number | null
 }
 
 interface ToolRow {
@@ -70,13 +107,26 @@ interface ToolRow {
   command_category: string | null
   mcp_server: string | null
   duration_ms: number | null
+  attributed_input_tokens: number | null
+  attributed_output_tokens: number | null
+  attributed_cached_input_tokens: number | null
+  attributed_reasoning_tokens: number | null
+}
+
+function attributedTokens(tool: ToolRow): NetworkAttributedTokensV4 {
+  return {
+    input_tokens: tool.attributed_input_tokens,
+    output_tokens: tool.attributed_output_tokens,
+    cached_input_tokens: tool.attributed_cached_input_tokens,
+    reasoning_tokens: tool.attributed_reasoning_tokens,
+  }
 }
 
 function buildReceipt(
   contributorId: string,
   session: ReceiptRow,
   sessionTools: ToolRow[],
-): NetworkReceiptV2 {
+): NetworkReceiptV4 {
   const mcpCalls = sessionTools
     .filter((tool): tool is ToolRow & { mcp_server: string } => tool.mcp_server !== null)
     .slice(0, 64)
@@ -84,9 +134,10 @@ function buildReceipt(
       ...canonicalizeMcpIdentity(tool.mcp_server, tool.tool_name),
       success: tool.success !== 0,
       latency_bucket: latencyBucket(tool.duration_ms),
+      ...attributedTokens(tool),
     }))
   return {
-    schema_version: 2,
+    schema_version: 4,
     receipt_id: deterministicReceiptId(contributorId, session.session_id),
     observed_at: Math.trunc(session.ended_at),
     intent: session.dominant_intent,
@@ -94,6 +145,16 @@ function buildReceipt(
     model: normalizeModel(session.model),
     tool_category_sequence: sessionTools.slice(0, 64).map(tool => tool.tool_category),
     mcp_calls: mcpCalls,
+    tool_attributions: sessionTools.slice(0, 64).map(tool => ({
+      category: tool.tool_category,
+      ...attributedTokens(tool),
+    })),
+    token_usage: {
+      input_tokens: session.input_tokens,
+      output_tokens: session.output_tokens,
+      cached_input_tokens: session.cached_input_tokens,
+      reasoning_tokens: session.reasoning_tokens,
+    },
     duration_bucket: session.duration_bucket,
     terminal_state: session.outcome,
     check_result: checkResult(sessionTools),
@@ -139,10 +200,11 @@ function normalizeModel(model: string): string {
 export function buildNetworkReceipts(
   db: Database.Database,
   contributorId: string,
-): NetworkReceiptV2[] {
+): NetworkReceiptV4[] {
   const sessions = db.prepare(`
     SELECT session_id, model, source, ended_at, duration_bucket,
-           dominant_intent, outcome
+           dominant_intent, outcome, input_tokens, output_tokens,
+           cached_input_tokens, reasoning_tokens
     FROM sessions
     WHERE ended_at IS NOT NULL
       AND model IS NOT NULL
@@ -154,7 +216,9 @@ export function buildNetworkReceipts(
 
   const tools = db.prepare(`
     SELECT session_id, tool_name, tool_category, success, command_category,
-           mcp_server, duration_ms
+           mcp_server, duration_ms, attributed_input_tokens,
+           attributed_output_tokens, attributed_cached_input_tokens,
+           attributed_reasoning_tokens
     FROM tool_events
     ORDER BY session_id, sequence_number
   `).all() as ToolRow[]
@@ -177,10 +241,11 @@ export function buildNetworkReceipt(
   db: Database.Database,
   contributorId: string,
   sessionId: string,
-): NetworkReceiptV2 | null {
+): NetworkReceiptV4 | null {
   const session = db.prepare(`
     SELECT session_id, model, source, ended_at, duration_bucket,
-           dominant_intent, outcome
+           dominant_intent, outcome, input_tokens, output_tokens,
+           cached_input_tokens, reasoning_tokens
     FROM sessions
     WHERE session_id = ?
       AND ended_at IS NOT NULL
@@ -192,7 +257,9 @@ export function buildNetworkReceipt(
   if (!session) return null
   const tools = db.prepare(`
     SELECT session_id, tool_name, tool_category, success, command_category,
-           mcp_server, duration_ms
+           mcp_server, duration_ms, attributed_input_tokens,
+           attributed_output_tokens, attributed_cached_input_tokens,
+           attributed_reasoning_tokens
     FROM tool_events
     WHERE session_id = ?
     ORDER BY sequence_number

@@ -77,6 +77,16 @@ describe('store', () => {
     expect(tables.map(t => t.name)).toContain('contributions')
   })
 
+  it('creates the normalized token usage columns', () => {
+    const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+    expect(columns.map(column => column.name)).toEqual(expect.arrayContaining([
+      'input_tokens',
+      'output_tokens',
+      'cached_input_tokens',
+      'reasoning_tokens',
+    ]))
+  })
+
   it('inserts and reads back a contribution', () => {
     const c = makeContribution({ id: 'test-1' })
     insertContribution(db, c)

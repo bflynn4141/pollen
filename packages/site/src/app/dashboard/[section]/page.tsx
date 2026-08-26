@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
-  fetchNetworkDashboard,
+  fetchDashboard,
   RANKING_SECTION_META,
   RANKING_WINDOWS,
   type RankingEntry,
@@ -77,34 +77,72 @@ export default async function RankingPage({
   searchParams,
 }: {
   params: Promise<{ section: string }>
-  searchParams: Promise<{ window?: string | string[] }>
+  searchParams: Promise<{ window?: string | string[]; view?: string | string[] }>
 }) {
   const [{ section }, query] = await Promise.all([params, searchParams])
   if (!sections.includes(section as RankingSection)) notFound()
 
   const activeSection = section as RankingSection
   const selectedWindow: RankingWindow = isRankingWindow(query.window) ? query.window : '7d'
-  const dashboard = await fetchNetworkDashboard()
-  const definition = dashboard.rankings[activeSection]
+  const dashboard = await fetchDashboard()
+  const isPersonal = dashboard.scope === 'personal'
+  const scopedHref = (path: string) => path
+  const mcpView = query.view === 'tools' ? 'tools' : 'servers'
+  const definition = activeSection === 'mcps' && mcpView === 'tools'
+    ? dashboard.mcpTools
+    : dashboard.rankings[activeSection]
+  const rankingHref = (window: RankingWindow, view = mcpView) => {
+    const search = new URLSearchParams({ window })
+    if (activeSection === 'mcps') search.set('view', view)
+    return `/dashboard/${activeSection}?${search.toString()}`
+  }
   const icon = sectionIcons[activeSection]
-  const ranked = definition.entries
+  const candidates = definition.entries
     .flatMap(entry => entry.windows[selectedWindow] ? [entry] : [])
-    .sort((left, right) => right.windows[selectedWindow]!.adoptionPct - left.windows[selectedWindow]!.adoptionPct)
+  const isAttributedSection = activeSection === 'tools' || activeSection === 'mcps'
+  const showAttributedTokens = isAttributedSection && candidates.some(entry =>
+    (entry.windows[selectedWindow]!.tokenizedEvents ?? 0) > 0
+  )
+  const ranked = candidates.sort((left, right) => showAttributedTokens
+    ? right.windows[selectedWindow]!.volume - left.windows[selectedWindow]!.volume
+    : right.windows[selectedWindow]!.adoptionPct - left.windows[selectedWindow]!.adoptionPct)
   const totalVolume = ranked.reduce((sum, entry) => sum + entry.windows[selectedWindow]!.volume, 0)
+  const totalCalls = ranked.reduce((sum, entry) => sum + (entry.windows[selectedWindow]!.calls ?? 0), 0)
+  const attributedCalls = ranked.reduce((sum, entry) => sum + (entry.windows[selectedWindow]!.tokenizedEvents ?? 0), 0)
   const topMover = [...ranked].filter(entry => entry.windows[selectedWindow]!.trendPct !== null)
     .sort((left, right) => (right.windows[selectedWindow]!.trendPct ?? 0) - (left.windows[selectedWindow]!.trendPct ?? 0))[0]
-  const mostReliable = [...ranked].sort((left, right) => right.windows[selectedWindow]!.completionPct - left.windows[selectedWindow]!.completionPct)[0]
-  const isMcpRanking = activeSection === 'mcps' || activeSection === 'tools'
+  const reliabilityFloor = isPersonal ? Math.max(5, totalCalls * 0.01) : 0
+  const reliabilityPool = ranked.filter(entry => (entry.windows[selectedWindow]!.calls ?? entry.windows[selectedWindow]!.volume) >= reliabilityFloor)
+  const mostReliable = [...(reliabilityPool.length ? reliabilityPool : ranked)]
+    .sort((left, right) => right.windows[selectedWindow]!.completionPct - left.windows[selectedWindow]!.completionPct)[0]
+  const isMcpRanking = activeSection === 'mcps'
+  const showTokenMetrics = activeSection === 'models' && ranked.some(entry =>
+    (entry.windows[selectedWindow]!.tokenizedSessions ?? 0) > 0
+  )
+  const totalTokens = showTokenMetrics
+    ? ranked.reduce((sum, entry) => sum + (entry.windows[selectedWindow]!.totalTokens ?? 0), 0)
+    : 0
+  const measuredSessions = showTokenMetrics
+    ? ranked.reduce((sum, entry) => sum + (entry.windows[selectedWindow]!.tokenizedSessions ?? 0), 0)
+    : 0
+  const contributorCount = ranked.reduce(
+    (highest, entry) => Math.max(highest, entry.windows[selectedWindow]!.eligibleContributors),
+    dashboard.overview?.contributors ?? (isPersonal ? 1 : 0),
+  )
+  const contributorLabel = `${contributorCount} contributor${contributorCount === 1 ? '' : 's'}`
+  const volumeLabel = isAttributedSection
+    ? showAttributedTokens ? 'Attributed tokens' : 'Calls'
+    : definition.volumeLabel
+  const shareLabel = showAttributedTokens ? 'Compute share' : isPersonal ? 'Usage share' : definition.adoptionLabel
 
   return (
     <div className={home.terminalShell}>
       <aside className={home.sidebar}>
         <Link href="/" className={home.brand} aria-label="Pollen home"><span className={home.brandMark}>P</span><strong>Pollen</strong></Link>
         <nav className={home.nav} aria-label="Dashboard pages">
-          <Link href="/network" aria-label="Live production network"><span><DashboardIcon name="market" /></span>Live network</Link>
-          <Link href="/dashboard" aria-label="Overview"><span><DashboardIcon name="market" /></span>Overview</Link>
+          <Link href={scopedHref('/dashboard')} aria-label="Overview"><span><DashboardIcon name="market" /></span>Overview</Link>
           {sections.map(item => (
-            <Link key={item} href={`/dashboard/${item}`} className={item === activeSection ? home.navActive : undefined} aria-label={RANKING_SECTION_META[item].label}>
+            <Link key={item} href={scopedHref(`/dashboard/${item}`)} className={item === activeSection ? home.navActive : undefined} aria-label={RANKING_SECTION_META[item].label}>
               <span><DashboardIcon name={sectionIcons[item]} /></span>{RANKING_SECTION_META[item].label.replace(' rankings', 's')}
             </Link>
           ))}
@@ -113,20 +151,28 @@ export default async function RankingPage({
 
       <main className={home.main}>
         <header className={home.mobileTopbar}>
-          <Link href="/dashboard" className={home.mobileBrand} aria-label="Pollen dashboard"><span className={home.brandMark}>P</span><strong>Pollen</strong></Link>
+          <Link href={scopedHref('/dashboard')} className={home.mobileBrand} aria-label="Pollen dashboard"><span className={home.brandMark}>P</span><strong>Pollen</strong></Link>
         </header>
 
         <section className={styles.rankingHeader}>
           <div className={styles.titleRow}>
             <div className={styles.titleCopy}><span className={styles.titleIcon}><DashboardIcon name={icon} size={20} /></span><h1>{definition.label}</h1></div>
-            <nav className={styles.windowToggle} aria-label="Ranking interval">
-              {RANKING_WINDOWS.map(item => <Link key={item.id} href={`/dashboard/${activeSection}?window=${item.id}`} className={item.id === selectedWindow ? styles.windowActive : undefined} aria-current={item.id === selectedWindow ? 'page' : undefined}>{item.label}</Link>)}
-            </nav>
+            <div className={styles.headerControls}>
+              <span className={home.scopeBadge}>{contributorLabel}</span>
+              {activeSection === 'mcps' ? <nav className={styles.windowToggle} aria-label="MCP ranking type">
+                <Link href={rankingHref(selectedWindow, 'servers')} className={mcpView === 'servers' ? styles.windowActive : undefined} aria-current={mcpView === 'servers' ? 'page' : undefined}>Servers</Link>
+                <Link href={rankingHref(selectedWindow, 'tools')} className={mcpView === 'tools' ? styles.windowActive : undefined} aria-current={mcpView === 'tools' ? 'page' : undefined}>Tools</Link>
+              </nav> : null}
+              <nav className={styles.windowToggle} aria-label="Ranking interval">
+                {RANKING_WINDOWS.map(item => <Link key={item.id} href={rankingHref(item.id)} className={item.id === selectedWindow ? styles.windowActive : undefined} aria-current={item.id === selectedWindow ? 'page' : undefined}>{item.label}</Link>)}
+              </nav>
+            </div>
           </div>
           {ranked.length > 0 ? <div className={styles.summaryStrip}>
-            <div><small>{definition.volumeLabel}</small><strong>{number.format(totalVolume)}</strong></div>
+            <div><small>{volumeLabel}</small><strong>{number.format(totalVolume)}</strong>{showAttributedTokens ? <span>{number.format(attributedCalls)}/{number.format(totalCalls)} calls attributed</span> : null}</div>
+            {showTokenMetrics ? <div><small>Tokens processed</small><strong>{number.format(totalTokens)}</strong><span>{number.format(measuredSessions)}/{number.format(totalVolume)} runs measured</span></div> : null}
             <div><small>Top mover</small><strong className={styles.summaryEntity}>{topMover?.label ?? 'Not enough history'}</strong>{topMover ? <span className={styles.up}>{topMover.windows[selectedWindow]!.trendPct! >= 0 ? '+' : ''}{topMover.windows[selectedWindow]!.trendPct}%</span> : null}</div>
-            <div><small>{isMcpRanking ? 'Best success' : 'Best completion'}</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow]!.completionPct}%</span></div>
+            <div><small>{isPersonal || isMcpRanking ? 'Best success' : 'Best completion'}</small><strong className={styles.summaryEntity}>{mostReliable.label}</strong><span>{mostReliable.windows[selectedWindow]!.completionPct}%</span></div>
           </div> : null}
         </section>
 
@@ -134,7 +180,7 @@ export default async function RankingPage({
           <section className={styles.rankingPanel}>
             <div className={styles.tableScroll}>
               <table className={styles.rankingTable}>
-                <thead><tr><th>#</th><th>{definition.singular}</th>{activeSection === 'workflows' ? <th>Sequence</th> : null}<th>{definition.adoptionLabel}</th><th>Users</th><th>{definition.volumeLabel}</th><th>{isMcpRanking ? 'Success' : 'Completion'}</th>{isMcpRanking ? <th>Latency</th> : null}<th>Trend</th><th>Δ prev.</th></tr></thead>
+                <thead><tr><th>#</th><th>{definition.singular}</th>{activeSection === 'workflows' ? <th>Sequence</th> : null}<th>{shareLabel}</th>{isPersonal ? null : <th>Users</th>}<th>{volumeLabel}</th>{showAttributedTokens ? <th>Calls</th> : null}{showTokenMetrics ? <><th>Measured</th><th>Tokens</th><th>Cached</th><th>Reasoning</th></> : null}<th>{isPersonal || isMcpRanking ? 'Success' : 'Completion'}</th>{isMcpRanking ? <th>Latency</th> : null}<th>Trend</th><th>Δ prev.</th></tr></thead>
                 <tbody>
                   {ranked.map((entry, index) => {
                     const value = entry.windows[selectedWindow]!
@@ -144,8 +190,15 @@ export default async function RankingPage({
                         <td><div className={styles.entity}><span className={`${home.entityIcon} ${iconTone(entry)}`}>{activeSection === 'workflows' ? <DashboardIcon name="workflow" /> : <EntityMark id={entry.iconId ?? entry.id} provider={entry.secondary} />}</span><span><strong>{entry.label}</strong><small>{entry.secondary}</small></span></div></td>
                         {activeSection === 'workflows' ? <td><div className={styles.sequence}>{entry.sequence?.map((step, stepIndex) => <span key={step}>{step}{stepIndex < (entry.sequence?.length ?? 0) - 1 ? <i>›</i> : null}</span>)}</div></td> : null}
                         <td><div className={styles.adoption}><strong>{value.adoptionPct}%</strong><span><i style={{ width: `${value.adoptionPct}%` }} /></span></div></td>
-                        <td className={styles.mono}>{value.contributors}/{value.eligibleContributors}</td>
+                        {isPersonal ? null : <td className={styles.mono}>{value.contributors}/{value.eligibleContributors}</td>}
                         <td className={styles.mono}>{number.format(value.volume)}</td>
+                        {showAttributedTokens ? <td className={styles.mono}>{number.format(value.calls ?? 0)}</td> : null}
+                        {showTokenMetrics ? <>
+                          <td className={styles.mono}>{number.format(value.tokenizedSessions ?? 0)}/{number.format(value.volume)}</td>
+                          <td className={styles.mono}>{number.format(value.totalTokens ?? 0)}</td>
+                          <td className={styles.mono}>{number.format(value.cachedInputTokens ?? 0)}</td>
+                          <td className={styles.mono}>{value.reasoningTokens == null ? '—' : number.format(value.reasoningTokens)}</td>
+                        </> : null}
                         <td><span className={styles.score}>{value.completionPct}%</span></td>
                         {isMcpRanking ? <td className={styles.mono}>{value.latencyBucket?.replace('_', ' ') ?? '—'}</td> : null}
                         <td><TrendLine entry={entry} /></td>
@@ -159,9 +212,9 @@ export default async function RankingPage({
           </section>
         </div> : (
           <section className={home.networkState}>
-            <span>{dashboard.status === 'unavailable' ? 'NETWORK UNAVAILABLE' : 'NETWORK WARMING UP'}</span>
-            <h2>No public {definition.label.toLowerCase()} for {RANKING_WINDOWS.find(item => item.id === selectedWindow)?.label}.</h2>
-            <p>{dashboard.status === 'unavailable' ? 'Try again shortly.' : `Rankings publish when at least ${dashboard.kAnonymity} contributors qualify.`}</p>
+            <span>{isPersonal ? 'LOCAL DATA' : dashboard.status === 'unavailable' ? 'NETWORK UNAVAILABLE' : 'NETWORK WARMING UP'}</span>
+            <h2>{isPersonal ? `No ${definition.label.toLowerCase()} for ${RANKING_WINDOWS.find(item => item.id === selectedWindow)?.label}.` : `No public ${definition.label.toLowerCase()} for ${RANKING_WINDOWS.find(item => item.id === selectedWindow)?.label}.`}</h2>
+            <p>{isPersonal ? 'Use Codex or Claude Code, then refresh.' : dashboard.status === 'unavailable' ? 'Try again shortly.' : `Rankings publish when at least ${dashboard.kAnonymity} contributors qualify.`}</p>
           </section>
         )}
       </main>
